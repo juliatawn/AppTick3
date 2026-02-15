@@ -1,5 +1,6 @@
 # AGENTS.md
 
+ALWAYS BE SURE TO CHECK THIS FILE FOR GUIDELINES IN HOW TO DO THE CODE
 ## Code Preferences
 - Use kotlin android sdk 36
 - Use the best most modern practices for Android SDK 36 app development
@@ -19,6 +20,8 @@
   - Fix failing unit/integration/instrumentation tests.
   - Add logical tests when missing.
   - Include main flows and edge cases.
+- When appropriate have explanations for the user to understand the feature
+
 ## Test Creation
 - Create a thorough suite of tests for validating functionality works, from integration tests to unit tests
 - Make sure you do not create duplicate test cases on accident - such as going through each file in the test directory and ensuring there is no duplicates
@@ -54,7 +57,7 @@
 ## Premium Mode Features and Options
 - Users can purchase premium mode
 - If they have the free mode a unlocked icon is displayed at the top bar, if they press it it will popup the activity to purchase premium mode to get features such as lockdown mode, password mode, security key mode, custom color theme:
-  - Lockdown mode: except for the phone and messaging app (for safety reasons), you can select apps to be unable to change the time limit until a certain date you set, you can also select an option where it gives you a chance change the limit one time a week or one time at the chosen day and time for 1 day and if you don't change it during that time then it is unchangeable until the next time that day of the week and time passes. 
+  - Lockdown mode: except for the phone and messaging app (for safety reasons), you can select apps to be unable to change the time limit until a certain date you set, you can also select an option where it gives you a chance to change the limit one time a week or one time at the chosen day and time for 1 day and if you don't change it during that time then it is unchangeable until the next time that day of the week and time passes. 
   - Password mode: lock ability to change time limits with a password
   - Security key mode: lock ability to change time limits with a security key
   - If any of the previous lock modes are active the unlock icon shows a locked icon instead, and all the limits pause and edit buttons are replaced with a lock icon, if it is password or security key mode then if you click the lock icon it lets you enter the password (or click reset password via email) or security key (or click reset security key via email)
@@ -68,6 +71,17 @@
 - IF using Lockdown, Password, or Security key modes then give user a checkbox option to lock their settings app from being opened (password or security key input if thats the mode or just normal block screen if not the mode and time is up) that blocks the user from being able to delete AppTick, so app tick is set with Admin permissions
 
 
+## Agent testing
+- Find abd with this info for abd testing:
+source ~/.zshrc
+adb version
+
+Android Debug Bridge version 1.0.41
+Version 36.0.2-14143358
+Installed as /Users/juliatawn/Library/Android/sdk/platform-tools/adb
+Running on Darwin 25.3.0 (arm64)
+
+
 ## ALL FILE NAMES AND PURPOSES
 - **com.juliacai.apptick**
     - `AGENTS.md`: Contains instructions and guidelines for the AI agent.
@@ -78,11 +92,11 @@
     - `CustomViewPager.kt`: A custom ViewPager that allows for disabling swipe gestures.
     - `DateTimePickerDialog.kt`: A dialog for picking a date and time.
     - `LockPolicy.kt`: Pure lock-evaluation rules for password/security-key/lockdown logic, including weekly one-time unlock windows.
-    - `MainActivity.kt`: The main activity of the application, responsible for checking permissions, setting up billing, and displaying the main UI.
+    - `MainActivity.kt`: The main activity of the application, responsible for checking permissions, setting up billing, displaying the main UI, and handling edit-group deep links into SetTimeLimitsScreen.
     - `MainScreen.kt`: The main UI of the app, built with Jetpack Compose. It displays the top app bar, floating action button, and the list of app limit groups.
     - `MainViewModel.kt`: The ViewModel for the MainActivity, responsible for managing app-limit data, premium state, and pause/resume service lifecycle behavior.
     - `Receiver.kt`: A BroadcastReceiver that handles system events like boot and screen on/off to manage the BackgroundChecker service.
-    - `SettingsScreen.kt`: A composable that displays the app's settings.
+    - `SettingsScreen.kt`: A composable that displays the app's settings, including a debug-only premium toggle for developer testing.
     - `TimeManager.kt`: Manages time-related calculations and formatting.
 - **appLimit**
     - `AppLimitDetailsScreen.kt`: A composable that displays the details of an app limit group.
@@ -91,7 +105,7 @@
     - `AppUsageItem.kt`: A data class that represents an item of app usage.
     - `AppUsageRow.kt`: A composable that displays a row of app usage information.
 - **backgroundProcesses**
-    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage and enforce time limits.
+    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage, enforce time limits, and block Settings uninstall access when lock-mode uninstall protection is enabled.
 - **block**
     - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable.
     - `BlockWindowScreen.kt`: A composable that displays the screen that blocks the user from using an app when the time limit is reached.
@@ -107,6 +121,7 @@
     - `AppManager.kt`: Provides the installed app list used for selection while filtering safety-critical phone and messaging apps from being limited.
     - `AppSearchActivity.kt`: An activity that hosts the AppSearchScreen composable, which allows users to search for and select apps.
     - `AppUsageStats.kt`: An object that provides functions for querying app usage statistics.
+    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
 - **groups**
     - `AppLimitGroups.kt`: A composable that displays a list of app limit groups.
     - `AppInGroup.kt`: A data class that represents an app within an app limit group.
@@ -126,14 +141,14 @@
     - `RecoveryEmailSetupActivity.kt`: An activity that hosts the RecoveryEmailSetupScreen composable.
     - `RecoveryEmailSetupScreen.kt`: A composable for setting up a recovery email.
     - `SecurityKeySettings.kt`: A data class for the security key settings.
-    - `SecurityKeySettingsScreen.kt`: A composable that provides the UI for setting a security key.
+    - `SecurityKeySettingsScreen.kt`: A composable that provides the UI for setting a security key, including optional Device Admin-backed uninstall protection.
     - `SetPassword.kt`: An activity that hosts the SetPasswordScreen composable, allowing users to set a password to lock the app's settings.
-    - `SetPasswordScreen.kt`: A composable that provides the UI for setting a password, including input fields for the password and confirmation, a recovery email, and an option to lock the settings app.
+    - `SetPasswordScreen.kt`: A composable that provides the UI for setting a password, including input fields for the password and confirmation, a recovery email, and optional Device Admin-backed uninstall protection.
 - **newAppLimit**
     - `AppLimitViewModel.kt`: ViewModel used by app-selection and time-limit setup flows to persist groups and ensure service state matches active groups.
     - `AppSearchScreen.kt`: A composable that provides a search bar for filtering a list of applications.
     - `AppSelectScreen.kt`: A composable that allows the user to select apps to limit.
-    - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group.
+    - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled.
 - **permissions**
     - `NotificationPermissionPage.kt`: An activity and composable screen that guides the user to the notification settings page to grant the app permission to display notifications.
     - `NotificationPermissionScreen.kt`: A composable that explains why the notification permission is needed and provides a button to open the settings.
@@ -145,8 +160,11 @@
     - `UsageStatsPermissionScreen.kt`: A composable that explains why the usage stats permission is needed and provides a button to open the settings.
 - **premiumMode**
     - `LockdownModeActivity.kt`: An activity that hosts the LockdownModeScreen composable.
-    - `LockdownModeScreen.kt`: A composable that allows the user to configure the "Lockdown Mode" premium feature.
+    - `LockdownModeScreen.kt`: A composable that allows the user to configure the "Lockdown Mode" premium feature, including optional Device Admin-backed uninstall protection.
+    - `LockModesBlockedScreen.kt`: A composable block page shown when lockdown prevents changing lock settings, with guidance on when settings can be changed.
     - `LockdownSettings.kt`: A data class that defines the settings for the "Lockdown Mode" premium feature.
     - `LockdownTimeActivity.kt`: An activity that hosts the LockdownTimeScreen composable.
     - `LockdownTimeScreen.kt`: A composable that allows the user to set a lockdown time.
-    - `PremiumModeScreen.kt`: A composable that displays the premium mode purchase screen.
+    - `PremiumModeScreen.kt`: A composable that displays premium purchase for free users and the Lock Modes configuration page for premium users.
+- **settings**
+    - `ColorPickerScreen.kt`: A composable color customization screen with recommended light/dark presets, quick-pick swatches, and a spectrum wheel plus brightness control for precise color selection.

@@ -24,11 +24,15 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.luminance
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -49,6 +53,7 @@ import com.juliacai.apptick.appLimit.AppLimitDetailsScreen
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.LegacyDataMigrator
+import com.juliacai.apptick.deviceApps.GroupPage
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppLimitGroupsList
 import com.juliacai.apptick.lockModes.EnterPasswordActivity
@@ -61,9 +66,14 @@ import com.juliacai.apptick.permissions.NotificationPermissionPage
 import com.juliacai.apptick.permissions.OverlayPermissionPage
 import com.juliacai.apptick.permissions.UsageStatsPermissionPage
 import com.juliacai.apptick.premiumMode.PremiumModeScreen
+import com.juliacai.apptick.premiumMode.LockModesBlockedScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
@@ -73,6 +83,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     private lateinit var prefs: SharedPreferences
     private val productDetails = mutableStateOf<ProductDetails?>(null)
     private var appInitialized = false
+    private var launchEditGroupId: Long? = null
+    private var launchOpenLockModes = false
 
     private var mService: BackgroundChecker? = null
     private var mBound = false
@@ -108,6 +120,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         ThemeModeManager.apply(this)
         super.onCreate(savedInstanceState)
+        launchEditGroupId = intent.getLongExtra(EXTRA_EDIT_GROUP_ID, -1L).takeIf { it != -1L }
+        launchOpenLockModes = intent.getBooleanExtra(EXTRA_OPEN_LOCK_MODES, false)
 
         lifecycleScope.launch(Dispatchers.IO) {
             val appDatabase = AppTickDatabase.getDatabase(applicationContext)
@@ -147,7 +161,12 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val navController = rememberNavController()
             val groups by viewModel.groups.observeAsState(emptyList())
             val isPremium by viewModel.isPremium.observeAsState(false)
-            val hasActiveLockMode = LockPolicy.hasAnyConfiguredLockMode(readLockState())
+            val premiumEnabled = isPremium || isPremiumEnabledNow()
+            val lockState = readLockState()
+            val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
+            val isLockModesLocked = lockDecision.isLocked
+            var pendingEditGroupId by rememberSaveable { mutableStateOf(launchEditGroupId) }
+            var pendingOpenLockModes by rememberSaveable { mutableStateOf(launchOpenLockModes) }
 
             val isSystemDark = isSystemInDarkTheme()
             val customColorModeEnabled = ThemeModeManager.isCustomColorModeEnabled(this)
@@ -157,14 +176,20 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val savedIconColor = prefs.getInt("custom_icon_color", 0)
             val appIconColorMode = prefs.getString("app_icon_color_mode", "system") ?: "system"
 
-            val composePrimary = if (savedPrimaryColor != 0) androidx.compose.ui.graphics.Color(savedPrimaryColor) else androidx.compose.ui.graphics.Color(android.graphics.Color.parseColor("#3949AB"))
+            val composePrimary =
+                if (savedPrimaryColor != 0) androidx.compose.ui.graphics.Color(savedPrimaryColor)
+                else androidx.compose.ui.graphics.Color("#3949AB".toColorInt())
             
             val defaultBackground = if (isSystemDark) androidx.compose.ui.graphics.Color.Black else androidx.compose.ui.graphics.Color.White
             val composeBackground = if (savedBackgroundColor != 0) androidx.compose.ui.graphics.Color(savedBackgroundColor) else defaultBackground
 
             val systemThemeIconColor =
-                if (isSystemDark) dynamicDarkColorScheme(this).primary
-                else dynamicLightColorScheme(this).primary
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (isSystemDark) dynamicDarkColorScheme(this).primary
+                    else dynamicLightColorScheme(this).primary
+                } else {
+                    null
+                }
             val fallbackIconColor =
                 if (androidx.core.graphics.ColorUtils.calculateLuminance(composeBackground.toArgb()) > 0.5) androidx.compose.ui.graphics.Color.Black
                 else androidx.compose.ui.graphics.Color.White
@@ -172,7 +197,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                 if (isPremium && appIconColorMode == "custom" && savedIconColor != 0) {
                     androidx.compose.ui.graphics.Color(savedIconColor)
                 } else {
-                    systemThemeIconColor.takeIf { ThemeModeManager.isCustomColorModeEnabled(this) } ?: fallbackIconColor
+                    systemThemeIconColor?.takeIf { ThemeModeManager.isCustomColorModeEnabled(this) } ?: fallbackIconColor
                 }
 
             val colorScheme = if (customColorModeEnabled) {
@@ -207,12 +232,27 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             }
 
             MaterialTheme(colorScheme = colorScheme) {
+                LaunchedEffect(pendingEditGroupId) {
+                    val groupId = pendingEditGroupId ?: return@LaunchedEffect
+                    appLimitViewModel.loadGroupForEditing(groupId)
+                    navController.navigate("setTimeLimit")
+                    pendingEditGroupId = null
+                    launchEditGroupId = null
+                }
+                LaunchedEffect(pendingOpenLockModes, isPremium) {
+                    if (!pendingOpenLockModes) return@LaunchedEffect
+                    if (isPremiumEnabledNow() && !isLimitEditingLocked()) {
+                        navController.navigate("premium")
+                    }
+                    pendingOpenLockModes = false
+                    launchOpenLockModes = false
+                }
+
                 NavHost(navController = navController, startDestination = "main") {
                     composable("main") {
                         MainScreen(
                             appLimitGroupCount = groups.size,
-                            isPremium = isPremium,
-                            hasActiveLockMode = hasActiveLockMode,
+                            showLockedIcon = isLockModesLocked,
                             onFabClick = {
                                 if (isLimitEditingLocked()) {
                                     launchUnlockFlow()
@@ -224,8 +264,22 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             },
                             onSettingsClick = { navController.navigate("settings") },
                             onPremiumClick = {
-                                if (hasActiveLockMode) {
-                                    launchUnlockFlow()
+                                if (!isPremiumEnabledNow()) {
+                                    navController.navigate("premium")
+                                    return@MainScreen
+                                }
+
+                                val currentState = readLockState()
+                                val decision = LockPolicy.evaluateEditingLock(
+                                    currentState,
+                                    System.currentTimeMillis()
+                                )
+                                if (!decision.isLocked) {
+                                    navController.navigate("premium")
+                                } else if (currentState.hasSecurityKey || currentState.hasPassword) {
+                                    launchUnlockFlow(openLockModesAfterUnlock = true)
+                                } else if (currentState.lockdownEnabled) {
+                                    navController.navigate("lockModesBlocked")
                                 } else {
                                     navController.navigate("premium")
                                 }
@@ -251,11 +305,12 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                             cumulativeTime = appLimitGroup.cumulativeTime,
                                             timeRemaining = appLimitGroup.timeRemaining,
                                             nextResetTime = appLimitGroup.nextResetTime,
-                                            nextAddTime = appLimitGroup.nextAddTime
+                                            nextAddTime = appLimitGroup.nextAddTime,
+                                            perAppUsage = appLimitGroup.perAppUsage
                                         )
                                     },
                                     onGroupClick = { group ->
-                                        navController.navigate("appLimitDetails/${group.id}")
+                                        startActivity(GroupPage.newIntent(this@MainActivity, group))
                                     },
                                     onLockClick = {
                                         if (prefs.getBoolean("security_key_enabled", false)) {
@@ -316,7 +371,16 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     composable("selectApps") {
                         AppSelectScreen(
                             viewModel = appLimitViewModel,
-                            onNextClick = { navController.navigate("setTimeLimit") }
+                            onNextClick = {
+                                if (!navController.popBackStack("setTimeLimit", inclusive = false)) {
+                                    navController.navigate("setTimeLimit")
+                                }
+                            },
+                            onCancel = {
+                                if (!navController.popBackStack("setTimeLimit", inclusive = false)) {
+                                    navController.popBackStack("main", inclusive = false)
+                                }
+                            }
                         )
                     }
                     composable("setTimeLimit") {
@@ -327,17 +391,27 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 navController.popBackStack(route = "main", inclusive = false)
                             },
                             onCancel = { navController.popBackStack(route = "main", inclusive = false) },
-                            onEditApps = { navController.popBackStack() }
+                            onEditApps = {
+                                if (!navController.popBackStack("selectApps", inclusive = false)) {
+                                    navController.navigate("selectApps")
+                                }
+                            }
                         )
                     }
                     composable("premium") {
                         PremiumModeScreen(
                             productDetails = productDetails.value,
-                            isPremium = isPremium,
+                            isPremium = premiumEnabled,
                             onPurchaseClick = { product ->
                                 launchPurchaseFlow(product)
                             },
                             navController = navController,
+                            onBackClick = { navController.popBackStack() }
+                        )
+                    }
+                    composable("lockModesBlocked") {
+                        LockModesBlockedScreen(
+                            message = buildLockModesBlockedMessage(),
                             onBackClick = { navController.popBackStack() }
                         )
                     }
@@ -346,18 +420,22 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         }
     }
 
-    private fun launchUnlockFlow() {
+    private fun launchUnlockFlow(openLockModesAfterUnlock: Boolean = false) {
         if (prefs.getBoolean("security_key_enabled", false)) {
-            startActivity(Intent(this, EnterSecurityKeyActivity::class.java))
+            startActivity(
+                Intent(this, EnterSecurityKeyActivity::class.java).apply {
+                    putExtra(EXTRA_OPEN_LOCK_MODES, openLockModesAfterUnlock)
+                }
+            )
         } else if (!prefs.getString("password", null).isNullOrBlank()) {
-            startActivity(Intent(this, EnterPasswordActivity::class.java))
+            startActivity(
+                Intent(this, EnterPasswordActivity::class.java).apply {
+                    putExtra(EXTRA_OPEN_LOCK_MODES, openLockModesAfterUnlock)
+                }
+            )
         } else {
             Toast.makeText(this, "Lockdown mode is active", Toast.LENGTH_SHORT).show()
         }
-    }
-
-    private fun hasAnyConfiguredLockMode(): Boolean {
-        return LockPolicy.hasAnyConfiguredLockMode(readLockState())
     }
 
     private fun isLimitEditingLocked(): Boolean {
@@ -399,6 +477,40 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         )
     }
 
+    private fun buildLockModesBlockedMessage(nowMillis: Long = System.currentTimeMillis()): String {
+        val lockdownEnd = prefs.getLong("lockdown_end_time", 0L)
+        if (lockdownEnd > nowMillis) {
+            val formattedEnd = SimpleDateFormat("EEE, MMM d h:mm a", Locale.getDefault())
+                .format(Date(lockdownEnd))
+            return "Lockdown mode is active. You can change lock settings after $formattedEnd."
+        }
+
+        val weeklyEnabled = prefs.getBoolean("lockdown_one_time_change", false)
+        val weeklyDay = prefs.getInt("lockdown_weekly_day", -1)
+        val weeklyHour = prefs.getInt("lockdown_weekly_hour", -1)
+        val weeklyMinute = prefs.getInt("lockdown_weekly_minute", -1)
+        if (weeklyEnabled && weeklyDay in 1..7 && weeklyHour in 0..23 && weeklyMinute in 0..59) {
+            val dayNames = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+            val calendar = Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, weeklyHour)
+                set(Calendar.MINUTE, weeklyMinute)
+            }
+            val timeFormatted = SimpleDateFormat("h:mm a", Locale.getDefault()).format(calendar.time)
+            return "Lockdown mode is active. Your next change window starts on ${dayNames[weeklyDay - 1]} at $timeFormatted."
+        }
+
+        return "Lockdown mode is active. You cannot change lock settings right now."
+    }
+
+    private fun shouldKeepServiceForSettingsProtection(): Boolean {
+        if (!prefs.getBoolean("blockSettings", false)) return false
+        return LockPolicy.hasAnyConfiguredLockMode(readLockState())
+    }
+
+    private fun isPremiumEnabledNow(): Boolean {
+        return prefs.getBoolean("premium", false)
+    }
+
     private fun createNotificationChannel() {
         val name = getString(R.string.channel_name)
         val descriptionText = getString(R.string.channel_description)
@@ -423,6 +535,16 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         if (mBound) {
             unbindService(serviceConnection)
             mBound = false
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::prefs.isInitialized) {
+            viewModel.updatePremiumStatus(prefs.getBoolean("premium", false))
+            if (shouldKeepServiceForSettingsProtection()) {
+                BackgroundChecker.startServiceIfNotRunning(applicationContext)
+            }
         }
     }
 
@@ -550,5 +672,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
             Toast.makeText(this, "Purchase is pending. Please complete the transaction.", Toast.LENGTH_LONG).show()
         }
+    }
+
+    companion object {
+        const val EXTRA_EDIT_GROUP_ID = "extra_edit_group_id"
+        const val EXTRA_OPEN_LOCK_MODES = "extra_open_lock_modes"
     }
 }

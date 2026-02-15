@@ -39,10 +39,11 @@ fun PremiumModeScreen(
     onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val titleText = if (isPremium) "Lock Modes" else "Premium Mode"
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Premium Mode") },
+                title = { Text(titleText) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -61,7 +62,7 @@ fun PremiumModeScreen(
         ) {
             if (isPremium) {
                 Text(
-                    text = "Premium Mode Settings",
+                    text = "Lock Modes",
                     style = MaterialTheme.typography.headlineSmall,
                     textAlign = TextAlign.Center
                 )
@@ -76,10 +77,6 @@ fun PremiumModeScreen(
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = { navController.navigate("securityKeySettings") }) {
                     Text("Security Key Mode")
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(onClick = { context.startActivity(android.content.Intent(context, ColorCustomizationActivity::class.java)) }) {
-                    Text("Custom Color Theme")
                 }
             } else {
                 Text(

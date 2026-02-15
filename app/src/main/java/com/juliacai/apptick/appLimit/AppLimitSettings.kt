@@ -51,9 +51,6 @@ interface AppLimitSettings {
     /** If true, the app limit group is temporarily paused. */
     var paused: Boolean
 
-    /** Note: The purpose of this property is unclear and may be part of a legacy implementation. */
-    var dwm: String?
-
     /** Called when the user has finished configuring the settings. */
     fun finished()
 

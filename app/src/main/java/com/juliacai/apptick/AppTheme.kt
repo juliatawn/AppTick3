@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.Color
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.graphics.toColorInt
 
 object AppTheme {
     private const val PREFS_NAME = "groupPrefs"
@@ -18,9 +19,9 @@ object AppTheme {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val customModeEnabled = ThemeModeManager.isCustomColorModeEnabled(context)
         val primaryColor = if (customModeEnabled) {
-            prefs.getInt(KEY_PRIMARY_COLOR, Color.parseColor(DEFAULT_PRIMARY_COLOR))
+            prefs.getInt(KEY_PRIMARY_COLOR, DEFAULT_PRIMARY_COLOR.toColorInt())
         } else {
-            Color.parseColor(DEFAULT_PRIMARY_COLOR)
+            DEFAULT_PRIMARY_COLOR.toColorInt()
         }
         val backgroundColor = if (customModeEnabled) {
             prefs.getInt(KEY_BACKGROUND_COLOR, Color.WHITE)
@@ -37,15 +38,15 @@ object AppTheme {
 
     fun getPrimaryColor(context: Context): Int {
         if (!ThemeModeManager.isCustomColorModeEnabled(context)) {
-            return Color.parseColor(DEFAULT_PRIMARY_COLOR)
+            return DEFAULT_PRIMARY_COLOR.toColorInt()
         }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_PRIMARY_COLOR, Color.parseColor(DEFAULT_PRIMARY_COLOR))
+        return prefs.getInt(KEY_PRIMARY_COLOR, DEFAULT_PRIMARY_COLOR.toColorInt())
     }
 
     fun getAccentColor(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_ACCENT_COLOR, Color.parseColor("#FF4081"))
+        return prefs.getInt(KEY_ACCENT_COLOR, "#FF4081".toColorInt())
     }
 
     fun getBackgroundColor(context: Context): Int {

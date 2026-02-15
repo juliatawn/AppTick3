@@ -100,8 +100,10 @@ class EnterPasswordActivity : AppCompatActivity() {
             putBoolean("passUnlocked", true)
             putBoolean("securityKeyUnlocked", false)
         }
+        val openLockModes = intent.getBooleanExtra(MainActivity.EXTRA_OPEN_LOCK_MODES, false)
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra(MainActivity.EXTRA_OPEN_LOCK_MODES, openLockModes)
         }
         startActivity(intent)
         finish()

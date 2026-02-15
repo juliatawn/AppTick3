@@ -19,7 +19,8 @@ fun BlockWindowScreen(
     appName: String,
     appIcon: Painter?,
     groupName: String,
-    timeSpent: Long,
+    appTimeSpent: Long,
+    groupTimeSpent: Long,
 
     isPremium: Boolean,
     primaryColor: androidx.compose.ui.graphics.Color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
@@ -51,10 +52,18 @@ fun BlockWindowScreen(
             color = primaryColor,
             style = androidx.compose.material3.MaterialTheme.typography.bodyLarge
         )
-        val hours = TimeUnit.MILLISECONDS.toHours(timeSpent)
-        val minutes = TimeUnit.MILLISECONDS.toMinutes(timeSpent) % 60
+        val appHours = TimeUnit.MILLISECONDS.toHours(appTimeSpent)
+        val appMinutes = TimeUnit.MILLISECONDS.toMinutes(appTimeSpent) % 60
         Text(
-            text = stringResource(R.string.time_spent, hours, minutes),
+            text = stringResource(R.string.app_time_spent, appHours, appMinutes),
+            modifier = Modifier.padding(8.dp),
+            color = primaryColor,
+            style = androidx.compose.material3.MaterialTheme.typography.bodyLarge
+        )
+        val groupHours = TimeUnit.MILLISECONDS.toHours(groupTimeSpent)
+        val groupMinutes = TimeUnit.MILLISECONDS.toMinutes(groupTimeSpent) % 60
+        Text(
+            text = stringResource(R.string.group_time_spent, groupHours, groupMinutes),
             modifier = Modifier.padding(8.dp),
             color = primaryColor,
             style = androidx.compose.material3.MaterialTheme.typography.bodyLarge

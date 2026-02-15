@@ -28,7 +28,11 @@ import androidx.compose.ui.unit.dp
 fun LockdownModeScreen(
     statusText: String,
     oneTimeWeeklyChange: Boolean,
+    protectSettingsUninstall: Boolean,
+    isDeviceAdminGranted: Boolean,
     onOneTimeWeeklyChangeToggled: (Boolean) -> Unit,
+    onProtectSettingsUninstallToggled: (Boolean) -> Unit,
+    onEnableDeviceAdminClick: () -> Unit,
     onConfigureEndTimeClick: () -> Unit,
     onDisableLockdownClick: () -> Unit,
     onBackClick: () -> Unit
@@ -63,6 +67,25 @@ fun LockdownModeScreen(
                     onCheckedChange = onOneTimeWeeklyChangeToggled
                 )
                 Text("Allow one weekly limit-change window")
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Checkbox(
+                    checked = protectSettingsUninstall,
+                    onCheckedChange = onProtectSettingsUninstallToggled
+                )
+                Text("Protect uninstall from Settings")
+            }
+            Text("Device Admin: ${if (isDeviceAdminGranted) "Enabled" else "Not enabled"}")
+            Text("When enabled, AppTick blocks the Settings uninstall page while lock mode is active.")
+            Button(
+                onClick = onEnableDeviceAdminClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Enable Device Admin")
             }
 
             Spacer(modifier = Modifier.height(8.dp))

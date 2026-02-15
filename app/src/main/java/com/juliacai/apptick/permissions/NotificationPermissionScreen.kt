@@ -1,9 +1,7 @@
 package com.juliacai.apptick.permissions
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,7 +16,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,8 +25,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun NotificationPermissionScreen(
-    onGoToSettingsClick: () -> Unit,
-    onBackClick: () -> Unit
+    onGoToSettingsClick: () -> Unit
 ) {
     Scaffold {
         Column(
@@ -70,13 +66,8 @@ fun NotificationPermissionScreen(
                 }
             }
             Spacer(modifier = Modifier.height(24.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onBackClick, modifier = Modifier.weight(1f)) {
-                    Text("Back")
-                }
-                Button(onClick = onGoToSettingsClick, modifier = Modifier.weight(1f)) {
-                    Text("Open Settings")
-                }
+            Button(onClick = onGoToSettingsClick, modifier = Modifier.fillMaxWidth()) {
+                Text("Open Settings")
             }
         }
     }

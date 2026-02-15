@@ -3,6 +3,7 @@ package com.juliacai.apptick.data
 import android.content.Context
 import android.util.Log
 import com.juliacai.apptick.appLimit.AppInGroup
+import com.juliacai.apptick.groups.AppUsageStat
 import java.io.File
 
 class LegacyDataMigrator(
@@ -84,7 +85,7 @@ class LegacyDataMigrator(
                 timeRemaining = 0,
                 nextResetTime = 0,
                 nextAddTime = 0,
-                dwm = "Daily"
+                perAppUsage = emptyList<AppUsageStat>()
             )
         } catch (e: Exception) {
             Log.e("LegacyDataMigrator", "Error parsing line: $line", e)

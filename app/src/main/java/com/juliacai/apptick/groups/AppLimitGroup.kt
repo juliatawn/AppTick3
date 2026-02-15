@@ -22,5 +22,5 @@ data class AppLimitGroup(
     var timeRemaining: Long = 0,
     var nextResetTime: Long = 0,
     var nextAddTime: Long = 0,
-    var dwm: String? = "Daily"
+    var perAppUsage: List<AppUsageStat> = emptyList()
 ) : Serializable

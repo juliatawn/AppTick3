@@ -20,11 +20,15 @@ import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.edit
 import com.juliacai.apptick.block.BlockWindowActivity
+import com.juliacai.apptick.LockPolicy
+import com.juliacai.apptick.LockState
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.R
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.toDomainModel
+import com.juliacai.apptick.groups.AppUsageStat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -134,10 +138,20 @@ class BackgroundChecker : Service() {
     }
 
     suspend fun checkAppLimits(foregroundApp: String?) {
+        if (shouldBlockSettingsAccess(foregroundApp)) {
+            blockIntent.putExtra("app_name", "Settings")
+            blockIntent.putExtra("app_package", foregroundApp)
+            blockIntent.putExtra("group_name", "Uninstall Protection")
+            blockIntent.putExtra("app_time_spent", 0L)
+            blockIntent.putExtra("group_time_spent", 0L)
+            startActivity(blockIntent)
+            return
+        }
+
         val allGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
         val activeGroups = allGroups.filterNot { it.paused }
 
-        if (activeGroups.isEmpty()) {
+        if (activeGroups.isEmpty() && !shouldKeepServiceForSettingsProtection()) {
             stopSelf()
             return
         }
@@ -152,16 +166,39 @@ class BackgroundChecker : Service() {
             if (appInGroup != null) {
                 val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
                 val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
+                val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }.toMutableMap()
+                val currentAppUsage = usageMap[appInGroup.appPackage] ?: 0L
 
-                if (com.juliacai.apptick.appLimit.AppLimitEvaluator.isLimitReached(group)) {
+                val appLimitReached = currentAppUsage >= limitInMillis
+                val groupLimitReached = group.timeRemaining <= 0L
+                val isReached = if (group.limitEach) appLimitReached else groupLimitReached
+
+                if (isReached) {
+                    val appTimeSpent = currentAppUsage
+                    val groupTimeSpent = usageMap.values.sum()
                     blockIntent.putExtra("app_name", appInGroup.appName)
                     blockIntent.putExtra("app_package", appInGroup.appPackage)
                     blockIntent.putExtra("group_name", group.name)
-                    blockIntent.putExtra("time_spent", limitInMillis)
+                    blockIntent.putExtra("app_time_spent", appTimeSpent)
+                    blockIntent.putExtra("group_time_spent", groupTimeSpent)
                     startActivity(blockIntent)
                 } else {
-                    val newTimeRemaining = (group.timeRemaining - BACKGROUND_CHECK_INTERVAL).coerceAtLeast(0L)
-                    appLimitGroupDao.updateTimeRemaining(group.id, newTimeRemaining)
+                    val newAppUsage = (currentAppUsage + BACKGROUND_CHECK_INTERVAL).coerceAtMost(limitInMillis)
+                    usageMap[appInGroup.appPackage] = newAppUsage
+
+                    val newTimeRemaining = if (group.limitEach) {
+                        (limitInMillis - newAppUsage).coerceAtLeast(0L)
+                    } else {
+                        (group.timeRemaining - BACKGROUND_CHECK_INTERVAL).coerceAtLeast(0L)
+                    }
+
+                    val updatedUsage = usageMap.entries.map { AppUsageStat(it.key, it.value) }
+                    appLimitGroupDao.updateAppLimitGroup(
+                        entity.copy(
+                            timeRemaining = newTimeRemaining,
+                            perAppUsage = updatedUsage
+                        )
+                    )
                 }
             }
         }
@@ -200,9 +237,18 @@ class BackgroundChecker : Service() {
 
     private suspend fun updateNotification(currentApp: String?) {
         val contentText = if (currentApp != null) {
-            val group = appLimitGroupDao.getGroupContainingApp(currentApp)
-            if (group != null) {
-                formatGroupNotificationText(group.timeHrLimit, group.timeMinLimit, group.timeRemaining, group.nextResetTime)
+            val groupEntity = appLimitGroupDao.getGroupContainingApp(currentApp)
+            if (groupEntity != null) {
+                val group = groupEntity.toDomainModel()
+                val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+                val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
+                val appUsed = group.perAppUsage.firstOrNull { it.appPackage == currentApp }?.usedMillis ?: 0L
+                val timeRemaining = if (group.limitEach) {
+                    (limitInMillis - appUsed).coerceAtLeast(0L)
+                } else {
+                    group.timeRemaining
+                }
+                formatGroupNotificationText(group.timeHrLimit, group.timeMinLimit, timeRemaining, group.nextResetTime)
             } else {
                 "AppTick is running..."
             }
@@ -292,5 +338,76 @@ class BackgroundChecker : Service() {
                 context.startForegroundService(intent)
             }
         }
+    }
+
+    private fun shouldBlockSettingsAccess(foregroundApp: String?): Boolean {
+        val packageName = foregroundApp ?: return false
+        val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("blockSettings", false)) return false
+
+        val lockState = readLockState(prefs)
+        val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
+        if (lockDecision.shouldClearExpiredLockdown) {
+            prefs.edit {
+                putBoolean("lockdown_enabled", false)
+                remove("lockdown_end_time")
+                remove("lockdown_weekly_day")
+                remove("lockdown_weekly_hour")
+                remove("lockdown_weekly_minute")
+                remove("lockdown_one_time_change")
+                remove("lockdown_weekly_used_key")
+            }
+        }
+
+        // Block direct Settings access while the lock policy is actively locked.
+        if (isSettingsPackage(packageName) && lockDecision.isLocked) {
+            return true
+        }
+
+        // Uninstall confirmation often switches to package-installer/permission-controller apps.
+        // Keep these blocked whenever uninstall protection is enabled and a lock mode is configured.
+        if (isUninstallFlowPackage(packageName) && LockPolicy.hasAnyConfiguredLockMode(lockState)) {
+            return true
+        }
+
+        return false
+    }
+
+    private fun shouldKeepServiceForSettingsProtection(): Boolean {
+        val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("blockSettings", false)) return false
+        return LockPolicy.hasAnyConfiguredLockMode(readLockState(prefs))
+    }
+
+    private fun readLockState(prefs: android.content.SharedPreferences): LockState {
+        return LockState(
+            hasPassword = !prefs.getString("password", null).isNullOrBlank(),
+            hasSecurityKey = prefs.getBoolean("security_key_enabled", false),
+            passwordUnlocked = prefs.getBoolean("passUnlocked", false),
+            securityKeyUnlocked = prefs.getBoolean("securityKeyUnlocked", false),
+            lockdownEnabled = prefs.getBoolean("lockdown_enabled", false),
+            lockdownEndTimeMillis = prefs.getLong("lockdown_end_time", 0L),
+            lockdownOneTimeWeeklyChange = prefs.getBoolean("lockdown_one_time_change", false),
+            lockdownWeeklyDayMondayOne = prefs.getInt("lockdown_weekly_day", -1),
+            lockdownWeeklyHour = prefs.getInt("lockdown_weekly_hour", -1),
+            lockdownWeeklyMinute = prefs.getInt("lockdown_weekly_minute", -1),
+            lockdownWeeklyUsedKey = prefs.getString("lockdown_weekly_used_key", null)
+        )
+    }
+
+    private fun isSettingsPackage(packageName: String): Boolean {
+        if (packageName == "com.android.settings") return true
+        if (packageName == "com.samsung.android.settings") return true
+        return packageName.contains(".settings")
+    }
+
+    private fun isUninstallFlowPackage(packageName: String): Boolean {
+        if (packageName == "com.android.packageinstaller") return true
+        if (packageName == "com.google.android.packageinstaller") return true
+        if (packageName == "com.samsung.android.packageinstaller") return true
+        if (packageName == "com.miui.packageinstaller") return true
+        if (packageName == "com.android.permissioncontroller") return true
+        if (packageName == "com.google.android.permissioncontroller") return true
+        return packageName.contains("packageinstaller") || packageName.contains("permissioncontroller")
     }
 }

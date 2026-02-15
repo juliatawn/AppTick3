@@ -27,8 +27,7 @@ import androidx.compose.ui.res.stringResource
 @Composable
 fun MainScreen(
     appLimitGroupCount: Int,
-    isPremium: Boolean,
-    hasActiveLockMode: Boolean,
+    showLockedIcon: Boolean,
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onPremiumClick: () -> Unit,
@@ -39,18 +38,16 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("AppTick") },
                 actions = {
-                    if (hasActiveLockMode) {
-                        IconButton(onClick = onPremiumClick) {
+                    IconButton(onClick = onPremiumClick) {
+                        if (showLockedIcon) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
-                                contentDescription = "Unlock lock mode"
+                                contentDescription = "Lock modes are locked"
                             )
-                        }
-                    } else if (!isPremium) {
-                        IconButton(onClick = onPremiumClick) {
+                        } else {
                             Icon(
                                 painter = painterResource(id = R.drawable.ic_unlocked),
-                                contentDescription = "Premium"
+                                contentDescription = "Open lock modes"
                             )
                         }
                     }

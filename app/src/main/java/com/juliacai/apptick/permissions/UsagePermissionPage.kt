@@ -6,6 +6,7 @@ import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
@@ -18,6 +19,21 @@ class UsagePermissionPage : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isPermissionGranted) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                } else {
+                    Toast.makeText(
+                        this@UsagePermissionPage,
+                        "Please grant usage permission to continue",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
+
         setContent {
             UsagePermissionScreen(
                 onGoToSettingsClick = { 
@@ -35,14 +51,6 @@ class UsagePermissionPage : AppCompatActivity() {
         if (isPermissionGranted) {
             Toast.makeText(this, "Usage permission granted", Toast.LENGTH_SHORT).show()
             finish()
-        }
-    }
-
-    override fun onBackPressed() {
-        if (isPermissionGranted) {
-            super.onBackPressed()
-        } else {
-            Toast.makeText(this, "Please grant usage permission to continue", Toast.LENGTH_SHORT).show()
         }
     }
 

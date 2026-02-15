@@ -2,6 +2,7 @@ package com.juliacai.apptick
 
 import android.graphics.drawable.Drawable
 import java.io.Serializable
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 data class AppInfo(
@@ -29,7 +30,7 @@ data class AppInfo(
             val hours = TimeUnit.MILLISECONDS.toHours(appTimeUse)
             val minutes = TimeUnit.MILLISECONDS.toMinutes(appTimeUse) % 60
             val seconds = TimeUnit.MILLISECONDS.toSeconds(appTimeUse) % 60
-            return String.format("%02d:%02d:%02d", hours, minutes, seconds)
+            return String.format(Locale.US, "%02d:%02d:%02d", hours, minutes, seconds)
         }
 
     val elapsedTime: Long

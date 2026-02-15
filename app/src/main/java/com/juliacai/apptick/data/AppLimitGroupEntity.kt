@@ -2,7 +2,9 @@ package com.juliacai.apptick.data
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import androidx.room.ColumnInfo
 import com.juliacai.apptick.appLimit.AppInGroup
+import com.juliacai.apptick.groups.AppUsageStat
 
 @Entity(tableName = "app_limit_groups")
 data class AppLimitGroupEntity(
@@ -25,5 +27,6 @@ data class AppLimitGroupEntity(
     var timeRemaining: Long = 0,
     var nextResetTime: Long = 0,
     var nextAddTime: Long = 0,
-    var dwm: String? = "Daily"
+    @ColumnInfo(defaultValue = "'[]'")
+    var perAppUsage: List<AppUsageStat> = emptyList()
 )

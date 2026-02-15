@@ -25,7 +25,7 @@ class ColorCustomizationActivity : AppCompatActivity() {
                     prefs.edit {
                         putInt(BaseActivity.Companion.PREF_PRIMARY_COLOR, color.toArgb())
                     }
-                    sendBroadcast(Intent("COLORS_CHANGED"))
+                    sendBroadcast(Intent("COLORS_CHANGED").setPackage(packageName))
                 },
                 onDarkModeChanged = { isDarkMode ->
                     ThemeModeManager.persistDarkMode(this@ColorCustomizationActivity, isDarkMode)

@@ -4,6 +4,7 @@ import androidx.room.TypeConverter
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.juliacai.apptick.appLimit.AppInGroup
+import com.juliacai.apptick.groups.AppUsageStat
 
 class Converters {
     @TypeConverter
@@ -25,6 +26,17 @@ class Converters {
     @TypeConverter
     fun toAppInGroupList(value: String): List<AppInGroup> {
         val listType = object : TypeToken<List<AppInGroup>>() {}.type
+        return Gson().fromJson(value, listType)
+    }
+
+    @TypeConverter
+    fun fromAppUsageStatList(value: List<AppUsageStat>): String {
+        return Gson().toJson(value)
+    }
+
+    @TypeConverter
+    fun toAppUsageStatList(value: String): List<AppUsageStat> {
+        val listType = object : TypeToken<List<AppUsageStat>>() {}.type
         return Gson().fromJson(value, listType)
     }
 }

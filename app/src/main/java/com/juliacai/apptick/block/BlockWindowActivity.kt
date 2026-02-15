@@ -31,7 +31,8 @@ class BlockWindowActivity : AppCompatActivity() {
         val appPackage = intent?.getStringExtra("app_package") ?: return
         val appName = intent.getStringExtra("app_name") ?: ""
         val groupName = intent.getStringExtra("group_name") ?: ""
-        val timeSpent = intent.getLongExtra("time_spent", 0)
+        val appTimeSpent = intent.getLongExtra("app_time_spent", 0)
+        val groupTimeSpent = intent.getLongExtra("group_time_spent", 0)
         val isPremium = prefs.getBoolean("premium", false)
         val primaryColor = AppTheme.getPrimaryColor(this)
         val backgroundColor = AppTheme.getBackgroundColor(this)
@@ -44,7 +45,8 @@ class BlockWindowActivity : AppCompatActivity() {
                 appName = appName,
                 appIcon = iconPainter,
                 groupName = groupName,
-                timeSpent = timeSpent,
+                appTimeSpent = appTimeSpent,
+                groupTimeSpent = groupTimeSpent,
                 isPremium = isPremium,
                 primaryColor = androidx.compose.ui.graphics.Color(primaryColor),
                 backgroundColor = androidx.compose.ui.graphics.Color(backgroundColor)

@@ -22,8 +22,7 @@ class MainActivityTest {
         composeTestRule.setContent {
             MainScreen(
                 appLimitGroupCount = 0,
-                isPremium = false,
-                hasActiveLockMode = false,
+                showLockedIcon = false,
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
@@ -32,7 +31,7 @@ class MainActivityTest {
         }
 
         composeTestRule.onNodeWithText("AppTick").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Add app limit").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Add a new app limit group +").assertIsDisplayed()
     }
 
     @Test
@@ -40,8 +39,7 @@ class MainActivityTest {
         composeTestRule.setContent {
             MainScreen(
                 appLimitGroupCount = 2,
-                isPremium = true,
-                hasActiveLockMode = false,
+                showLockedIcon = false,
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
@@ -58,8 +56,7 @@ class MainActivityTest {
         composeTestRule.setContent {
             MainScreen(
                 appLimitGroupCount = 0,
-                isPremium = false,
-                hasActiveLockMode = false,
+                showLockedIcon = false,
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = { clicked = true },
@@ -67,7 +64,7 @@ class MainActivityTest {
             )
         }
 
-        composeTestRule.onNodeWithContentDescription("Premium").performClick()
+        composeTestRule.onNodeWithContentDescription("Open lock modes").performClick()
         assertThat(clicked).isTrue()
     }
 }

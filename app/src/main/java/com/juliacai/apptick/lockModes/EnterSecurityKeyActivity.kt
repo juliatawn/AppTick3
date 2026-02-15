@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.edit
+import com.juliacai.apptick.MainActivity
 
 class EnterSecurityKeyActivity : AppCompatActivity() {
 
@@ -41,11 +43,20 @@ class EnterSecurityKeyActivity : AppCompatActivity() {
         }
 
         if (enteredKey == securityKey) {
-            prefs.edit()
-                .putBoolean("securityKeyUnlocked", true)
-                .putBoolean("passUnlocked", false)
-                .apply()
+            prefs.edit {
+                putBoolean("securityKeyUnlocked", true)
+                putBoolean("passUnlocked", false)
+            }
             Toast.makeText(this, "Unlocked", Toast.LENGTH_SHORT).show()
+            val openLockModes = intent.getBooleanExtra(MainActivity.EXTRA_OPEN_LOCK_MODES, false)
+            if (openLockModes) {
+                startActivity(
+                    Intent(this, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        putExtra(MainActivity.EXTRA_OPEN_LOCK_MODES, true)
+                    }
+                )
+            }
             finish()
         } else {
             Toast.makeText(this, "Incorrect security key", Toast.LENGTH_SHORT).show()

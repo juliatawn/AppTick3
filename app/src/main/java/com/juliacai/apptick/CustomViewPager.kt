@@ -10,10 +10,17 @@ class CustomViewPager(context: Context, attrs: AttributeSet?) : ViewPager(contex
     var isPagingEnabled: Boolean = true
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (event.action == MotionEvent.ACTION_UP) {
+            performClick()
+        }
         return isPagingEnabled && super.onTouchEvent(event)
     }
 
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
         return isPagingEnabled && super.onInterceptTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        return super.performClick()
     }
 }

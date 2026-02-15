@@ -1,10 +1,10 @@
 package com.juliacai.apptick.permissions
 
 import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.LaunchedEffect
@@ -20,6 +20,21 @@ class NotificationPermissionPage : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isPermissionGranted) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                } else {
+                    Toast.makeText(
+                        this@NotificationPermissionPage,
+                        "Please grant notification permission to continue",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
+
         setContent {
             if (isPermissionGranted) {
                 LaunchedEffect(Unit) {
@@ -31,20 +46,12 @@ class NotificationPermissionPage : AppCompatActivity() {
                 }
             } else {
                 NotificationPermissionScreen(
-                    onGoToSettingsClick = { 
-                        val intent = Intent().apply {
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                            } else {
-                                action = "android.settings.APP_NOTIFICATION_SETTINGS"
-                                putExtra("app_package", packageName)
-                                putExtra("app_uid", applicationInfo.uid)
-                            }
+                    onGoToSettingsClick = {
+                        val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                         }
                         startActivity(intent)
-                    },
-                    onBackClick = { onBackPressedDispatcher.onBackPressed() }
+                    }
                 )
             }
         }
@@ -53,13 +60,5 @@ class NotificationPermissionPage : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         isPermissionGranted = NotificationManagerCompat.from(this).areNotificationsEnabled()
-    }
-
-    override fun onBackPressed() {
-        if (isPermissionGranted) {
-            super.onBackPressed()
-        } else {
-            Toast.makeText(this, "Please grant notification permission to continue", Toast.LENGTH_SHORT).show()
-        }
     }
 }

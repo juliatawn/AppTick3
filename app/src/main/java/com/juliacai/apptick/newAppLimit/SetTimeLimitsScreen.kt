@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.createBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
@@ -35,29 +36,68 @@ fun SetTimeLimitsScreen(
 ) {
     val scrollState = rememberScrollState()
     val group by viewModel.group.observeAsState()
+    val draft by viewModel.draft.observeAsState()
     val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
 
-    val groupName = remember { mutableStateOf(group?.name ?: "") }
-    val useTimeLimit = remember { mutableStateOf((group?.timeHrLimit ?: 0 > 0 || group?.timeMinLimit ?: 0 > 0)) }
-    val timeHrLimit = remember { mutableStateOf(group?.timeHrLimit?.toString() ?: "0") }
-    val timeMinLimit = remember { mutableStateOf(group?.timeMinLimit?.toString() ?: "0") }
-    val limitEach = remember { mutableStateOf(group?.limitEach ?: false) }
-    val useTimeRange = remember { mutableStateOf(group?.useTimeRange ?: false) }
-    val startHour = remember { mutableStateOf(group?.startHour ?: 0) }
-    val startMinute = remember { mutableStateOf(group?.startMinute ?: 0) }
-    val endHour = remember { mutableStateOf(group?.endHour ?: 23) }
-    val endMinute = remember { mutableStateOf(group?.endMinute ?: 59) }
-    val weekDays = remember { mutableStateOf(group?.weekDays ?: emptyList()) }
-    val cumulativeTime = remember { mutableStateOf(group?.cumulativeTime ?: false) }
-    val useReset = remember { mutableStateOf((group?.resetHours ?: 0) > 0) }
-    val resetHours = remember { mutableStateOf(group?.resetHours?.toString() ?: "0") }
-    val dwm = remember { mutableStateOf(group?.dwm ?: "Daily") }
-    val dwmExpanded = remember { mutableStateOf(false) }
+    val initialGroupName = draft?.groupName ?: group?.name ?: ""
+    val initialUseTimeLimit = draft?.useTimeLimit ?: (group?.timeHrLimit ?: 0 > 0 || group?.timeMinLimit ?: 0 > 0)
+    val initialTimeHrLimit = draft?.timeHrLimit ?: group?.timeHrLimit?.toString() ?: "0"
+    val initialTimeMinLimit = draft?.timeMinLimit ?: group?.timeMinLimit?.toString() ?: "0"
+    val initialLimitEach = draft?.limitEach ?: group?.limitEach ?: false
+    val initialUseTimeRange = draft?.useTimeRange ?: group?.useTimeRange ?: false
+    val initialStartHour = draft?.startHour ?: group?.startHour ?: 0
+    val initialStartMinute = draft?.startMinute ?: group?.startMinute ?: 0
+    val initialEndHour = draft?.endHour ?: group?.endHour ?: 23
+    val initialEndMinute = draft?.endMinute ?: group?.endMinute ?: 59
+    val initialWeekDays = draft?.weekDays ?: group?.weekDays ?: emptyList()
+    val initialCumulativeTime = draft?.cumulativeTime ?: group?.cumulativeTime ?: false
+    val initialUseReset = draft?.useReset ?: ((group?.resetHours ?: 0) > 0)
+    val groupResetMinutes = group?.resetHours ?: 0
+    val initialResetHours = draft?.resetHours ?: (groupResetMinutes / 60).toString()
+    val initialResetMinutes = draft?.resetMinutes ?: (groupResetMinutes % 60).toString()
+
+    val groupName = remember(initialGroupName) { mutableStateOf(initialGroupName) }
+    val useTimeLimit = remember(initialUseTimeLimit) { mutableStateOf(initialUseTimeLimit) }
+    val timeHrLimit = remember(initialTimeHrLimit) { mutableStateOf(initialTimeHrLimit) }
+    val timeMinLimit = remember(initialTimeMinLimit) { mutableStateOf(initialTimeMinLimit) }
+    val limitEach = remember(initialLimitEach) { mutableStateOf(initialLimitEach) }
+    val useTimeRange = remember(initialUseTimeRange) { mutableStateOf(initialUseTimeRange) }
+    val startHour = remember(initialStartHour) { mutableStateOf(initialStartHour) }
+    val startMinute = remember(initialStartMinute) { mutableStateOf(initialStartMinute) }
+    val endHour = remember(initialEndHour) { mutableStateOf(initialEndHour) }
+    val endMinute = remember(initialEndMinute) { mutableStateOf(initialEndMinute) }
+    val weekDays = remember(initialWeekDays) { mutableStateOf(initialWeekDays) }
+    val cumulativeTime = remember(initialCumulativeTime) { mutableStateOf(initialCumulativeTime) }
+    val useReset = remember(initialUseReset) { mutableStateOf(initialUseReset) }
+    val resetHours = remember(initialResetHours) { mutableStateOf(initialResetHours) }
+    val resetMinutes = remember(initialResetMinutes) { mutableStateOf(initialResetMinutes) }
 
     val showNoTimeLimitWarning = remember { mutableStateOf(false) }
     val showStartTimePicker = remember { mutableStateOf(false) }
     val showEndTimePicker = remember { mutableStateOf(false) }
     val isResetHoursError = remember { mutableStateOf(false) }
+
+    fun persistDraft() {
+        viewModel.updateDraft(
+            SetTimeLimitDraft(
+                groupName = groupName.value,
+                useTimeLimit = useTimeLimit.value,
+                timeHrLimit = timeHrLimit.value,
+                timeMinLimit = timeMinLimit.value,
+                limitEach = limitEach.value,
+                useTimeRange = useTimeRange.value,
+                startHour = startHour.value,
+                startMinute = startMinute.value,
+                endHour = endHour.value,
+                endMinute = endMinute.value,
+                weekDays = weekDays.value,
+                cumulativeTime = cumulativeTime.value,
+                useReset = useReset.value,
+                resetHours = resetHours.value,
+                resetMinutes = resetMinutes.value
+            )
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -94,10 +134,9 @@ fun SetTimeLimitsScreen(
                             try {
                                 app.appPackage?.let { pkg ->
                                     val drawable = context.packageManager.getApplicationIcon(pkg)
-                                    val bitmap = android.graphics.Bitmap.createBitmap(
+                                    val bitmap = createBitmap(
                                         drawable.intrinsicWidth.coerceAtLeast(1),
-                                        drawable.intrinsicHeight.coerceAtLeast(1),
-                                        android.graphics.Bitmap.Config.ARGB_8888
+                                        drawable.intrinsicHeight.coerceAtLeast(1)
                                     )
                                     val canvas = android.graphics.Canvas(bitmap)
                                     drawable.setBounds(0, 0, canvas.width, canvas.height)
@@ -133,7 +172,10 @@ fun SetTimeLimitsScreen(
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
-            OutlinedButton(onClick = onEditApps, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = {
+                persistDraft()
+                onEditApps()
+            }, modifier = Modifier.fillMaxWidth()) {
                 Text("Edit Selected Apps")
             }
 
@@ -162,8 +204,11 @@ fun SetTimeLimitsScreen(
                         OutlinedTextField(value = timeMinLimit.value, onValueChange = { timeMinLimit.value = it }, label = { Text("MM") }, modifier = Modifier.weight(1f))
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = limitEach.value, onCheckedChange = { limitEach.value = it })
+                        RadioButton(selected = limitEach.value, onClick = { limitEach.value = true })
                         Text("Limit for EACH app")
+                        Spacer(modifier = Modifier.width(16.dp))
+                        RadioButton(selected = !limitEach.value, onClick = { limitEach.value = false })
+                        Text("Limit for ALL apps")
                     }
                 }
             }
@@ -195,7 +240,7 @@ fun SetTimeLimitsScreen(
 
             Text("Active Days")
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                val days = listOf("M", "T", "W", "T", "F", "S", "S")
+                val days = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
                 days.forEachIndexed { index, day ->
                     val dayIndex = index + 1
                     val selected = weekDays.value.contains(dayIndex)
@@ -214,9 +259,10 @@ fun SetTimeLimitsScreen(
                             containerColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
                             contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
                         ),
+                        contentPadding = PaddingValues(0.dp),
                         modifier = Modifier.size(40.dp)
                     ) {
-                        Text(day)
+                        Text(day, style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -225,32 +271,69 @@ fun SetTimeLimitsScreen(
             Divider()
             Spacer(modifier = Modifier.height(16.dp))
 
-             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = cumulativeTime.value, onCheckedChange = { cumulativeTime.value = it })
-                Text("Cumulative Time")
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(if(cumulativeTime.value) "Add More Time Periodically" else "Reset Limits Periodically")
+                Text("Reset Time Limits Periodically")
                 Spacer(Modifier.weight(1f))
-                Switch(checked = useReset.value, onCheckedChange = { useReset.value = it }, enabled = !cumulativeTime.value)
+                Switch(
+                    checked = useReset.value,
+                    onCheckedChange = {
+                        useReset.value = it
+                        if (!it) {
+                            cumulativeTime.value = false
+                        }
+                    }
+                )
             }
-            Text(if (cumulativeTime.value) "Additional time will be added after each interval. Unused time carries over." else "Reset time limits after a specified number of hours.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            Text(
+                "Automatically resets available time after the interval you set below.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
 
             if(useReset.value) {
                  Column {
                     Spacer(modifier = Modifier.height(16.dp))
-                    OutlinedTextField(value = resetHours.value, onValueChange = { resetHours.value = it }, label = { Text("After how many hours?") }, modifier = Modifier.fillMaxWidth(), isError = isResetHoursError.value, supportingText = { if (isResetHoursError.value) Text("Please enter a valid reset period > 0") })
-                     ExposedDropdownMenuBox(expanded = dwmExpanded.value, onExpandedChange = { dwmExpanded.value = !dwmExpanded.value }) {
-                        OutlinedTextField(value = dwm.value, onValueChange = {}, readOnly = true, trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dwmExpanded.value) }, modifier = Modifier.menuAnchor().fillMaxWidth())
-                        ExposedDropdownMenu(expanded = dwmExpanded.value, onDismissRequest = { dwmExpanded.value = false }) {
-                            listOf("Daily", "Weekly", "Monthly").forEach { selectionOption ->
-                                DropdownMenuItem(text = { Text(selectionOption) }, onClick = { dwm.value = selectionOption; dwmExpanded.value = false })
-                            }
-                        }
+                    Row {
+                        OutlinedTextField(
+                            value = resetHours.value,
+                            onValueChange = { resetHours.value = it },
+                            label = { Text("Reset HH") },
+                            modifier = Modifier.weight(1f),
+                            isError = isResetHoursError.value
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = resetMinutes.value,
+                            onValueChange = { resetMinutes.value = it },
+                            label = { Text("Reset MM") },
+                            modifier = Modifier.weight(1f),
+                            isError = isResetHoursError.value
+                        )
                     }
+                    if (isResetHoursError.value) {
+                        Text(
+                            "Please enter a valid reset period > 0",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cumulative Time")
+                        Spacer(Modifier.weight(1f))
+                        Switch(
+                            checked = cumulativeTime.value,
+                            onCheckedChange = { cumulativeTime.value = it }
+                        )
+                    }
+                    Text(
+                        "If enabled, unused time from each periodic reset carries over and can be used until 12:00 AM that day, or until the time-range end time if a time range is set.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
                 }
             }
 
@@ -260,14 +343,19 @@ fun SetTimeLimitsScreen(
                 OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Spacer(modifier = Modifier.width(16.dp))
                 Button(onClick = {
-                    isResetHoursError.value = useReset.value && (resetHours.value.toIntOrNull() ?: 0) <= 0
+                    val resetHr = resetHours.value.toIntOrNull() ?: 0
+                    val resetMin = resetMinutes.value.toIntOrNull() ?: 0
+                    val resetTotalMinutes = (resetHr * 60) + resetMin
+                    isResetHoursError.value = useReset.value && resetTotalMinutes <= 0
                     if (!isResetHoursError.value) {
+                        val effectiveTimeHrLimit = if (useTimeLimit.value) (timeHrLimit.value.toIntOrNull() ?: 0) else 0
+                        val effectiveTimeMinLimit = if (useTimeLimit.value) (timeMinLimit.value.toIntOrNull() ?: 0) else 0
                         val newGroup = (group ?: AppLimitGroup()).copy(
                             name = if (groupName.value.isNotBlank()) groupName.value else {
                                 if (selectedApps.isNotEmpty()) "${selectedApps[0].appName} Group" else "App Limit Group"
                             },
-                            timeHrLimit = timeHrLimit.value.toIntOrNull() ?: 0,
-                            timeMinLimit = timeMinLimit.value.toIntOrNull() ?: 0,
+                            timeHrLimit = effectiveTimeHrLimit,
+                            timeMinLimit = effectiveTimeMinLimit,
                             limitEach = limitEach.value,
                             weekDays = weekDays.value,
                             useTimeRange = useTimeRange.value,
@@ -275,9 +363,8 @@ fun SetTimeLimitsScreen(
                             startMinute = startMinute.value,
                             endHour = endHour.value,
                             endMinute = endMinute.value,
-                            cumulativeTime = cumulativeTime.value,
-                            resetHours = resetHours.value.toIntOrNull() ?: 0,
-                            dwm = dwm.value,
+                            cumulativeTime = useReset.value && cumulativeTime.value,
+                            resetHours = if (useReset.value) resetTotalMinutes else 0,
                             apps = selectedApps.map {
                                 AppInGroup(
                                     it.appName ?: "",

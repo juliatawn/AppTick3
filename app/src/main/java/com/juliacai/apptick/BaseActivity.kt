@@ -7,6 +7,7 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 
 open class BaseActivity : AppCompatActivity() {
 
@@ -27,11 +28,12 @@ open class BaseActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         val filter = IntentFilter("COLORS_CHANGED")
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
-            registerReceiver(colorChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(colorChangeReceiver, filter)
-        }
+        ContextCompat.registerReceiver(
+            this,
+            colorChangeReceiver,
+            filter,
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     override fun onDestroy() {

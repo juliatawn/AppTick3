@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
 }
@@ -33,6 +34,9 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
     }
 
     buildFeatures {
@@ -110,10 +114,10 @@ dependencies {
     implementation(libs.androidx.room.ktx)
 
     // Gson
-    implementation("com.google.code.gson:gson:2.10.1")
+    implementation(libs.gson)
 
     // Credentials
-    implementation("androidx.credentials:credentials:1.3.0-alpha01")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0-alpha01")
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
 
 }

@@ -22,7 +22,7 @@ fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
         timeRemaining = this.timeRemaining,
         nextResetTime = this.nextResetTime,
         nextAddTime = this.nextAddTime,
-        dwm = this.dwm
+        perAppUsage = this.perAppUsage
     )
 }
 
@@ -46,6 +46,6 @@ fun AppLimitGroup.toEntity(): AppLimitGroupEntity {
         timeRemaining = this.timeRemaining,
         nextResetTime = this.nextResetTime,
         nextAddTime = this.nextAddTime,
-        dwm = this.dwm
+        perAppUsage = this.perAppUsage
     )
 }

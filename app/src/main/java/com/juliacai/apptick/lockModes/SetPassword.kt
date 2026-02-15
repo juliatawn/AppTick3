@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
+import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.juliacai.apptick.premiumMode.DeviceAdmin
 
@@ -41,7 +42,7 @@ class SetPassword : AppCompatActivity() {
                     savePasswordAndFinish(password, confirmPassword, recoveryEmail, enableSettingsLock)
                 },
                 onCancelClick = { finish() },
-                onGoToSettingsClick = {
+                onEnableDeviceAdminClick = {
                     if (isAdminGranted) {
                         showInfoDialog("Device Admin", "Device admin permissions are already enabled.")
                     } else {
@@ -50,7 +51,8 @@ class SetPassword : AppCompatActivity() {
                 },
                 onSetupRecoveryEmailClick = {
                     startActivity(Intent(this, RecoveryEmailSetupActivity::class.java))
-                }
+                },
+                isAdminGranted = isAdminGranted
             )
         }
     }
@@ -74,7 +76,7 @@ class SetPassword : AppCompatActivity() {
         if (enableSettingsLock && !isAdminGranted) {
             showInfoDialog(
                 "Device Admin Required",
-                "To prevent AppTick from being uninstalled, please grant Device Admin permissions using the \"GO TO SETTINGS\" button."
+                "To prevent AppTick from being uninstalled, enable Device Admin first with the \"Enable Device Admin\" button."
             )
             return
         }
@@ -88,6 +90,10 @@ class SetPassword : AppCompatActivity() {
             putBoolean("passUnlocked", false)
         }
 
+        if (enableSettingsLock) {
+            BackgroundChecker.startServiceIfNotRunning(applicationContext)
+        }
+
         Toast.makeText(this, "Password lock enabled", Toast.LENGTH_SHORT).show()
         finish()
     }
@@ -97,7 +103,7 @@ class SetPassword : AppCompatActivity() {
             putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
             putExtra(
                 DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Granting this permission prevents AppTick from being uninstalled, ensuring your app limits remain active."
+                "Granting this permission lets AppTick block Settings uninstall pages while lock mode is active."
             )
         }
         deviceAdminLauncher.launch(intent)

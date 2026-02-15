@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
@@ -18,6 +19,21 @@ class UsageStatsPermissionPage : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (isPermissionGranted) {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                } else {
+                    Toast.makeText(
+                        this@UsageStatsPermissionPage,
+                        "Please grant usage access permission to continue",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
+        })
+
         setContent {
             UsageStatsPermissionScreen(
                 onGoToSettingsClick = {
@@ -53,13 +69,5 @@ class UsageStatsPermissionPage : AppCompatActivity() {
         val intent = Intent(this, NotificationPermissionPage::class.java)
         startActivity(intent)
         finish()
-    }
-
-    override fun onBackPressed() {
-        if (!isPermissionGranted) {
-            Toast.makeText(this, "Please grant usage access permission to continue", Toast.LENGTH_SHORT).show()
-        } else {
-             super.onBackPressed()
-        }
     }
 }

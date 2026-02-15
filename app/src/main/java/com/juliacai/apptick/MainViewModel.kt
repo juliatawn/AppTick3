@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
+import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.data.AppLimitGroupDao
@@ -38,9 +39,11 @@ class MainViewModel(application: Application, private val appLimitGroupDao: AppL
 
     fun updatePremiumStatus(isPremium: Boolean) {
         _isPremium.postValue(isPremium)
-        val editor = getApplication<Application>().getSharedPreferences("groupPrefs", Application.MODE_PRIVATE).edit()
-        editor.putBoolean("premium", isPremium)
-        editor.apply()
+        getApplication<Application>()
+            .getSharedPreferences("groupPrefs", Application.MODE_PRIVATE)
+            .edit {
+                putBoolean("premium", isPremium)
+            }
     }
 
     fun togglePause(group: AppLimitGroup) {

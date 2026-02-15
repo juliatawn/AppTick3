@@ -125,6 +125,68 @@ class BackgroundCheckerTest {
         assertEquals(0L, updatedGroup?.timeRemaining)
     }
 
+    @Test
+    @Throws(Exception::class)
+    fun testPerAppUsageAccumulatesOnlyForForegroundApp() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Two Apps",
+            timeHrLimit = 0,
+            timeMinLimit = 10,
+            limitEach = true,
+            timeRemaining = 600000,
+            apps = listOf(
+                AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"),
+                AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+
+        repeat(3) { service.checkAppLimits("com.instagram.android") }
+        repeat(2) { service.checkAppLimits("com.google.android.youtube") }
+
+        val updatedGroup = dao.getGroup(1)
+        val usage = updatedGroup?.perAppUsage?.associate { it.appPackage to it.usedMillis } ?: emptyMap()
+
+        assertEquals(3000L, usage["com.instagram.android"])
+        assertEquals(2000L, usage["com.google.android.youtube"])
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testLimitEachUsesPerAppUsageThreshold() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Limit Each",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            limitEach = true,
+            timeRemaining = 60000,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+
+        repeat(60) { service.checkAppLimits("com.instagram.android") }
+        val atLimit = dao.getGroup(1)
+        val usedAtLimit = atLimit?.perAppUsage?.firstOrNull { it.appPackage == "com.instagram.android" }?.usedMillis
+        assertEquals(60000L, usedAtLimit)
+        assertEquals(0L, atLimit?.timeRemaining)
+
+        // Once limit is reached, checker should not increase usage further.
+        service.checkAppLimits("com.instagram.android")
+        val afterLimit = dao.getGroup(1)
+        val usedAfterLimit = afterLimit?.perAppUsage?.firstOrNull { it.appPackage == "com.instagram.android" }?.usedMillis
+        assertEquals(60000L, usedAfterLimit)
+    }
+
     private suspend fun clearAllGroups() {
         dao.getAllAppLimitGroupsImmediate().forEach { dao.deleteAppLimitGroup(it) }
     }

@@ -1,7 +1,6 @@
 package com.juliacai.apptick.groups
 
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
@@ -23,11 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.createBitmap
 import com.juliacai.apptick.AppInfo
 
 @Composable
 fun GroupAppItem(appInfo: AppInfo, timeLimit: Int, limitEach: Boolean) {
-    val timeUsed = appInfo.timeUsed // in minutes
+    val derivedTimeUsed = (appInfo.appTimeUse / 60_000L).toInt()
+    val timeUsed = if (appInfo.timeUsed > 0) appInfo.timeUsed else derivedTimeUsed
     val timeRemaining = timeLimit - timeUsed
     val progress = (timeUsed.toFloat() / timeLimit).coerceAtMost(1f)
 
@@ -36,10 +37,9 @@ fun GroupAppItem(appInfo: AppInfo, timeLimit: Int, limitEach: Boolean) {
         try {
             appInfo.appPackage?.let { pkg ->
                 val drawable = context.packageManager.getApplicationIcon(pkg)
-                val bitmap = Bitmap.createBitmap(
+                val bitmap = createBitmap(
                     drawable.intrinsicWidth.coerceAtLeast(1),
-                    drawable.intrinsicHeight.coerceAtLeast(1),
-                    Bitmap.Config.ARGB_8888
+                    drawable.intrinsicHeight.coerceAtLeast(1)
                 )
                 val canvas = Canvas(bitmap)
                 drawable.setBounds(0, 0, canvas.width, canvas.height)

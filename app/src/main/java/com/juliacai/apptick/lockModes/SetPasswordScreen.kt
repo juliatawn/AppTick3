@@ -31,8 +31,9 @@ import androidx.compose.ui.unit.dp
 fun SetPasswordScreen(
     onSaveClick: (String, String, String, Boolean) -> Unit,
     onCancelClick: () -> Unit,
-    onGoToSettingsClick: () -> Unit,
+    onEnableDeviceAdminClick: () -> Unit,
     onSetupRecoveryEmailClick: () -> Unit,
+    isAdminGranted: Boolean
 ) {
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -74,8 +75,16 @@ fun SetPasswordScreen(
                     checked = enableSettingsLock,
                     onCheckedChange = { enableSettingsLock = it }
                 )
-                Text(text = "Enable Settings Lock")
+                Text(text = "Protect uninstall from Settings")
             }
+            Text(
+                text = "When enabled, AppTick blocks the Settings uninstall page while lock mode is active. Device Admin permission is required.",
+                modifier = Modifier.padding(start = 4.dp)
+            )
+            Text(
+                text = if (isAdminGranted) "Device Admin: Enabled" else "Device Admin: Not enabled",
+                modifier = Modifier.padding(start = 4.dp)
+            )
             Spacer(modifier = Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth()) {
                 OutlinedButton(
@@ -91,8 +100,8 @@ fun SetPasswordScreen(
                     Text("Save Password")
                 }
             }
-            Button(onClick = onGoToSettingsClick, modifier = Modifier.fillMaxWidth()) {
-                Text("Go to Settings")
+            Button(onClick = onEnableDeviceAdminClick, modifier = Modifier.fillMaxWidth()) {
+                Text("Enable Device Admin")
             }
             Button(onClick = onSetupRecoveryEmailClick, modifier = Modifier.fillMaxWidth()) {
                 Text("Setup Recovery Email")

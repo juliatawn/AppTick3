@@ -1,7 +1,6 @@
 package com.juliacai.apptick.permissions
 
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Toast
@@ -10,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.net.toUri
 
 class OverlayPermissionPage : AppCompatActivity() {
 
@@ -22,7 +22,7 @@ class OverlayPermissionPage : AppCompatActivity() {
                 onGoToSettingsClick = {
                     val intent = Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName")
+                        "package:$packageName".toUri()
                     )
                     startActivity(intent)
                 },

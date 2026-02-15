@@ -49,7 +49,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
-    val isPremium = remember { groupPrefs.getBoolean("premium", false) }
+    var isPremium by remember { mutableStateOf(groupPrefs.getBoolean("premium", false)) }
 
     var isDarkMode by remember { mutableStateOf(ThemeModeManager.isDarkModeEnabled(context)) }
     var isCustomColorMode by remember { mutableStateOf(ThemeModeManager.isCustomColorModeEnabled(context)) }
@@ -165,7 +165,7 @@ fun SettingsScreen(
                         ThemeModeManager.persistDarkMode(context, it)
                         ThemeModeManager.apply(context)
                         isCustomColorMode = ThemeModeManager.isCustomColorModeEnabled(context)
-                        context.sendBroadcast(Intent("COLORS_CHANGED"))
+                        context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
                     }
                 )
             }
@@ -186,7 +186,7 @@ fun SettingsScreen(
                         ThemeModeManager.persistCustomColorMode(context, it)
                         ThemeModeManager.apply(context)
                         isDarkMode = ThemeModeManager.isDarkModeEnabled(context)
-                        context.sendBroadcast(Intent("COLORS_CHANGED"))
+                        context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
                     }
                 )
             }
@@ -216,7 +216,7 @@ fun SettingsScreen(
                         ThemeModeManager.persistCustomColorMode(context, true)
                         ThemeModeManager.apply(context)
                         isDarkMode = ThemeModeManager.isDarkModeEnabled(context)
-                        context.sendBroadcast(Intent("COLORS_CHANGED"))
+                        context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
                     }
                     onCustomizeColors()
                 },
@@ -251,7 +251,6 @@ fun SettingsScreen(
             // Debug-only premium toggle
             val isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
             if (isDebuggable) {
-                var isPremiumDebug by remember { mutableStateOf(groupPrefs.getBoolean("premium", false)) }
                 Spacer(modifier = Modifier.height(24.dp))
                 Divider()
                 Spacer(modifier = Modifier.height(16.dp))
@@ -263,9 +262,9 @@ fun SettingsScreen(
                 ) {
                     Text("Premium Mode (Debug)", modifier = Modifier.weight(1f))
                     Switch(
-                        checked = isPremiumDebug,
+                        checked = isPremium,
                         onCheckedChange = {
-                            isPremiumDebug = it
+                            isPremium = it
                             groupPrefs.edit { putBoolean("premium", it) }
                         }
                     )

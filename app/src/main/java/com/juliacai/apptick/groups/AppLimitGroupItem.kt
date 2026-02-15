@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
+import androidx.core.graphics.createBitmap
 import com.juliacai.apptick.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -75,10 +76,9 @@ fun AppLimitGroupItem(
                         try {
                             app.appPackage?.let { pkg ->
                                 val drawable = context.packageManager.getApplicationIcon(pkg)
-                                val bitmap = android.graphics.Bitmap.createBitmap(
+                                val bitmap = createBitmap(
                                     drawable.intrinsicWidth.coerceAtLeast(1),
-                                    drawable.intrinsicHeight.coerceAtLeast(1),
-                                    android.graphics.Bitmap.Config.ARGB_8888
+                                    drawable.intrinsicHeight.coerceAtLeast(1)
                                 )
                                 val canvas = android.graphics.Canvas(bitmap)
                                 drawable.setBounds(0, 0, canvas.width, canvas.height)
@@ -126,8 +126,15 @@ private fun formatTimeRangeInfo(group: AppLimitGroup): String {
 }
 
 private fun formatResetInfo(group: AppLimitGroup): String {
-    if (!group.cumulativeTime) return "Resets daily"
-    return "Resets every ${group.resetHours} hours"
+    if (group.resetHours <= 0) return "Resets: Daily"
+    val hours = group.resetHours / 60
+    val minutes = group.resetHours % 60
+    val interval = "${hours}h ${minutes}m"
+    return if (group.cumulativeTime) {
+        "Cumulative: Daily + every $interval"
+    } else {
+        "Resets: Daily every $interval"
+    }
 }
 
 private fun formatDays(days: List<Int>): String {

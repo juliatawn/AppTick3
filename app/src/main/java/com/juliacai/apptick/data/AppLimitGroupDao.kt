@@ -15,6 +15,9 @@ interface AppLimitGroupDao {
     @Query("SELECT COUNT(*) FROM app_limit_groups WHERE paused = 0")
     suspend fun getActiveGroupCount(): Int
 
+    @Query("SELECT COUNT(*) FROM app_limit_groups WHERE paused = 0")
+    fun getActiveGroupCountSync(): Int
+
     @Query("SELECT * FROM app_limit_groups WHERE id = :groupId")
     suspend fun getGroup(groupId: Long): AppLimitGroupEntity?
 

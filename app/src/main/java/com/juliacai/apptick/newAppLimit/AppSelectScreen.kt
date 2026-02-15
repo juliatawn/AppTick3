@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
@@ -39,7 +40,8 @@ import com.juliacai.apptick.deviceApps.AppListViewModel
 @Composable
 fun AppSelectScreen(
     viewModel: AppLimitViewModel,
-    onNextClick: () -> Unit
+    onNextClick: () -> Unit,
+    onCancel: () -> Unit
 ) {
     val appListViewModel: AppListViewModel = viewModel()
     val apps by appListViewModel.filteredApps.collectAsState()
@@ -49,8 +51,11 @@ fun AppSelectScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Select Apps") },
+                title = { Text("Select Apps to Limit") },
                 actions = {
+                    TextButton(onClick = onCancel) {
+                        Text("Cancel")
+                    }
                     IconButton(onClick = onNextClick) {
                         Icon(Icons.Default.ArrowForward, contentDescription = "Next")
                     }
