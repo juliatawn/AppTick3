@@ -22,7 +22,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -30,8 +29,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun NotificationPermissionScreen(
     onGoToSettingsClick: () -> Unit,
-    onBackClick: () -> Unit,
-    isPermissionGranted: Boolean
+    onBackClick: () -> Unit
 ) {
     Scaffold {
         Column(
@@ -73,7 +71,7 @@ fun NotificationPermissionScreen(
             }
             Spacer(modifier = Modifier.height(24.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onBackClick, enabled = isPermissionGranted, modifier = Modifier.weight(1f)) {
+                TextButton(onClick = onBackClick, modifier = Modifier.weight(1f)) {
                     Text("Back")
                 }
                 Button(onClick = onGoToSettingsClick, modifier = Modifier.weight(1f)) {

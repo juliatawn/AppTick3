@@ -1,4 +1,4 @@
-package com.juliacai.apptick
+package com.juliacai.apptick.lockModes
 
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
@@ -12,8 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.juliacai.apptick.lockModes.RecoveryEmailSetupActivity
-import com.juliacai.apptick.lockModes.SetPasswordScreen
+import com.juliacai.apptick.premiumMode.DeviceAdmin
 
 class SetPassword : AppCompatActivity() {
 
@@ -86,6 +85,7 @@ class SetPassword : AppCompatActivity() {
             putBoolean("blockSettings", enableSettingsLock)
             putBoolean("blockMain", true)
             putBoolean("locked", true)
+            putBoolean("passUnlocked", false)
         }
 
         Toast.makeText(this, "Password lock enabled", Toast.LENGTH_SHORT).show()

@@ -25,12 +25,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.juliacai.apptick.AppInfo
+import com.juliacai.apptick.MainViewModel
+import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.GroupAppItem
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -38,10 +42,13 @@ import java.util.Locale
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AppLimitDetailsScreen(
-    group: AppLimitGroup?,
-    onEditClick: () -> Unit,
+    groupId: Long,
+    viewModel: MainViewModel,
     onBackClick: () -> Unit,
+    onEditClick: (AppLimitGroup) -> Unit,
 ) {
+    val group by viewModel.getGroup(groupId).observeAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -59,7 +66,7 @@ fun AppLimitDetailsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onEditClick) {
+            FloatingActionButton(onClick = { group?.let { onEditClick(it) } }) {
                 Icon(Icons.Filled.Edit, contentDescription = "Edit Group")
             }
         }
@@ -78,22 +85,22 @@ fun AppLimitDetailsScreen(
             ) {
                 item {
                     Text(
-                        text = group.name ?: "Unnamed Group",
+                        text = group!!.name ?: "Unnamed Group",
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 item {
-                    TimeRemainingCard(group = group)
+                    TimeRemainingCard(group = group!!)
                 }
 
                 item {
-                    SettingsSummaryCard(group = group)
+                    SettingsSummaryCard(group = group!!)
                 }
 
                 item {
-                    AppUsageCard(group = group)
+                    AppUsageCard(group = group!!)
                 }
             }
         }
@@ -147,10 +154,13 @@ private fun AppUsageCard(group: AppLimitGroup) {
                 items(group.apps) { app ->
                     val appInfo = AppInfo(
                         appName = app.appName,
-                        appPackage = app.appPackage,
-                        appIcon = app.appIcon
+                        appPackage = app.appPackage
                     )
-                    GroupAppItem(appInfo = appInfo, timeLimit = group.timeMinLimit + group.timeHrLimit * 60, limitEach = group.limitEach)
+                    GroupAppItem(
+                        appInfo = appInfo,
+                        timeLimit = group.timeMinLimit + group.timeHrLimit * 60,
+                        limitEach = group.limitEach
+                    )
                 }
             }
         }

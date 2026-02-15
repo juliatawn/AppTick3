@@ -24,5 +24,6 @@ data class AppLimitGroupEntity(
     var cumulativeTime: Boolean = false,
     var timeRemaining: Long = 0,
     var nextResetTime: Long = 0,
-    var nextAddTime: Long = 0
+    var nextAddTime: Long = 0,
+    var dwm: String? = "Daily"
 )

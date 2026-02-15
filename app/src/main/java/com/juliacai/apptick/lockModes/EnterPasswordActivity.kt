@@ -1,4 +1,4 @@
-package com.juliacai.apptick
+package com.juliacai.apptick.lockModes
 
 import android.content.Intent
 import android.content.SharedPreferences
@@ -10,7 +10,8 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
-import com.juliacai.apptick.lockModes.EnterPasswordScreen
+import com.juliacai.apptick.MainActivity
+import com.juliacai.apptick.R
 
 class EnterPasswordActivity : AppCompatActivity() {
 
@@ -20,7 +21,7 @@ class EnterPasswordActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        prefs = getSharedPreferences("ApptickPrefs", MODE_PRIVATE)
+        prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
 
         setupBiometricAuth()
 
@@ -95,7 +96,10 @@ class EnterPasswordActivity : AppCompatActivity() {
     }
 
     private fun unlockAndFinish() {
-        prefs.edit { putBoolean("passUnlocked", true) }
+        prefs.edit {
+            putBoolean("passUnlocked", true)
+            putBoolean("securityKeyUnlocked", false)
+        }
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
         }

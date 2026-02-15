@@ -16,6 +16,7 @@ abstract class AppTickDatabase : RoomDatabase() {
         @Volatile
         private var INSTANCE: AppTickDatabase? = null
 
+        @JvmStatic
         fun getDatabase(context: Context): AppTickDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(

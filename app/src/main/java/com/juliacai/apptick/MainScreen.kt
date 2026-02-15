@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -19,16 +20,18 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import com.juliacai.apptick.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     appLimitGroupCount: Int,
     isPremium: Boolean,
+    hasActiveLockMode: Boolean,
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
+    onPremiumClick: () -> Unit,
     listContent: @Composable () -> Unit
 ) {
     Scaffold(
@@ -36,6 +39,21 @@ fun MainScreen(
             TopAppBar(
                 title = { Text("AppTick") },
                 actions = {
+                    if (hasActiveLockMode) {
+                        IconButton(onClick = onPremiumClick) {
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Unlock lock mode"
+                            )
+                        }
+                    } else if (!isPremium) {
+                        IconButton(onClick = onPremiumClick) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.ic_unlocked),
+                                contentDescription = "Premium"
+                            )
+                        }
+                    }
                     IconButton(onClick = onSettingsClick) {
                         Icon(
                             imageVector = Icons.Default.Settings,

@@ -1,6 +1,6 @@
 package com.juliacai.apptick.data
 
-import com.juliacai.apptick.appLimit.AppLimitGroup
+import com.juliacai.apptick.groups.AppLimitGroup
 
 fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
     return AppLimitGroup(
@@ -21,7 +21,8 @@ fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
         cumulativeTime = this.cumulativeTime,
         timeRemaining = this.timeRemaining,
         nextResetTime = this.nextResetTime,
-        nextAddTime = this.nextAddTime
+        nextAddTime = this.nextAddTime,
+        dwm = this.dwm
     )
 }
 
@@ -44,6 +45,7 @@ fun AppLimitGroup.toEntity(): AppLimitGroupEntity {
         cumulativeTime = this.cumulativeTime,
         timeRemaining = this.timeRemaining,
         nextResetTime = this.nextResetTime,
-        nextAddTime = this.nextAddTime
+        nextAddTime = this.nextAddTime,
+        dwm = this.dwm
     )
 }

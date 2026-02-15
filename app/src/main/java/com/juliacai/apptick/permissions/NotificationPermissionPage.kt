@@ -7,10 +7,12 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.app.NotificationManagerCompat
+import com.juliacai.apptick.MainActivity
 
 class NotificationPermissionPage : AppCompatActivity() {
 
@@ -19,33 +21,38 @@ class NotificationPermissionPage : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            NotificationPermissionScreen(
-                onGoToSettingsClick = { 
-                    val intent = Intent().apply {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                            action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
-                            putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
-                        } else {
-                            action = "android.settings.APP_NOTIFICATION_SETTINGS"
-                            putExtra("app_package", packageName)
-                            putExtra("app_uid", applicationInfo.uid)
-                        }
+            if (isPermissionGranted) {
+                LaunchedEffect(Unit) {
+                    val intent = Intent(this@NotificationPermissionPage, MainActivity::class.java).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                     }
                     startActivity(intent)
-                },
-                onBackClick = { onBackPressedDispatcher.onBackPressed() },
-                isPermissionGranted = isPermissionGranted
-            )
+                    finish()
+                }
+            } else {
+                NotificationPermissionScreen(
+                    onGoToSettingsClick = { 
+                        val intent = Intent().apply {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                action = Settings.ACTION_APP_NOTIFICATION_SETTINGS
+                                putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
+                            } else {
+                                action = "android.settings.APP_NOTIFICATION_SETTINGS"
+                                putExtra("app_package", packageName)
+                                putExtra("app_uid", applicationInfo.uid)
+                            }
+                        }
+                        startActivity(intent)
+                    },
+                    onBackClick = { onBackPressedDispatcher.onBackPressed() }
+                )
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
         isPermissionGranted = NotificationManagerCompat.from(this).areNotificationsEnabled()
-        if (isPermissionGranted) {
-            Toast.makeText(this, "Notification permission granted", Toast.LENGTH_SHORT).show()
-            finish()
-        }
     }
 
     override fun onBackPressed() {

@@ -12,6 +12,9 @@ interface AppLimitGroupDao {
     @Query("SELECT * FROM app_limit_groups")
     suspend fun getAllAppLimitGroupsImmediate(): List<AppLimitGroupEntity>
 
+    @Query("SELECT COUNT(*) FROM app_limit_groups WHERE paused = 0")
+    suspend fun getActiveGroupCount(): Int
+
     @Query("SELECT * FROM app_limit_groups WHERE id = :groupId")
     suspend fun getGroup(groupId: Long): AppLimitGroupEntity?
 
@@ -23,6 +26,9 @@ interface AppLimitGroupDao {
 
     @Update
     suspend fun updateAppLimitGroup(appLimitGroup: AppLimitGroupEntity)
+
+    @Query("UPDATE app_limit_groups SET timeRemaining = :timeRemaining WHERE id = :groupId")
+    suspend fun updateTimeRemaining(groupId: Long, timeRemaining: Long)
 
     @Delete
     suspend fun deleteAppLimitGroup(appLimitGroup: AppLimitGroupEntity)

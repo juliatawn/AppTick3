@@ -26,7 +26,7 @@ class OverlayPermissionPage : AppCompatActivity() {
                     )
                     startActivity(intent)
                 },
-                onBackClick = { onBackPressedDispatcher.onBackPressed() },
+                onNextClick = { moveToNextPermission() },
                 isPermissionGranted = isPermissionGranted
             )
         }
@@ -37,15 +37,12 @@ class OverlayPermissionPage : AppCompatActivity() {
         isPermissionGranted = Settings.canDrawOverlays(this)
         if (isPermissionGranted) {
             Toast.makeText(this, "Overlay permission granted", Toast.LENGTH_SHORT).show()
-            finish()
         }
     }
 
-    override fun onBackPressed() {
-        if (isPermissionGranted) {
-            super.onBackPressed()
-        } else {
-            Toast.makeText(this, "Please grant overlay permission to continue", Toast.LENGTH_SHORT).show()
-        }
+    private fun moveToNextPermission() {
+        val intent = Intent(this, UsageStatsPermissionPage::class.java)
+        startActivity(intent)
+        finish()
     }
 }

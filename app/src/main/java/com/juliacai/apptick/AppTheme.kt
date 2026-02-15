@@ -11,12 +11,22 @@ object AppTheme {
     private const val KEY_ACCENT_COLOR = "custom_accent_color"
     private const val KEY_BACKGROUND_COLOR = "custom_background_color"
     private const val KEY_ICON_COLOR = "custom_icon_color"
+    private const val KEY_APP_ICON_COLOR_MODE = "app_icon_color_mode"
+    private const val DEFAULT_PRIMARY_COLOR = "#3949AB"
 
     fun applyTheme(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
-        val primaryColor = prefs.getInt(KEY_PRIMARY_COLOR, Color.parseColor("#3949AB"))
-        val backgroundColor = prefs.getInt(KEY_BACKGROUND_COLOR, Color.WHITE)
+        val customModeEnabled = ThemeModeManager.isCustomColorModeEnabled(context)
+        val primaryColor = if (customModeEnabled) {
+            prefs.getInt(KEY_PRIMARY_COLOR, Color.parseColor(DEFAULT_PRIMARY_COLOR))
+        } else {
+            Color.parseColor(DEFAULT_PRIMARY_COLOR)
+        }
+        val backgroundColor = if (customModeEnabled) {
+            prefs.getInt(KEY_BACKGROUND_COLOR, Color.WHITE)
+        } else {
+            if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
+        }
 
         if (context is AppCompatActivity) {
             context.window.decorView.setBackgroundColor(backgroundColor)
@@ -26,8 +36,11 @@ object AppTheme {
     }
 
     fun getPrimaryColor(context: Context): Int {
+        if (!ThemeModeManager.isCustomColorModeEnabled(context)) {
+            return Color.parseColor(DEFAULT_PRIMARY_COLOR)
+        }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_PRIMARY_COLOR, Color.parseColor("#3949AB"))
+        return prefs.getInt(KEY_PRIMARY_COLOR, Color.parseColor(DEFAULT_PRIMARY_COLOR))
     }
 
     fun getAccentColor(context: Context): Int {
@@ -36,12 +49,38 @@ object AppTheme {
     }
 
     fun getBackgroundColor(context: Context): Int {
+        if (!ThemeModeManager.isCustomColorModeEnabled(context)) {
+            return if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
+        }
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_BACKGROUND_COLOR, Color.WHITE)
+        if (prefs.contains(KEY_BACKGROUND_COLOR)) {
+            return prefs.getInt(KEY_BACKGROUND_COLOR, Color.WHITE)
+        }
+        return if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
     }
 
     fun getIconColor(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_ICON_COLOR, Color.WHITE)
+        val premiumEnabled = prefs.getBoolean("premium", false)
+        val iconColorMode = prefs.getString(KEY_APP_ICON_COLOR_MODE, "system") ?: "system"
+        val useCustomIconColor =
+            ThemeModeManager.isCustomColorModeEnabled(context) && premiumEnabled && iconColorMode == "custom"
+
+        if (useCustomIconColor) {
+            return prefs.getInt(KEY_ICON_COLOR, Color.BLACK)
+        }
+
+        val background = getBackgroundColor(context)
+        return if (androidx.core.graphics.ColorUtils.calculateLuminance(background) > 0.5) {
+            Color.BLACK
+        } else {
+            Color.WHITE
+        }
+    }
+
+    private fun isSystemDarkMode(context: Context): Boolean {
+        val currentNightMode =
+            context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK
+        return currentNightMode == android.content.res.Configuration.UI_MODE_NIGHT_YES
     }
 }

@@ -7,7 +7,6 @@ import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
-import androidx.appcompat.app.AppCompatDelegate
 
 open class BaseActivity : AppCompatActivity() {
 
@@ -23,15 +22,16 @@ open class BaseActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         sharedPreferences = getSharedPreferences("AppTickPrefs", MODE_PRIVATE)
-        val isDarkMode = sharedPreferences.getBoolean(PREF_DARK_MODE, false)
-        AppCompatDelegate.setDefaultNightMode(
-            if (isDarkMode) AppCompatDelegate.MODE_NIGHT_YES else AppCompatDelegate.MODE_NIGHT_NO
-        )
+        ThemeModeManager.apply(this)
 
         super.onCreate(savedInstanceState)
 
         val filter = IntentFilter("COLORS_CHANGED")
-        registerReceiver(colorChangeReceiver, filter)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(colorChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(colorChangeReceiver, filter)
+        }
     }
 
     override fun onDestroy() {

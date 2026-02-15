@@ -34,9 +34,7 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-//    kotlinOptions {
-//        jvmTarget = "17"
-//    }
+
     buildFeatures {
         compose = true
         dataBinding = true
@@ -58,9 +56,21 @@ dependencies {
     implementation(libs.androidx.navigation.fragment.ktx)
     implementation(libs.androidx.navigation.ui.ktx)
     implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.tracing)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.mockito.kotlin)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.androidx.arch.core.testing)
+    testImplementation(libs.truth)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.turbine)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.truth)
+    androidTestImplementation(libs.androidx.arch.core.testing)
+
 
     // Jetpack Compose BOM
     val composeBom = platform(libs.androidx.compose.bom)
@@ -73,6 +83,9 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     debugImplementation(libs.androidx.compose.ui.tooling)
     implementation(libs.androidx.activity.compose)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
 
     // Billing
     implementation(libs.billing.ktx)
@@ -98,5 +111,9 @@ dependencies {
 
     // Gson
     implementation("com.google.code.gson:gson:2.10.1")
+
+    // Credentials
+    implementation("androidx.credentials:credentials:1.3.0-alpha01")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0-alpha01")
 
 }

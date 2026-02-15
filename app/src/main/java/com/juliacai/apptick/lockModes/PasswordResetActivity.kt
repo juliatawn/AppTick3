@@ -1,4 +1,4 @@
-package com.juliacai.apptick
+package com.juliacai.apptick.lockModes
 
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -32,9 +32,10 @@ class PasswordResetActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+        val resetMode = intent.getStringExtra("reset_mode") ?: "password"
 
         setContent {
-            PasswordResetScreen(prefs = prefs) { 
+            PasswordResetScreen(prefs = prefs, resetMode = resetMode) {
                 finish()
             }
         }
@@ -42,13 +43,15 @@ class PasswordResetActivity : AppCompatActivity() {
 }
 
 @Composable
-fun PasswordResetScreen(prefs: SharedPreferences, onPasswordReset: () -> Unit) {
+fun PasswordResetScreen(prefs: SharedPreferences, resetMode: String, onPasswordReset: () -> Unit) {
     val context = LocalContext.current
     var email by remember { mutableStateOf(TextFieldValue("")) }
+    val isSecurityKeyReset = resetMode == "security_key"
+    val title = if (isSecurityKeyReset) "Reset Security Key" else "Reset Password"
 
     Column(modifier = Modifier.padding(16.dp)) {
         Text(
-            text = "Reset Password",
+            text = title,
             style = MaterialTheme.typography.headlineMedium,
             modifier = Modifier.padding(bottom = 32.dp)
         )
@@ -68,7 +71,11 @@ fun PasswordResetScreen(prefs: SharedPreferences, onPasswordReset: () -> Unit) {
 
         Button(
             onClick = {
-                val recoveryEmail = prefs.getString("recovery_email", null)
+                val recoveryEmail = if (isSecurityKeyReset) {
+                    prefs.getString("recovery_email_security_key", null)
+                } else {
+                    prefs.getString("recovery_email", null)
+                }
 
                 if (email.text.isEmpty()) {
                     Toast.makeText(context, "Please enter your email", Toast.LENGTH_SHORT).show()
@@ -81,11 +88,22 @@ fun PasswordResetScreen(prefs: SharedPreferences, onPasswordReset: () -> Unit) {
                 }
 
                 if (email.text.equals(recoveryEmail, ignoreCase = true)) {
-                    prefs.edit {
-                        remove("password")
-                        putBoolean("locked", false)
+                    if (isSecurityKeyReset) {
+                        prefs.edit {
+                            remove("security_key_value")
+                            remove("recovery_email_security_key")
+                            putBoolean("security_key_enabled", false)
+                            putBoolean("securityKeyUnlocked", false)
+                        }
+                        Toast.makeText(context, "Security key has been reset.", Toast.LENGTH_LONG).show()
+                    } else {
+                        prefs.edit {
+                            remove("password")
+                            putBoolean("locked", false)
+                            putBoolean("passUnlocked", false)
+                        }
+                        Toast.makeText(context, "Password has been reset. You can now set a new one.", Toast.LENGTH_LONG).show()
                     }
-                    Toast.makeText(context, "Password has been reset. You can now set a new one.", Toast.LENGTH_LONG).show()
                     onPasswordReset()
                 } else {
                     Toast.makeText(context, "The email does not match the recovery email.", Toast.LENGTH_LONG).show()

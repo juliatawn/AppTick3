@@ -2,10 +2,13 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+<!--    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>-->
 
     <application
         android:allowBackup="true"
@@ -26,10 +29,58 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name="com.juliacai.apptick.permissions.OverlayPermissionPage" />
-        <activity android:name=".newAppLimit.TabTimeLimitActivity" />
-        <activity android:name=".SettingsActivity" />
+        <activity android:name=".permissions.OverlayPermissionPage" />
+<!--        <activity android:name=".newAppLimit.TabTimeLimitActivity" />-->
         <activity android:name=".permissions.NotificationPermissionPage" />
+        <activity android:name=".permissions.UsageStatsPermissionPage" />
+<!--        <activity android:name=".premiumMode.PremiumModeActivity" />-->
+<!--        <activity android:name=".appLimit.AppLimitDetailsActivity" />-->
+        <activity android:name=".block.BlockWindowActivity" />
+        <activity android:name=".deviceApps.AppSearchActivity" />
+        <activity android:name=".lockModes.EnterPasswordActivity" />
+        <activity android:name=".lockModes.EnterSecurityKeyActivity" />
+        <activity android:name=".lockModes.PasswordResetActivity" />
+        <activity android:name=".lockModes.RecoveryEmailSetupActivity" />
+        <activity android:name=".lockModes.SetPassword" />
+        <activity android:name=".permissions.UsagePermissionPage" />
+        <activity android:name=".premiumMode.LockdownModeActivity" />
+        <activity android:name=".premiumMode.LockdownTimeActivity" />
+        <activity android:name=".premiumMode.ColorCustomizationActivity" />
+        <activity android:name=".deviceApps.GroupPage" />
+
+<!--        <service-->
+<!--            android:name=".backgroundProcesses.BackgroundChecker"-->
+<!--            android:enabled="true"-->
+<!--            android:exported="false" />-->
+
+        <service android:name=".backgroundProcesses.BackgroundChecker" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Checks what app you are using so your app limit can block it when appropriate"/>
+        </service>
+
+        <receiver
+            android:name=".Receiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.SCREEN_ON" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".premiumMode.DeviceAdmin"
+            android:description="@string/app_name"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin_policies" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

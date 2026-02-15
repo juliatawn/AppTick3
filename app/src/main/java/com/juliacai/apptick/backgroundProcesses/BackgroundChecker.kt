@@ -1,7 +1,6 @@
 package com.juliacai.apptick.backgroundProcesses
 
 import android.app.ActivityManager
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -9,29 +8,33 @@ import android.app.Service
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
+import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 import android.graphics.Color
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.juliacai.apptick.BlockWindowActivity
+import com.juliacai.apptick.block.BlockWindowActivity
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.R
-import com.juliacai.apptick.appLimit.AppLimitGroup
 import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.toDomainModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 class BackgroundChecker : Service() {
 
@@ -73,7 +76,18 @@ class BackgroundChecker : Service() {
         }
 
         createNotification()
-        startForeground(notif_ID, mBuilder.build())
+
+        // Source - https://stackoverflow.com/a/77530440
+// Posted by Ondřej Skalický, modified by community. See post 'Timeline' for change history
+// Retrieved 2026-02-07, License - CC BY-SA 4.0
+
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            startForeground(notif_ID, mBuilder.build())
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE){
+            startForeground(notif_ID, mBuilder.build(), FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+
+        }
+
 
         blockIntent = Intent(this, BlockWindowActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -112,23 +126,43 @@ class BackgroundChecker : Service() {
             Log.i("BG_Service", "Background processing started")
             while (isActive) {
                 if (isScreenOn) {
-                    checkAppLimits()
+                    checkAppLimits(getForegroundApp())
                 }
                 delay(BACKGROUND_CHECK_INTERVAL)
             }
         }
     }
 
-    private suspend fun checkAppLimits() {
+    suspend fun checkAppLimits(foregroundApp: String?) {
         val allGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
-        val foregroundApp = getForegroundApp()
+        val activeGroups = allGroups.filterNot { it.paused }
 
-        for (group in allGroups) {
-            if (group.paused) continue
+        if (activeGroups.isEmpty()) {
+            stopSelf()
+            return
+        }
+
+        for (entity in activeGroups) {
+            val group = entity.toDomainModel()
+
+            // Check if the limit is active for today/now
+            if (!com.juliacai.apptick.appLimit.AppLimitEvaluator.shouldCheckLimit(group)) continue
 
             val appInGroup = group.apps.firstOrNull { it.appPackage == foregroundApp }
             if (appInGroup != null) {
-                // TODO: Implement app limit checking logic
+                val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+                val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
+
+                if (com.juliacai.apptick.appLimit.AppLimitEvaluator.isLimitReached(group)) {
+                    blockIntent.putExtra("app_name", appInGroup.appName)
+                    blockIntent.putExtra("app_package", appInGroup.appPackage)
+                    blockIntent.putExtra("group_name", group.name)
+                    blockIntent.putExtra("time_spent", limitInMillis)
+                    startActivity(blockIntent)
+                } else {
+                    val newTimeRemaining = (group.timeRemaining - BACKGROUND_CHECK_INTERVAL).coerceAtLeast(0L)
+                    appLimitGroupDao.updateTimeRemaining(group.id, newTimeRemaining)
+                }
             }
         }
     }
@@ -168,7 +202,7 @@ class BackgroundChecker : Service() {
         val contentText = if (currentApp != null) {
             val group = appLimitGroupDao.getGroupContainingApp(currentApp)
             if (group != null) {
-                "Monitoring: ${group.name}"
+                formatGroupNotificationText(group.timeHrLimit, group.timeMinLimit, group.timeRemaining, group.nextResetTime)
             } else {
                 "AppTick is running..."
             }
@@ -177,6 +211,28 @@ class BackgroundChecker : Service() {
         }
         mBuilder.setContentText(contentText)
         mNotificationManager.notify(notif_ID, mBuilder.build())
+    }
+
+    private fun formatGroupNotificationText(
+        limitHours: Int,
+        limitMinutes: Int,
+        timeRemainingMillis: Long,
+        nextResetTimeMillis: Long
+    ): String {
+        val totalLimitMinutes = limitHours * 60 + limitMinutes
+        val totalLimitMillis = TimeUnit.MINUTES.toMillis(totalLimitMinutes.toLong())
+        val timeUsedMillis = (totalLimitMillis - timeRemainingMillis).coerceAtLeast(0L)
+
+        val usedMinutes = TimeUnit.MILLISECONDS.toMinutes(timeUsedMillis)
+        val remainingMinutes = TimeUnit.MILLISECONDS.toMinutes(timeRemainingMillis.coerceAtLeast(0L))
+        val resetText = if (nextResetTimeMillis > 0L) {
+            val formatter = SimpleDateFormat("EEE h:mm a", Locale.getDefault())
+            formatter.format(Date(nextResetTimeMillis))
+        } else {
+            "unscheduled"
+        }
+
+        return "Used ${usedMinutes}m, left ${remainingMinutes}m, resets $resetText"
     }
 
     private fun getForegroundApp(): String? {
@@ -233,11 +289,7 @@ class BackgroundChecker : Service() {
         fun startServiceIfNotRunning(context: Context) {
             if (!isServiceRunning(context)) {
                 val intent = Intent(context, BackgroundChecker::class.java)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    context.startForegroundService(intent)
-                } else {
-                    context.startService(intent)
-                }
+                context.startForegroundService(intent)
             }
         }
     }
