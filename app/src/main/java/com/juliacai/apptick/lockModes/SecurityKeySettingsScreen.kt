@@ -1,0 +1,143 @@
+package com.juliacai.apptick.lockModes
+
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.core.content.edit
+import androidx.navigation.NavController
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SecurityKeySettingsScreen(navController: NavController) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
+
+    var securityKey by remember { mutableStateOf("") }
+    var confirmSecurityKey by remember { mutableStateOf("") }
+    var recoveryEmail by remember { mutableStateOf(prefs.getString("recovery_email_security_key", "") ?: "") }
+    var lockSettings by remember { mutableStateOf(prefs.getBoolean("blockSettings", false)) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Security Key Settings") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                }
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Set a security key to unlock AppTick limit changes.")
+
+            OutlinedTextField(
+                value = securityKey,
+                onValueChange = { securityKey = it },
+                label = { Text("Security Key") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = confirmSecurityKey,
+                onValueChange = { confirmSecurityKey = it },
+                label = { Text("Confirm Security Key") },
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = recoveryEmail,
+                onValueChange = { recoveryEmail = it },
+                label = { Text("Recovery Email") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = lockSettings, onCheckedChange = { lockSettings = it })
+                Text("Lock device settings app")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    if (securityKey.isBlank()) {
+                        Toast.makeText(context, "Enter a security key", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (securityKey != confirmSecurityKey) {
+                        Toast.makeText(context, "Security keys do not match", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+
+                    prefs.edit {
+                        putBoolean("security_key_enabled", true)
+                        putString("security_key_value", securityKey)
+                        putString("recovery_email_security_key", recoveryEmail)
+                        putBoolean("blockSettings", lockSettings)
+                        putBoolean("locked", true)
+                        putBoolean("securityKeyUnlocked", false)
+                    }
+                    Toast.makeText(context, "Security key enabled", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Save Security Key")
+            }
+
+            Button(
+                onClick = {
+                    prefs.edit {
+                        remove("security_key_value")
+                        remove("recovery_email_security_key")
+                        putBoolean("security_key_enabled", false)
+                        putBoolean("securityKeyUnlocked", false)
+                    }
+                    Toast.makeText(context, "Security key disabled", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Disable Security Key")
+            }
+        }
+    }
+}
