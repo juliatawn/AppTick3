@@ -43,6 +43,7 @@ local.properties
 .gradle/
 build/
 */build/
+.gradle-local
 
 # Keystore files
 *.jks
@@ -50,6 +51,12 @@ build/
 
 # Google Services (original file keeps firebase credentials)
 google-services.json
+
+# Gemini / AI agent
+.gemini/
+
+# Local JDK installations (managed by Android Studio)
+jdks/
 
 # C/C++
 .cxx/

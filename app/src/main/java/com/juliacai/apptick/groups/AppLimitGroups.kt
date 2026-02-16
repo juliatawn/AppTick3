@@ -1,6 +1,5 @@
 package com.juliacai.apptick.groups
 
-import android.content.SharedPreferences
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,14 +12,16 @@ fun AppLimitGroupsList(
     groups: List<AppLimitGroup>,
     onGroupClick: (AppLimitGroup) -> Unit,
     onLockClick: (AppLimitGroup) -> Unit,
+    isEditingLocked: Boolean,
     onPauseToggle: (AppLimitGroup) -> Unit = {},
-    onDelete: (AppLimitGroup) -> Unit = {},
-    prefs: SharedPreferences
+    onDelete: (AppLimitGroup) -> Unit = {}
 ) {
     LazyColumn(modifier = Modifier.padding(8.dp)) {
         items(groups, key = { it.id }) { group ->
             AppLimitGroupItem(
                 group = group,
+                isEditingLocked = isEditingLocked,
+                onLockClick = onLockClick,
                 onPauseToggle = onPauseToggle,
                 onEdit = onGroupClick,
                 onDelete = onDelete,

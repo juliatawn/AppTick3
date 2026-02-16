@@ -253,8 +253,7 @@ private fun formatResetType(group: AppLimitGroup): String {
 }
 
 private fun formatDays(days: List<Int>): String {
-    if (days.isEmpty()) return "Every Day"
-    if (days.size == 7) return "Every Day"
+    if (days.isEmpty() || days.size == 7) return "Everyday"
     val dayNames = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     return days.sorted().mapNotNull { dayNames.getOrNull(it - 1) }.joinToString(", ")
 }

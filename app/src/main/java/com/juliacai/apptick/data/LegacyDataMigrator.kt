@@ -83,7 +83,7 @@ class LegacyDataMigrator(
                 endMinute = 0,
                 cumulativeTime = false,
                 timeRemaining = 0,
-                nextResetTime = 0,
+                nextResetTime = com.juliacai.apptick.TimeManager.nextMidnight(),
                 nextAddTime = 0,
                 perAppUsage = emptyList<AppUsageStat>()
             )

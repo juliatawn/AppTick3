@@ -26,7 +26,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,7 +77,11 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                     IconButton(onClick = { navController.popBackStack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
             )
         }
     ) { paddingValues ->
@@ -165,6 +171,7 @@ fun SecurityKeySettingsScreen(navController: NavController) {
 
                     prefs.edit {
                         putBoolean("security_key_enabled", true)
+                        putString("active_lock_mode", "SECURITY_KEY")
                         putString("security_key_value", securityKey)
                         putString("recovery_email_security_key", recoveryEmail)
                         putBoolean("blockSettings", lockSettings)
@@ -188,6 +195,7 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                         remove("security_key_value")
                         remove("recovery_email_security_key")
                         putBoolean("security_key_enabled", false)
+                        putString("active_lock_mode", "NONE")
                         putBoolean("securityKeyUnlocked", false)
                     }
                     Toast.makeText(context, "Security key disabled", Toast.LENGTH_SHORT).show()

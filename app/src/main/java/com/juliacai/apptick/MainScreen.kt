@@ -3,6 +3,7 @@ package com.juliacai.apptick
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -78,7 +79,11 @@ fun MainScreen(
                 .padding(paddingValues)
                 .fillMaxSize()
         ) {
-            Box(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
                 if (appLimitGroupCount == 0) {
                     Text(
                         text = stringResource(id = R.string.add_app_limit),

@@ -13,7 +13,9 @@ import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppUsageStat
+import com.juliacai.apptick.TimeManager
 import kotlinx.coroutines.launch
+import java.util.concurrent.TimeUnit
 import kotlin.math.max
 
 class AppLimitViewModel(application: Application) : AndroidViewModel(application) {
@@ -122,9 +124,23 @@ internal fun normalizeGroupForPersistence(
         else -> remainingFromUsage
     }
 
+    // Set nextResetTime if unset (0) or already in the past.
+    val now = System.currentTimeMillis()
+    val normalizedNextReset = if (group.nextResetTime > now) {
+        // Already has a valid future reset time — keep it.
+        group.nextResetTime
+    } else if (group.resetHours > 0) {
+        // Periodic mode: next reset = now + reset interval.
+        now + TimeUnit.HOURS.toMillis(group.resetHours.toLong())
+    } else {
+        // Daily mode: next reset = 12:00 AM tomorrow.
+        TimeManager.nextMidnight(now)
+    }
+
     return group.copy(
         perAppUsage = normalizedUsage,
-        timeRemaining = normalizedTimeRemaining
+        timeRemaining = normalizedTimeRemaining,
+        nextResetTime = normalizedNextReset
     )
 }
 

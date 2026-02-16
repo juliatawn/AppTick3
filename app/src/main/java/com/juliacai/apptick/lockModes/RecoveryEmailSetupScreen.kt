@@ -12,7 +12,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,7 +34,15 @@ fun RecoveryEmailSetupScreen(
     var email by remember { mutableStateOf(initialEmail) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Set Recovery Email") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Set Recovery Email") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
     ) {
         Column(
             modifier = Modifier

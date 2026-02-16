@@ -67,4 +67,20 @@ class MainActivityTest {
         composeTestRule.onNodeWithContentDescription("Open lock modes").performClick()
         assertThat(clicked).isTrue()
     }
+
+    @Test
+    fun mainScreenShowsLockedIconWhenLockModesLocked() {
+        composeTestRule.setContent {
+            MainScreen(
+                appLimitGroupCount = 0,
+                showLockedIcon = true,
+                onFabClick = {},
+                onSettingsClick = {},
+                onPremiumClick = {},
+                listContent = {}
+            )
+        }
+
+        composeTestRule.onNodeWithContentDescription("Lock modes are locked").assertIsDisplayed()
+    }
 }

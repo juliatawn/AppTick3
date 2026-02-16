@@ -20,6 +20,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 
 @ExperimentalCoroutinesApi
 @RunWith(AndroidJUnit4::class)
@@ -36,6 +37,7 @@ class BackgroundCheckerTest {
     @Before
     fun setup() = runTest {
         context = InstrumentationRegistry.getInstrumentation().targetContext
+        BackgroundChecker.disableBackgroundLoopForTesting = true
         database = AppTickDatabase.getDatabase(context)
         dao = database.appLimitGroupDao()
         clearAllGroups()
@@ -45,6 +47,7 @@ class BackgroundCheckerTest {
     @Throws(IOException::class)
     fun tearDown() = runTest {
         clearAllGroups()
+        BackgroundChecker.disableBackgroundLoopForTesting = false
     }
 
     @Test
@@ -62,6 +65,7 @@ class BackgroundCheckerTest {
         val intent = Intent(context, BackgroundChecker::class.java)
         val binder = serviceRule.bindService(intent)
         val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
 
         service.checkAppLimits("com.instagram.android")
 
@@ -84,6 +88,7 @@ class BackgroundCheckerTest {
         val intent = Intent(context, BackgroundChecker::class.java)
         val binder = serviceRule.bindService(intent)
         val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
 
         service.checkAppLimits("com.instagram.android")
 
@@ -107,6 +112,7 @@ class BackgroundCheckerTest {
         val intent = Intent(context, BackgroundChecker::class.java)
         val binder = serviceRule.bindService(intent)
         val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
 
         // Simulate app usage for 30 seconds
         for (i in 0..29) {
@@ -145,6 +151,7 @@ class BackgroundCheckerTest {
         val intent = Intent(context, BackgroundChecker::class.java)
         val binder = serviceRule.bindService(intent)
         val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
 
         repeat(3) { service.checkAppLimits("com.instagram.android") }
         repeat(2) { service.checkAppLimits("com.google.android.youtube") }
@@ -173,6 +180,7 @@ class BackgroundCheckerTest {
         val intent = Intent(context, BackgroundChecker::class.java)
         val binder = serviceRule.bindService(intent)
         val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
 
         repeat(60) { service.checkAppLimits("com.instagram.android") }
         val atLimit = dao.getGroup(1)
@@ -189,5 +197,84 @@ class BackgroundCheckerTest {
 
     private suspend fun clearAllGroups() {
         dao.getAllAppLimitGroupsImmediate().forEach { dao.deleteAppLimitGroup(it) }
+    }
+
+    // ── Daily / Periodic reset integration tests ─────────────────────────
+
+    @Test
+    @Throws(Exception::class)
+    fun testDailyResetResetsUsageAndAdvancesToMidnight() = runTest {
+        // Group with an expired nextResetTime (1 hour ago) and some used time
+        val now = System.currentTimeMillis()
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Daily Reset Test",
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            timeRemaining = 10_000L,  // almost exhausted
+            nextResetTime = now - 3_600_000L,  // expired 1 hour ago
+            resetHours = 0,  // daily mode
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android")),
+            perAppUsage = listOf(
+                com.juliacai.apptick.groups.AppUsageStat("com.instagram.android", 3_590_000L)
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
+
+        // This call should trigger a reset
+        service.checkAppLimits("com.other.app")
+
+        val updated = dao.getGroup(1)!!
+        // timeRemaining should be restored to the full 1-hour limit
+        assertEquals(3_600_000L, updated.timeRemaining)
+        // Per-app usage should be zeroed
+        val igUsage = updated.perAppUsage.firstOrNull { it.appPackage == "com.instagram.android" }
+        assertEquals(0L, igUsage?.usedMillis ?: -1L)
+        // nextResetTime should be in the future (midnight tomorrow)
+        assertTrue(updated.nextResetTime > System.currentTimeMillis())
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testPeriodicResetAdvancesByInterval() = runTest {
+        // Group with periodic reset (every 2 hours) and expired nextResetTime
+        val now = System.currentTimeMillis()
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Periodic Reset Test",
+            timeHrLimit = 0,
+            timeMinLimit = 30,
+            timeRemaining = 5_000L,
+            nextResetTime = now - 60_000L,  // expired 1 minute ago
+            resetHours = 2,  // periodic: every 2 hours
+            apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")),
+            perAppUsage = listOf(
+                com.juliacai.apptick.groups.AppUsageStat("com.google.android.youtube", 1_795_000L)
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
+
+        service.checkAppLimits("com.other.app")
+
+        val updated = dao.getGroup(1)!!
+        // timeRemaining should be restored to full 30-minute limit
+        assertEquals(1_800_000L, updated.timeRemaining)
+        // Usage zeroed
+        val ytUsage = updated.perAppUsage.firstOrNull { it.appPackage == "com.google.android.youtube" }
+        assertEquals(0L, ytUsage?.usedMillis ?: -1L)
+        // nextResetTime should be roughly 2 hours from now
+        val twoHoursMs = 2 * 60 * 60 * 1000L
+        assertTrue(updated.nextResetTime >= now + twoHoursMs - 5000)
+        assertTrue(updated.nextResetTime <= now + twoHoursMs + 5000)
     }
 }

@@ -13,6 +13,8 @@ fun AppLimitScreen(groups: List<AppLimitGroup>) {
         items(groups) { group ->
             AppLimitGroupItem(
                 group = group,
+                isEditingLocked = false,
+                onLockClick = {},
                 onPauseToggle = {},
                 onEdit = {},
                 onDelete = {}

@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.timepicker.MaterialTimePicker
@@ -23,6 +24,7 @@ class LockdownTimeActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppTheme.applyTheme(this)
         setContent {
             LockdownTimeScreen(
                 selectedDate = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(selectedDateTime.time),
@@ -80,11 +82,6 @@ class LockdownTimeActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         prefs.edit {
             putLong("lockdown_end_time", selectedDateTime.timeInMillis)
-            putBoolean("lockdown_enabled", true)
-            remove("lockdown_weekly_used_key")
-        }
-        if (prefs.getBoolean("blockSettings", false)) {
-            BackgroundChecker.startServiceIfNotRunning(applicationContext)
         }
 
         val formattedDateTime = SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault()).format(selectedDateTime.time)

@@ -1,6 +1,5 @@
 package com.juliacai.apptick.backgroundProcesses
 
-import android.app.ActivityManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -11,23 +10,27 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
-import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
 import android.graphics.Color
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
-import com.juliacai.apptick.block.BlockWindowActivity
+import com.juliacai.apptick.LockMode
 import com.juliacai.apptick.LockPolicy
 import com.juliacai.apptick.LockState
+import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.R
+import com.juliacai.apptick.block.BlockWindowActivity
 import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.AppLimitGroupEntity
 import com.juliacai.apptick.data.toDomainModel
+import com.juliacai.apptick.TimeManager
 import com.juliacai.apptick.groups.AppUsageStat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,20 +49,26 @@ class BackgroundChecker : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
-    private lateinit var mUsageStatsManager: UsageStatsManager
+    private lateinit var usageStatsManager: UsageStatsManager
     private lateinit var blockIntent: Intent
 
     private val db by lazy { AppTickDatabase.getDatabase(this) }
     private val appLimitGroupDao by lazy { db.appLimitGroupDao() }
 
+    // Cached groups from Flow — updated automatically when DB changes
+    @Volatile
+    private var cachedGroups: List<AppLimitGroupEntity> = emptyList()
+
     private lateinit var mBuilder: NotificationCompat.Builder
-    private var notif_ID: Int = 1
+    private var notifId: Int = 1
     private var mReceiver: BroadcastReceiver? = null
     private lateinit var mNotificationManager: NotificationManager
 
     private var lastForegroundApp: String? = null
-    private var lastUpdateTime: Long = 0
+    private var lastCheckElapsed: Long = 0L
     private var isScreenOn = true
+    @Volatile
+    private var fixedElapsedForTestingMs: Long? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): BackgroundChecker = this@BackgroundChecker
@@ -70,28 +79,28 @@ class BackgroundChecker : Service() {
     override fun onCreate() {
         super.onCreate()
 
+        // Initialize UsageStatsManager once
+        usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
                 val field = ServiceInfo::class.java.getField("FOREGROUND_SERVICE_TYPE_SPECIAL_USE")
-                notif_ID = field.getInt(null)
+                notifId = field.getInt(null)
             } catch (e: Exception) {
-                println("WARNING - unable to set notif_ID to FOREGROUND_SERVICE_TYPE_SPECIAL_CASE: $e")
+                println("WARNING - unable to set notifId to FOREGROUND_SERVICE_TYPE_SPECIAL_CASE: $e")
             }
         }
 
         createNotification()
 
         // Source - https://stackoverflow.com/a/77530440
-// Posted by Ondřej Skalický, modified by community. See post 'Timeline' for change history
-// Retrieved 2026-02-07, License - CC BY-SA 4.0
-
+        // Posted by Ondřej Skalický, modified by community. See post 'Timeline' for change history
+        // Retrieved 2026-02-07, License - CC BY-SA 4.0
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            startForeground(notif_ID, mBuilder.build())
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE){
-            startForeground(notif_ID, mBuilder.build(), FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
-
+            startForeground(notifId, mBuilder.build())
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(notifId, mBuilder.build(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         }
-
 
         blockIntent = Intent(this, BlockWindowActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -103,52 +112,68 @@ class BackgroundChecker : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
         })
 
-        startNotificationUpdates()
-        startBackgroundChecks()
+        isRunning = true
+        if (!disableBackgroundLoopForTesting) {
+            observeGroups()
+            startUnifiedLoop()
+        }
     }
 
-    private fun startNotificationUpdates() {
-        serviceScope.launch {
-            while (isActive) {
-                val currentApp = getForegroundApp()
-                val currentTime = System.currentTimeMillis()
+    // ── Flow-based group caching ──────────────────────────────────────────────
 
-                if (currentApp != lastForegroundApp ||
-                    (currentTime - lastUpdateTime) >= NOTIFICATION_UPDATE_INTERVAL
-                ) {
-                    updateNotification(currentApp)
-                    lastForegroundApp = currentApp
-                    lastUpdateTime = currentTime
-                }
-                delay(NOTIFICATION_UPDATE_INTERVAL)
+    private fun observeGroups() {
+        serviceScope.launch {
+            appLimitGroupDao.getAllAppLimitGroupsFlow().collect { groups ->
+                cachedGroups = groups
             }
         }
     }
 
-    private fun startBackgroundChecks() {
+    // ── Single unified loop (replaces two separate loops) ─────────────────────
+
+    private fun startUnifiedLoop() {
         serviceScope.launch {
-            Log.i("BG_Service", "Background processing started")
+            Log.i("BG_Service", "Unified background loop started")
+            lastCheckElapsed = SystemClock.elapsedRealtime()
+
             while (isActive) {
                 if (isScreenOn) {
-                    checkAppLimits(getForegroundApp())
+                    val foregroundApp = getForegroundApp()
+                    checkAppLimits(foregroundApp)
+                    updateNotification(foregroundApp)
                 }
-                delay(BACKGROUND_CHECK_INTERVAL)
+                delay(CHECK_INTERVAL)
             }
         }
     }
 
+    // ── Core limit checking ───────────────────────────────────────────────────
+
     suspend fun checkAppLimits(foregroundApp: String?) {
+        // Never block AppTick itself — the user must always be able to manage their limits
+        if (foregroundApp == packageName) return
+
         if (shouldBlockSettingsAccess(foregroundApp)) {
             blockIntent.putExtra("app_name", "Settings")
             blockIntent.putExtra("app_package", foregroundApp)
             blockIntent.putExtra("group_name", "Uninstall Protection")
             blockIntent.putExtra("app_time_spent", 0L)
             blockIntent.putExtra("group_time_spent", 0L)
+            blockIntent.putExtra("time_limit_minutes", 0)
+            blockIntent.putExtra("limit_each", false)
             startActivity(blockIntent)
             return
         }
 
-        val allGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
+        val allGroups = if (fixedElapsedForTestingMs != null) {
+            // Deterministic test mode: read latest DB snapshot every check.
+            appLimitGroupDao.getAllAppLimitGroupsImmediate()
+        } else if (cachedGroups.isNotEmpty()) {
+            cachedGroups
+        } else {
+            // Fallback for early direct calls (e.g., tests) before Flow cache emits.
+            appLimitGroupDao.getAllAppLimitGroupsImmediate()
+        }
         val activeGroups = allGroups.filterNot { it.paused }
 
         if (activeGroups.isEmpty() && !shouldKeepServiceForSettingsProtection()) {
@@ -156,8 +181,43 @@ class BackgroundChecker : Service() {
             return
         }
 
+        // Measure real elapsed time since last check
+        val elapsed = fixedElapsedForTestingMs ?: run {
+            val now = SystemClock.elapsedRealtime()
+            val delta = (now - lastCheckElapsed).coerceIn(0L, MAX_ELAPSED)
+            lastCheckElapsed = now
+            delta
+        }
+
         for (entity in activeGroups) {
             val group = entity.toDomainModel()
+
+            // ── Daily / periodic reset check ──────────────────────────────────
+            val now = System.currentTimeMillis()
+            if (group.nextResetTime in 1..now) {
+                val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+                val fullLimitMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
+
+                // Advance nextResetTime based on mode
+                val newNextReset = if (group.resetHours > 0) {
+                    now + TimeUnit.HOURS.toMillis(group.resetHours.toLong())
+                } else {
+                    TimeManager.nextMidnight(now)
+                }
+
+                // Zero out all per-app usage
+                val clearedUsage = group.perAppUsage.map { it.copy(usedMillis = 0L) }
+
+                appLimitGroupDao.updateAppLimitGroup(
+                    entity.copy(
+                        timeRemaining = fullLimitMillis,
+                        nextResetTime = newNextReset,
+                        perAppUsage = clearedUsage
+                    )
+                )
+                // Skip further processing this tick — fresh data will be seen next loop
+                continue
+            }
 
             // Check if the limit is active for today/now
             if (!com.juliacai.apptick.appLimit.AppLimitEvaluator.shouldCheckLimit(group)) continue
@@ -181,18 +241,21 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("group_name", group.name)
                     blockIntent.putExtra("app_time_spent", appTimeSpent)
                     blockIntent.putExtra("group_time_spent", groupTimeSpent)
+                    blockIntent.putExtra("time_limit_minutes", group.timeHrLimit * 60 + group.timeMinLimit)
+                    blockIntent.putExtra("limit_each", group.limitEach)
                     startActivity(blockIntent)
                 } else {
-                    val newAppUsage = (currentAppUsage + BACKGROUND_CHECK_INTERVAL).coerceAtMost(limitInMillis)
+                    // Use real elapsed time instead of assuming exact interval
+                    val newAppUsage = (currentAppUsage + elapsed).coerceAtMost(limitInMillis)
                     usageMap[appInGroup.appPackage] = newAppUsage
 
                     val newTimeRemaining = if (group.limitEach) {
                         (limitInMillis - newAppUsage).coerceAtLeast(0L)
                     } else {
-                        (group.timeRemaining - BACKGROUND_CHECK_INTERVAL).coerceAtLeast(0L)
+                        (group.timeRemaining - elapsed).coerceAtLeast(0L)
                     }
 
-                    val updatedUsage = usageMap.entries.map { AppUsageStat(it.key, it.value) }
+                    val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
                     appLimitGroupDao.updateAppLimitGroup(
                         entity.copy(
                             timeRemaining = newTimeRemaining,
@@ -204,6 +267,7 @@ class BackgroundChecker : Service() {
         }
     }
 
+    // ── Notification ──────────────────────────────────────────────────────────
 
     private fun createNotification() {
         val channelId = "APPTICK_CHANNEL"
@@ -237,12 +301,14 @@ class BackgroundChecker : Service() {
 
     private suspend fun updateNotification(currentApp: String?) {
         val contentText = if (currentApp != null) {
-            val groupEntity = appLimitGroupDao.getGroupContainingApp(currentApp)
+            val groupEntity = cachedGroups.firstOrNull { entity ->
+                entity.apps.any { it.appPackage == currentApp }
+            }
             if (groupEntity != null) {
                 val group = groupEntity.toDomainModel()
                 val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
                 val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
-                val appUsed = group.perAppUsage.firstOrNull { it.appPackage == currentApp }?.usedMillis ?: 0L
+                val appUsed = group.perAppUsage.firstOrNull { stat -> stat.appPackage == currentApp }?.usedMillis ?: 0L
                 val timeRemaining = if (group.limitEach) {
                     (limitInMillis - appUsed).coerceAtLeast(0L)
                 } else {
@@ -256,7 +322,7 @@ class BackgroundChecker : Service() {
             "AppTick is running..."
         }
         mBuilder.setContentText(contentText)
-        mNotificationManager.notify(notif_ID, mBuilder.build())
+        mNotificationManager.notify(notifId, mBuilder.build())
     }
 
     private fun formatGroupNotificationText(
@@ -281,10 +347,11 @@ class BackgroundChecker : Service() {
         return "Used ${usedMinutes}m, left ${remainingMinutes}m, resets $resetText"
     }
 
+    // ── Foreground app detection ──────────────────────────────────────────────
+
     private fun getForegroundApp(): String? {
-        mUsageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         val time = System.currentTimeMillis()
-        val events = mUsageStatsManager.queryEvents(time - 1000 * 5, time)
+        val events = usageStatsManager.queryEvents(time - 1000 * 5, time)
         var foregroundApp: String? = null
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
@@ -296,18 +363,23 @@ class BackgroundChecker : Service() {
         return foregroundApp
     }
 
+    // ── Service lifecycle ─────────────────────────────────────────────────────
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i("BG_Service", "Service starting...")
-        startForeground(notif_ID, mBuilder.build())
+        startForeground(notifId, mBuilder.build())
         return START_STICKY
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        isRunning = false
         serviceJob.cancel()
         unregisterReceiver(mReceiver)
         Log.i("BG_Service", "Service destroyed")
     }
+
+    // ── Screen state ──────────────────────────────────────────────────────────
 
     inner class ScreenStateReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -318,27 +390,35 @@ class BackgroundChecker : Service() {
         }
     }
 
-    companion object {
-        private const val BACKGROUND_CHECK_INTERVAL = 1000L // 1 second
-        private const val NOTIFICATION_UPDATE_INTERVAL = 3000L // 3 seconds
+    // ── Companion: service running check (no deprecated API) ──────────────────
 
-        fun isServiceRunning(context: Context): Boolean {
-            val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-            for (service in manager.getRunningServices(Int.MAX_VALUE)) {
-                if (BackgroundChecker::class.java.name == service.service.className) {
-                    return true
-                }
-            }
-            return false
-        }
+    companion object {
+        private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
+        private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
+
+        @Volatile
+        var isRunning = false
+            private set
+
+        @VisibleForTesting
+        @Volatile
+        var disableBackgroundLoopForTesting: Boolean = false
 
         fun startServiceIfNotRunning(context: Context) {
-            if (!isServiceRunning(context)) {
+            if (!isRunning) {
                 val intent = Intent(context, BackgroundChecker::class.java)
                 context.startForegroundService(intent)
             }
         }
     }
+
+    @VisibleForTesting
+    fun setFixedElapsedForTesting(elapsedMs: Long?) {
+        fixedElapsedForTestingMs = elapsedMs?.coerceAtLeast(0L)
+        lastCheckElapsed = SystemClock.elapsedRealtime()
+    }
+
+    // ── Settings/uninstall protection ─────────────────────────────────────────
 
     private fun shouldBlockSettingsAccess(foregroundApp: String?): Boolean {
         val packageName = foregroundApp ?: return false
@@ -349,12 +429,8 @@ class BackgroundChecker : Service() {
         val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
         if (lockDecision.shouldClearExpiredLockdown) {
             prefs.edit {
-                putBoolean("lockdown_enabled", false)
+                putString("active_lock_mode", "NONE")
                 remove("lockdown_end_time")
-                remove("lockdown_weekly_day")
-                remove("lockdown_weekly_hour")
-                remove("lockdown_weekly_minute")
-                remove("lockdown_one_time_change")
                 remove("lockdown_weekly_used_key")
             }
         }
@@ -380,18 +456,32 @@ class BackgroundChecker : Service() {
     }
 
     private fun readLockState(prefs: android.content.SharedPreferences): LockState {
+        val activeMode = try {
+            LockMode.valueOf(prefs.getString("active_lock_mode", "NONE") ?: "NONE")
+        } catch (_: Exception) {
+            LockMode.NONE
+        }
+        val lockdownType = try {
+            LockdownType.valueOf(prefs.getString("lockdown_type", "ONE_TIME") ?: "ONE_TIME")
+        } catch (_: Exception) {
+            LockdownType.ONE_TIME
+        }
+        val recurringDays = prefs.getString("lockdown_recurring_days", "")
+            .orEmpty()
+            .split(",")
+            .mapNotNull { it.toIntOrNull() }
+            .filter { it in 1..7 }
+            .distinct()
+            .sorted()
+
         return LockState(
-            hasPassword = !prefs.getString("password", null).isNullOrBlank(),
-            hasSecurityKey = prefs.getBoolean("security_key_enabled", false),
+            activeLockMode = activeMode,
             passwordUnlocked = prefs.getBoolean("passUnlocked", false),
             securityKeyUnlocked = prefs.getBoolean("securityKeyUnlocked", false),
-            lockdownEnabled = prefs.getBoolean("lockdown_enabled", false),
+            lockdownType = lockdownType,
             lockdownEndTimeMillis = prefs.getLong("lockdown_end_time", 0L),
-            lockdownOneTimeWeeklyChange = prefs.getBoolean("lockdown_one_time_change", false),
-            lockdownWeeklyDayMondayOne = prefs.getInt("lockdown_weekly_day", -1),
-            lockdownWeeklyHour = prefs.getInt("lockdown_weekly_hour", -1),
-            lockdownWeeklyMinute = prefs.getInt("lockdown_weekly_minute", -1),
-            lockdownWeeklyUsedKey = prefs.getString("lockdown_weekly_used_key", null)
+            lockdownRecurringDays = recurringDays,
+            lockdownRecurringUsedKey = prefs.getString("lockdown_weekly_used_key", null)
         )
     }
 

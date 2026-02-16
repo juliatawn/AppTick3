@@ -9,6 +9,9 @@
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 <!--    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>-->
 
     <application
@@ -30,20 +33,35 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".permissions.OverlayPermissionPage" />
+
 <!--        <activity android:name=".newAppLimit.TabTimeLimitActivity" />-->
-        <activity android:name=".permissions.NotificationPermissionPage" />
-        <activity android:name=".permissions.UsageStatsPermissionPage" />
+
 <!--        <activity android:name=".premiumMode.PremiumModeActivity" />-->
 <!--        <activity android:name=".appLimit.AppLimitDetailsActivity" />-->
-        <activity android:name=".block.BlockWindowActivity" />
+        <activity
+            android:name=".block.BlockWindowActivity"
+            android:taskAffinity="com.juliacai.apptick.block"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
         <activity android:name=".deviceApps.AppSearchActivity" />
         <activity android:name=".lockModes.EnterPasswordActivity" />
         <activity android:name=".lockModes.EnterSecurityKeyActivity" />
-        <activity android:name=".lockModes.PasswordResetActivity" />
+        <activity
+            android:name=".lockModes.PasswordResetActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="apptick.page.link"
+                    android:scheme="https" />
+            </intent-filter>
+        </activity>
         <activity android:name=".lockModes.RecoveryEmailSetupActivity" />
         <activity android:name=".lockModes.SetPassword" />
-        <activity android:name=".permissions.UsagePermissionPage" />
+
         <activity android:name=".premiumMode.LockdownModeActivity" />
         <activity android:name=".premiumMode.LockdownTimeActivity" />
         <activity android:name=".premiumMode.ColorCustomizationActivity" />

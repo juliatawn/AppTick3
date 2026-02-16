@@ -16,7 +16,8 @@ class TimeManagerTest {
     }
 
     @Test
-    fun `test get next reset time`() {
+    fun `test get next reset time with periodic reset`() {
+        // Periodic mode: resetHours > 0 → next reset = now + resetHours
         val group = AppLimitGroup(resetHours = 24)
         val timeManager = TimeManager(group)
         val nextResetTime = timeManager.getNextResetTime()
@@ -38,14 +39,63 @@ class TimeManagerTest {
     }
 
     @Test
-    fun `test get next reset time when resetHours is zero`() {
-        val before = System.currentTimeMillis()
+    fun `test get next reset time when resetHours is zero defaults to midnight`() {
+        // Daily mode: resetHours == 0 → next reset = midnight tomorrow
         val group = AppLimitGroup(resetHours = 0)
         val timeManager = TimeManager(group)
         val nextResetTime = timeManager.getNextResetTime()
-        val after = System.currentTimeMillis()
 
-        assertThat(nextResetTime).isAtLeast(before - 1000L)
-        assertThat(nextResetTime).isAtMost(after + 1000L)
+        val expectedMidnight = TimeManager.nextMidnight()
+        assertThat(nextResetTime).isEqualTo(expectedMidnight)
+    }
+
+    // ── nextMidnight() tests ─────────────────────────────────────────────
+    @Test
+    fun `nextMidnight returns epoch millis at midnight tomorrow`() {
+        val now = System.currentTimeMillis()
+        val midnight = TimeManager.nextMidnight(now)
+
+        val cal = Calendar.getInstance().apply { timeInMillis = midnight }
+        assertThat(cal.get(Calendar.HOUR_OF_DAY)).isEqualTo(0)
+        assertThat(cal.get(Calendar.MINUTE)).isEqualTo(0)
+        assertThat(cal.get(Calendar.SECOND)).isEqualTo(0)
+        assertThat(cal.get(Calendar.MILLISECOND)).isEqualTo(0)
+        // Must be strictly after now
+        assertThat(midnight).isGreaterThan(now)
+    }
+
+    @Test
+    fun `nextMidnight called just before midnight still returns NEXT midnight`() {
+        // Simulate 11:59 PM today
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val midnight = TimeManager.nextMidnight(cal.timeInMillis)
+
+        // Should be tomorrow 12:00 AM
+        val resultCal = Calendar.getInstance().apply { timeInMillis = midnight }
+        val inputDayOfYear = cal.get(Calendar.DAY_OF_YEAR)
+        val resultDayOfYear = resultCal.get(Calendar.DAY_OF_YEAR)
+
+        assertThat(resultDayOfYear).isEqualTo((inputDayOfYear % 366) + 1)
+        assertThat(resultCal.get(Calendar.HOUR_OF_DAY)).isEqualTo(0)
+    }
+
+    @Test
+    fun `nextMidnight called at midnight returns NEXT day midnight`() {
+        // Simulate exactly 12:00 AM today
+        val cal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val midnight = TimeManager.nextMidnight(cal.timeInMillis)
+
+        // Should be tomorrow 12:00 AM (24 hours later)
+        assertThat(midnight).isEqualTo(cal.timeInMillis + 24 * 60 * 60 * 1000L)
     }
 }

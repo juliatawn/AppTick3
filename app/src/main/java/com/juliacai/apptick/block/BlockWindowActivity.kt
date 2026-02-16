@@ -7,10 +7,17 @@ import android.graphics.drawable.Drawable
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.drawable.toBitmap
 import com.juliacai.apptick.AppTheme
+import com.juliacai.apptick.ThemeModeManager
 
 class BlockWindowActivity : AppCompatActivity() {
 
@@ -19,6 +26,7 @@ class BlockWindowActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+        AppTheme.applyTheme(this)
         updateContent(intent)
     }
 
@@ -33,24 +41,69 @@ class BlockWindowActivity : AppCompatActivity() {
         val groupName = intent.getStringExtra("group_name") ?: ""
         val appTimeSpent = intent.getLongExtra("app_time_spent", 0)
         val groupTimeSpent = intent.getLongExtra("group_time_spent", 0)
+        val timeLimitMinutes = intent.getIntExtra("time_limit_minutes", 0)
+        val limitEach = intent.getBooleanExtra("limit_each", false)
         val isPremium = prefs.getBoolean("premium", false)
         val primaryColor = AppTheme.getPrimaryColor(this)
         val backgroundColor = AppTheme.getBackgroundColor(this)
+        val iconColor = AppTheme.getIconColor(this)
+
+        val composePrimary = Color(primaryColor)
+        val composeBackground = Color(backgroundColor)
+        val composeIconColor = Color(iconColor)
+
+        val customColorModeEnabled = ThemeModeManager.isCustomColorModeEnabled(this)
+        val isSystemDark = AppTheme.isSystemDarkMode(this)
+
+        val colorScheme = if (customColorModeEnabled) {
+            val useDarkScheme = composeBackground.luminance() < 0.4f
+            if (useDarkScheme) {
+                darkColorScheme(
+                    primary = composePrimary,
+                    background = composeBackground,
+                    surface = composeBackground,
+                    primaryContainer = composePrimary.copy(alpha = 0.24f),
+                    onPrimary = composeIconColor,
+                    onBackground = composeIconColor,
+                    onSurface = composeIconColor,
+                    onPrimaryContainer = composeIconColor
+                )
+            } else {
+                lightColorScheme(
+                    primary = composePrimary,
+                    background = composeBackground,
+                    surface = composeBackground,
+                    primaryContainer = composePrimary.copy(alpha = 0.16f),
+                    onPrimary = composeIconColor,
+                    onBackground = composeIconColor,
+                    onSurface = composeIconColor,
+                    onPrimaryContainer = composeIconColor
+                )
+            }
+        } else if (isSystemDark) {
+            darkColorScheme()
+        } else {
+            lightColorScheme()
+        }
 
         val appIcon = getAppIcon(appPackage)
 
         setContent {
-            val iconPainter = appIcon?.toBitmap()?.asImageBitmap()?.let { BitmapPainter(it) }
-            BlockWindowScreen(
-                appName = appName,
-                appIcon = iconPainter,
-                groupName = groupName,
-                appTimeSpent = appTimeSpent,
-                groupTimeSpent = groupTimeSpent,
-                isPremium = isPremium,
-                primaryColor = androidx.compose.ui.graphics.Color(primaryColor),
-                backgroundColor = androidx.compose.ui.graphics.Color(backgroundColor)
-            )
+            MaterialTheme(colorScheme = colorScheme) {
+                val iconPainter = appIcon?.toBitmap()?.asImageBitmap()?.let { BitmapPainter(it) }
+                BlockWindowScreen(
+                    appName = appName,
+                    appIcon = iconPainter,
+                    groupName = groupName,
+                    appTimeSpent = appTimeSpent,
+                    groupTimeSpent = groupTimeSpent,
+                    timeLimitMinutes = timeLimitMinutes,
+                    limitEach = limitEach,
+                    isPremium = isPremium,
+                    primaryColor = composePrimary,
+                    backgroundColor = composeBackground
+                )
+            }
         }
     }
 

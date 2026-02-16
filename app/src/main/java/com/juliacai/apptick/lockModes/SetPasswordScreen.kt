@@ -15,7 +15,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -33,7 +35,9 @@ fun SetPasswordScreen(
     onCancelClick: () -> Unit,
     onEnableDeviceAdminClick: () -> Unit,
     onSetupRecoveryEmailClick: () -> Unit,
-    isAdminGranted: Boolean
+    onDisableClick: () -> Unit,
+    isAdminGranted: Boolean,
+    isPasswordEnabled: Boolean
 ) {
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -41,7 +45,15 @@ fun SetPasswordScreen(
     var enableSettingsLock by remember { mutableStateOf(false) }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Set Password") }) }
+        topBar = {
+            TopAppBar(
+                title = { Text("Set Password") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
     ) {
         Column(
             modifier = Modifier
@@ -98,6 +110,14 @@ fun SetPasswordScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("Save Password")
+                }
+            }
+            if (isPasswordEnabled) {
+                Button(
+                    onClick = onDisableClick,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Disable Password Mode")
                 }
             }
             Button(onClick = onEnableDeviceAdminClick, modifier = Modifier.fillMaxWidth()) {

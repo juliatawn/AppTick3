@@ -13,6 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.premiumMode.DeviceAdmin
 
 class SetPassword : AppCompatActivity() {
@@ -36,24 +37,34 @@ class SetPassword : AppCompatActivity() {
         adminComponentName = ComponentName(this, DeviceAdmin::class.java)
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
 
+        AppTheme.applyTheme(this)
+        
+        val isPasswordEnabled = prefs.getString("active_lock_mode", "NONE") == "PASSWORD"
+
         setContent {
-            SetPasswordScreen(
-                onSaveClick = { password, confirmPassword, recoveryEmail, enableSettingsLock ->
-                    savePasswordAndFinish(password, confirmPassword, recoveryEmail, enableSettingsLock)
-                },
-                onCancelClick = { finish() },
-                onEnableDeviceAdminClick = {
-                    if (isAdminGranted) {
-                        showInfoDialog("Device Admin", "Device admin permissions are already enabled.")
-                    } else {
-                        requestDeviceAdmin()
-                    }
-                },
-                onSetupRecoveryEmailClick = {
-                    startActivity(Intent(this, RecoveryEmailSetupActivity::class.java))
-                },
-                isAdminGranted = isAdminGranted
-            )
+            AppTheme {
+                SetPasswordScreen(
+                    onSaveClick = { password, confirmPassword, recoveryEmail, enableSettingsLock ->
+                        savePasswordAndFinish(password, confirmPassword, recoveryEmail, enableSettingsLock)
+                    },
+                    onCancelClick = { finish() },
+                    onEnableDeviceAdminClick = {
+                        if (isAdminGranted) {
+                            showInfoDialog("Device Admin", "Device admin permissions are already enabled.")
+                        } else {
+                            requestDeviceAdmin()
+                        }
+                    },
+                    onSetupRecoveryEmailClick = {
+                        startActivity(Intent(this, RecoveryEmailSetupActivity::class.java))
+                    },
+                    onDisableClick = {
+                        disablePasswordMode()
+                    },
+                    isAdminGranted = isAdminGranted,
+                    isPasswordEnabled = isPasswordEnabled
+                )
+            }
         }
     }
 
@@ -84,6 +95,7 @@ class SetPassword : AppCompatActivity() {
         prefs.edit {
             putString("password", passFirst)
             putString("recovery_email", recoveryEmail)
+            putString("active_lock_mode", "PASSWORD")
             putBoolean("blockSettings", enableSettingsLock)
             putBoolean("blockMain", true)
             putBoolean("locked", true)
@@ -95,6 +107,19 @@ class SetPassword : AppCompatActivity() {
         }
 
         Toast.makeText(this, "Password lock enabled", Toast.LENGTH_SHORT).show()
+        finish()
+    }
+    
+    private fun disablePasswordMode() {
+        prefs.edit {
+            putString("active_lock_mode", "NONE")
+            putBoolean("locked", false)
+            putBoolean("passUnlocked", true)
+            // Optionally remove password? User might want to keep it filled for next time?
+            // "Disable Password Mode" -> removes the lock.
+            // Requirement doesn't say delete password. 
+        }
+        Toast.makeText(this, "Password lock disabled", Toast.LENGTH_SHORT).show()
         finish()
     }
 

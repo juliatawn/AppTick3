@@ -11,9 +11,34 @@ class TimeManager(private val group: AppLimitGroup) {
         return TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
     }
 
+    /**
+     * Returns the next reset time for this group.
+     * - If a periodic reset interval is set (`resetHours > 0`), returns `now + resetHours` in millis.
+     * - Otherwise, defaults to midnight (12:00 AM) tomorrow in the device's timezone.
+     */
     fun getNextResetTime(): Long {
-        val calendar = Calendar.getInstance()
-        calendar.add(Calendar.HOUR_OF_DAY, group.resetHours)
-        return calendar.timeInMillis
+        return if (group.resetHours > 0) {
+            System.currentTimeMillis() + TimeUnit.HOURS.toMillis(group.resetHours.toLong())
+        } else {
+            nextMidnight()
+        }
+    }
+
+    companion object {
+        /**
+         * Returns epoch millis for 12:00 AM tomorrow in the device's default timezone.
+         * Uses [Calendar] which inherits the device locale and timezone automatically.
+         */
+        fun nextMidnight(nowMillis: Long = System.currentTimeMillis()): Long {
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
+                add(Calendar.DAY_OF_YEAR, 1)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            return cal.timeInMillis
+        }
     }
 }

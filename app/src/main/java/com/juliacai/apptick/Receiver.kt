@@ -42,12 +42,8 @@ class Receiver : BroadcastReceiver() {
         val decision = LockPolicy.evaluateEditingLock(readLockState(prefs), now)
         if (decision.shouldClearExpiredLockdown) {
             prefs.edit {
-                putBoolean("lockdown_enabled", false)
+                putString("active_lock_mode", "NONE")
                 remove("lockdown_end_time")
-                remove("lockdown_weekly_day")
-                remove("lockdown_weekly_hour")
-                remove("lockdown_weekly_minute")
-                remove("lockdown_one_time_change")
                 remove("lockdown_weekly_used_key")
             }
         }
@@ -55,18 +51,32 @@ class Receiver : BroadcastReceiver() {
     }
 
     private fun readLockState(prefs: android.content.SharedPreferences): LockState {
+        val activeMode = try {
+            LockMode.valueOf(prefs.getString("active_lock_mode", "NONE") ?: "NONE")
+        } catch (_: Exception) {
+            LockMode.NONE
+        }
+        val lockdownType = try {
+            LockdownType.valueOf(prefs.getString("lockdown_type", "ONE_TIME") ?: "ONE_TIME")
+        } catch (_: Exception) {
+            LockdownType.ONE_TIME
+        }
+        val recurringDays = prefs.getString("lockdown_recurring_days", "")
+            .orEmpty()
+            .split(",")
+            .mapNotNull { it.toIntOrNull() }
+            .filter { it in 1..7 }
+            .distinct()
+            .sorted()
+
         return LockState(
-            hasPassword = !prefs.getString("password", null).isNullOrBlank(),
-            hasSecurityKey = prefs.getBoolean("security_key_enabled", false),
+            activeLockMode = activeMode,
             passwordUnlocked = prefs.getBoolean("passUnlocked", false),
             securityKeyUnlocked = prefs.getBoolean("securityKeyUnlocked", false),
-            lockdownEnabled = prefs.getBoolean("lockdown_enabled", false),
+            lockdownType = lockdownType,
             lockdownEndTimeMillis = prefs.getLong("lockdown_end_time", 0L),
-            lockdownOneTimeWeeklyChange = prefs.getBoolean("lockdown_one_time_change", false),
-            lockdownWeeklyDayMondayOne = prefs.getInt("lockdown_weekly_day", -1),
-            lockdownWeeklyHour = prefs.getInt("lockdown_weekly_hour", -1),
-            lockdownWeeklyMinute = prefs.getInt("lockdown_weekly_minute", -1),
-            lockdownWeeklyUsedKey = prefs.getString("lockdown_weekly_used_key", null)
+            lockdownRecurringDays = recurringDays,
+            lockdownRecurringUsedKey = prefs.getString("lockdown_weekly_used_key", null)
         )
     }
 }

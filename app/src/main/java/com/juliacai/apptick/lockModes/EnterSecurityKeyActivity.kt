@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.edit
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.MainActivity
 
 class EnterSecurityKeyActivity : AppCompatActivity() {
@@ -18,20 +19,24 @@ class EnterSecurityKeyActivity : AppCompatActivity() {
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
 
+        AppTheme.applyTheme(this)
+
         setContent {
-            EnterPasswordScreen(
-                onPasswordSubmit = { verifySecurityKey(it) },
-                onBiometricClick = { },
-                onUsbKeyClick = { },
-                onForgotPasswordClick = {
-                    startActivity(
-                        Intent(this, PasswordResetActivity::class.java)
-                            .putExtra("reset_mode", "security_key")
-                    )
-                },
-                isBiometricVisible = false,
-                isUsbKeyVisible = false
-            )
+            AppTheme {
+                EnterPasswordScreen(
+                    onPasswordSubmit = { verifySecurityKey(it) },
+                    onBiometricClick = { },
+                    onUsbKeyClick = { },
+                    onForgotPasswordClick = {
+                        startActivity(
+                            Intent(this, PasswordResetActivity::class.java)
+                                .putExtra("reset_mode", "security_key")
+                        )
+                    },
+                    isBiometricVisible = false,
+                    isUsbKeyVisible = false
+                )
+            }
         }
     }
 

@@ -2,12 +2,16 @@ package com.juliacai.apptick.data
 
 import androidx.lifecycle.LiveData
 import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AppLimitGroupDao {
 
     @Query("SELECT * FROM app_limit_groups ORDER BY name ASC")
     fun getAllAppLimitGroups(): LiveData<List<AppLimitGroupEntity>>
+
+    @Query("SELECT * FROM app_limit_groups")
+    fun getAllAppLimitGroupsFlow(): Flow<List<AppLimitGroupEntity>>
 
     @Query("SELECT * FROM app_limit_groups")
     suspend fun getAllAppLimitGroupsImmediate(): List<AppLimitGroupEntity>

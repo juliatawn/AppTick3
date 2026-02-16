@@ -30,21 +30,21 @@ ALWAYS BE SURE TO CHECK THIS FILE FOR GUIDELINES IN HOW TO DO THE CODE
 
 ## App Flow Functionality
 - First time the user installs the app then they open it, there is a loading page of the logo AppTick
-- Then they quickly see a activity asking for overlay permissions, after they turn that on they see an activity for app usage stat permissions, then another activity for notification permissions
+- Then they quickly see a tab view of 3 asking for overlay permissions, after they turn that on they see the next tab for app usage stat permissions, then another tab for notification permissions
 - Once that is all granted they are taken to the main home screen (MainActivity)
-- Here it has a top bar that says AppTick which also has a settings button on it, the main screen below that bar says "Add a new app limit group +"
+- Here it has a top bar that says AppTick which also has a settings button on it, and has a unlock icon on it, the main screen below that bar says "Add a new app limit group +" centered on the screen
 - A floating action button with a + is available to press
 - If they press that floating action button it opens up a list of apps they can either search or scroll through to select via checking the box on the right of the app, the top bar now instead says "Select Apps to Limit" (AppSelectScreen and AppSearchScreen)
-- Then when they are done selecting they click the next arrow button that is also on the top bar
+- Then when they are done selecting they click the next arrow button that is also on the top bar, there is also a option to cancel
 - Now this next page displays these options:
   - App Limit Group Name:
     - empty text box
   - hour and minute field with respective labels with radio buttons under for selecting "Limit for EACH" or "Limit for ALL"
-  - an option that is off by default that lets you toggle the time limit option off or on - pops up a confirmation dialog on if they really want to set no time limit on the app
-  - an option that is off by default that lets you set a time range the limit is active, it shows a start and end time. When you click on each of the selectors it brings up the clock selector option with am and pm options for each as well.
+  - an option that is on by default that lets you toggle the time limit option off or on - pops up a confirmation dialog on if they really want to set no time limit on the app
+  - an option that is off by default that lets you set a time range the limit is active, it shows a start and end time. When you click on each of the selectors it brings up the clock selector option with am and pm options for each as well. If no option is set then by default the app limit is from 12am to 12am the next day.
   - an option that is off by default that lets you set a reset interval with a min and hr text box options, this is so if someone for example sets 1hr 30min then the time limit will reset and start over (so as if they didnt use the app yet)
-  - it also shows a scrollable list of all the apps selected, and if the user goes back to the previous app select screen again and adjusts the apps selected when they come back to the SetTimeLimits page it will update the apps listed and keep what they have already inputted before in the previously mentioned fields
-  - the user can select days of the week they want this app limit group to be active as well
+    - there is a checkbox option that lets you set cummulative time (it only displays this option if the reset interval is set), cummulative time means that the time limit will keep adding up each unused time to be carried over to the next reset interval, example my reset is 30mins from now, I have 5mins unused then when its 30mins from now I get those 5mins in addition to my regular time allotment)
+  - the user can select days of the week they want this app limit group to be active as well - if none are selected it is counted as everyday selected but to the user it just shows as "Everyday" in the group details page and card on the m
   - then after filling out the page the user can press the "Save" button to save it as a app limit group or they can press "Cancel" 
   - If they save it the limit will immediately be active in a background thread (BackgroundChecker) according to the conditions they set and they will also be take back to the home page (MainActivity) where it will display the app limit group as a card with each app icon for the apps they chose to limit and a short summary of the options set such as the group name, hours active (24hrs if no range set, or time range is shown), limit for all or limit for each, days of the week its active, an on/off toggle, a edit button (which lets them edit this app limit or delete it)
   - If they turn off all the app limit groups the background checker wont run until one is turned on again - make the background checker check in a efficient way
@@ -57,9 +57,16 @@ ALWAYS BE SURE TO CHECK THIS FILE FOR GUIDELINES IN HOW TO DO THE CODE
 ## Premium Mode Features and Options
 - Users can purchase premium mode
 - If they have the free mode a unlocked icon is displayed at the top bar, if they press it it will popup the activity to purchase premium mode to get features such as lockdown mode, password mode, security key mode, custom color theme:
-  - Lockdown mode: except for the phone and messaging app (for safety reasons), you can select apps to be unable to change the time limit until a certain date you set, you can also select an option where it gives you a chance to change the limit one time a week or one time at the chosen day and time for 1 day and if you don't change it during that time then it is unchangeable until the next time that day of the week and time passes. 
+  - Lockdown mode: except for the phone and messaging app and AppTick (for safety reasons), you can select apps to be unable to change the time limit until a certain date you set, OR you can also select an option where it gives you a chance to change the limit during weekdays picked 
+  (ex. I can set to be able to change each group limit on 2/13/26 then It will prompt the user to lockdown the app limit groups immediately after the change or it will stay unlocked for the rest of the day OR I can set the be able to change the limit on Tuesday and Thursday- so use the same Active Days days of week picker as the set time limits page, but same thing once its been changed it will get prompted to lockdown the app limits so they cant be updated OR it will just lock at the end of the day unless the next day is also set as a day they can edit the limits)
   - Password mode: lock ability to change time limits with a password
   - Security key mode: lock ability to change time limits with a security key
+  - These 3 lock modes CANNOT be set at the same time, so if one lockmode is active then the other 2 lockmode pages are disabled and say (Disable <list whatever lockmode is active> to use this feature)
+  - Each lock mode when set has a START MODE button or CANCEL button at the bottom of the page.
+  - If the user sets up a lockmode, then when they reenter that page it will show all their settings except it wont show the password if one is set, it will just give then the option to set a new password with a new password button.
+    - Like if the lockdown mode is set it will show the date and time they will next be able to change it and if they can currently change it, along with being able to edit that date and time (or day(s) of week if they chose that option).
+  - When Password mode OR Security key mode are active, the user must password or security key to edit the app limit groups (so the edit buttons all have lock icons on them instead of the edit button when this is active), they also need the password/key to enter the lock modes page.
+  - When Lockdown mode is active the user can only change the app limit groups if the date and time they set to be able to change it has passed, or they have the reoccuring option where it will give them the option to change it once a day/week during the time window range they set.
   - If any of the previous lock modes are active the unlock icon shows a locked icon instead, and all the limits pause and edit buttons are replaced with a lock icon, if it is password or security key mode then if you click the lock icon it lets you enter the password (or click reset password via email) or security key (or click reset security key via email)
   - Custom color theme: allow the user to set the color of the text (includes icons that represent edit, lock, etc.) AND the color of the cards with a color picker (the circle one with any color option you want along with ability to input hex code), then also be able to toggle dark mode or light mode like the background is black or white, also the BlockWindow screen will show the custom color set, and make it option that the app icon color can also be set to any color or make it automatically match the ANdroid os theme color
   - Premium mode cost is equivalent to USD $4.99 but convert based on locale, and also mention supporting the developer
@@ -87,7 +94,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AGENTS.md`: Contains instructions and guidelines for the AI agent.
     - `AppInfo.kt`: Data class representing an application, including its name, package, icon, and usage statistics.
     - `AppLaunchLoadingScreen.kt`: Compose loading screen that shows the AppTick logo on first launch before permission onboarding.
-    - `AppTheme.kt`: Manages the app's theme colors by storing and retrieving them from SharedPreferences.
+    - `AppTheme.kt`: Manages the app's theme via an `object AppTheme` (SharedPreferences-backed color helpers used by Activities) and a `@Composable fun AppTheme` (MaterialTheme wrapper for Compose UI), consolidated from the former `AppTickTheme.kt`.
     - `BaseActivity.kt`: A base class for activities that handles shared functionality like theme and color changes.
     - `CustomViewPager.kt`: A custom ViewPager that allows for disabling swipe gestures.
     - `DateTimePickerDialog.kt`: A dialog for picking a date and time.
@@ -105,7 +112,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppUsageItem.kt`: A data class that represents an item of app usage.
     - `AppUsageRow.kt`: A composable that displays a row of app usage information.
 - **backgroundProcesses**
-    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage, enforce time limits, and block Settings uninstall access when lock-mode uninstall protection is enabled.
+    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage with elapsed-time accounting, enforce time limits, and block Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability).
 - **block**
     - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable.
     - `BlockWindowScreen.kt`: A composable that displays the screen that blocks the user from using an app when the time limit is reached.
@@ -123,11 +130,11 @@ Running on Darwin 25.3.0 (arm64)
     - `AppUsageStats.kt`: An object that provides functions for querying app usage statistics.
     - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
 - **groups**
-    - `AppLimitGroups.kt`: A composable that displays a list of app limit groups.
+    - `AppLimitGroups.kt`: A composable that displays a list of app limit groups and switches action behavior between edit/pause and lock-unlock callbacks when lock mode is active.
     - `AppInGroup.kt`: A data class that represents an app within an app limit group.
     - `AppLimitGroupDao.kt`: The DAO for the AppLimitGroupEntity, providing methods for accessing the database.
     - `AppLimitGroupEntity.kt`: The Room entity for the AppLimitGroup.
-    - `AppLimitGroupItem.kt`: A composable that displays an app limit group.
+    - `AppLimitGroupItem.kt`: A composable that displays an app limit group, replacing pause/edit actions with lock actions when group editing is locked.
     - `GroupAppItem.kt`: A composable that displays a single app within an app limit group, showing its icon, name, and a progress bar representing the time used.
     - `AppLimitGroupItem.kt`: A composable that displays an app limit group.
     - `AppLimitGroupAdapter.kt`: A RecyclerView adapter for displaying app limit groups.
@@ -150,14 +157,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppSelectScreen.kt`: A composable that allows the user to select apps to limit.
     - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled.
 - **permissions**
-    - `NotificationPermissionPage.kt`: An activity and composable screen that guides the user to the notification settings page to grant the app permission to display notifications.
-    - `NotificationPermissionScreen.kt`: A composable that explains why the notification permission is needed and provides a button to open the settings.
-    - `OverlayPermissionPage.kt`: An activity and composable screen that guides the user to the overlay settings page to grant the app permission to draw over other apps.
-    - `OverlayPermissionScreen.kt`: A composable that explains why the overlay permission is needed and provides a button to open the settings.
-    - `UsagePermissionPage.kt`: An activity and composable screen that guides the user to the usage access settings page to grant the app permission to access usage stats.
-    - `UsagePermissionScreen.kt`: A composable that explains why the usage permission is needed and provides a button to open the settings.
-    - `UsageStatsPermissionPage.kt`: An activity that guides the user to the usage stats settings page.
-    - `UsageStatsPermissionScreen.kt`: A composable that explains why the usage stats permission is needed and provides a button to open the settings.
+    - `PermissionOnboardingScreen.kt`: A single composable that presents all 3 required permissions (Overlay, Usage Stats, Notifications) as steps in a unified onboarding flow with animated transitions, progress dots, and auto-advance on grant. Integrated into MainActivity's NavHost.
 - **premiumMode**
     - `LockdownModeActivity.kt`: An activity that hosts the LockdownModeScreen composable.
     - `LockdownModeScreen.kt`: A composable that allows the user to configure the "Lockdown Mode" premium feature, including optional Device Admin-backed uninstall protection.
@@ -167,4 +167,8 @@ Running on Darwin 25.3.0 (arm64)
     - `LockdownTimeScreen.kt`: A composable that allows the user to set a lockdown time.
     - `PremiumModeScreen.kt`: A composable that displays premium purchase for free users and the Lock Modes configuration page for premium users.
 - **settings**
-    - `ColorPickerScreen.kt`: A composable color customization screen with recommended light/dark presets, quick-pick swatches, and a spectrum wheel plus brightness control for precise color selection.
+    - `ColorPickerScreen.kt`: A composable color customization screen that mirrors the current app theme mode (default dark/light or custom), keeps an icon "Match System Theme" toggle, and provides quick-pick swatches plus a spectrum wheel and brightness control for text/background/icon colors.
+- **androidTest/settings**
+    - `ColorPickerScreenTest.kt`: Instrumentation tests that verify color wheel updates are isolated to the active tab target (text/background/icon), and that text-color edits do not mutate icon preview color in custom icon mode.
+- **androidTest**
+    - `MainActivityLockModesIntentTest.kt`: Activity-level instrumentation tests that verify locked top-bar lock-mode icon behavior routes to password/security-key unlock activities or the lockdown blocked screen.

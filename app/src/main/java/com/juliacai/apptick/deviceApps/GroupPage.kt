@@ -371,7 +371,7 @@ private fun formatTimeRemaining(milliseconds: Long): String {
 
 private fun formatNextReset(nextResetMillis: Long): String {
     if (nextResetMillis <= 0L) return "Not scheduled"
-    return SimpleDateFormat("EEE h:mm a", Locale.getDefault()).format(Date(nextResetMillis))
+    return SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(nextResetMillis))
 }
 
 private fun formatTime(hour: Int, minute: Int): String {
@@ -382,9 +382,7 @@ private fun formatTime(hour: Int, minute: Int): String {
 }
 
 private fun formatDays(days: List<Int>?): String {
-    if (days == null || days.isEmpty()) return "None"
-    if (days.size == 7) return "Every Day"
-    // Assuming 1 = Monday based on SetTimeLimitsScreen
+    if (days == null || days.isEmpty() || days.size == 7) return "Everyday"
     val names = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     return days.sorted().joinToString(", ") { dayIndex ->
         if (dayIndex in 1..7) names[dayIndex - 1] else "?"

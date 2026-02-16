@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,6 +34,8 @@ import com.juliacai.apptick.R
 @Composable
 fun AppLimitGroupItem(
     group: AppLimitGroup,
+    isEditingLocked: Boolean,
+    onLockClick: (AppLimitGroup) -> Unit,
     onPauseToggle: (AppLimitGroup) -> Unit,
     onEdit: (AppLimitGroup) -> Unit,
     onDelete: (AppLimitGroup) -> Unit,
@@ -58,14 +62,29 @@ fun AppLimitGroupItem(
                     modifier = Modifier.weight(1f),
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
-                IconButton(onClick = { onPauseToggle(group) }) {
-                    Icon(
-                        painter = painterResource(id = if (group.paused) R.drawable.ic_play else R.drawable.ic_pause),
-                        contentDescription = "Toggle Pause"
-                    )
-                }
-                IconButton(onClick = { onEdit(group) }) {
-                    Icon(painter = painterResource(id = R.drawable.ic_edit), contentDescription = "Edit")
+                if (isEditingLocked) {
+                    IconButton(onClick = { onLockClick(group) }) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Unlock to pause"
+                        )
+                    }
+                    IconButton(onClick = { onLockClick(group) }) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = "Unlock to edit"
+                        )
+                    }
+                } else {
+                    IconButton(onClick = { onPauseToggle(group) }) {
+                        Icon(
+                            painter = painterResource(id = if (group.paused) R.drawable.ic_play else R.drawable.ic_pause),
+                            contentDescription = "Toggle Pause"
+                        )
+                    }
+                    IconButton(onClick = { onEdit(group) }) {
+                        Icon(painter = painterResource(id = R.drawable.ic_edit), contentDescription = "Edit")
+                    }
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
@@ -138,6 +157,7 @@ private fun formatResetInfo(group: AppLimitGroup): String {
 }
 
 private fun formatDays(days: List<Int>): String {
+    if (days.isEmpty() || days.size == 7) return "Everyday"
     val dayNames = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
-    return days.mapNotNull { dayNames.getOrNull(it - 1) }.joinToString(", ")
+    return days.sorted().mapNotNull { dayNames.getOrNull(it - 1) }.joinToString(", ")
 }

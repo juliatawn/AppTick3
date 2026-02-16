@@ -11,6 +11,7 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.core.content.edit
 import com.juliacai.apptick.MainActivity
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.R
 
 class EnterPasswordActivity : AppCompatActivity() {
@@ -22,6 +23,8 @@ class EnterPasswordActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+
+        AppTheme.applyTheme(this)
 
         setupBiometricAuth()
 
