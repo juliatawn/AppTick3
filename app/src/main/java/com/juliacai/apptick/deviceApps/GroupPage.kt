@@ -67,6 +67,7 @@ import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.ThemeModeManager
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.GroupAppItem
@@ -80,7 +81,16 @@ class GroupPage : BaseActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val group = intent.getSerializableExtra(EXTRA_GROUP) as? AppLimitGroup
+        val groupId = intent.getLongExtra(EXTRA_GROUP_ID, -1L)
+        var group by mutableStateOf<AppLimitGroup?>(null)
+        if (groupId > 0L) {
+            lifecycleScope.launch {
+                group = AppTickDatabase.getDatabase(applicationContext)
+                    .appLimitGroupDao()
+                    .getGroup(groupId)
+                    ?.toDomainModel()
+            }
+        }
         var showActionsDialog by mutableStateOf(false)
 
         setContent {
@@ -177,7 +187,8 @@ class GroupPage : BaseActivity() {
                     }
                 }
 
-                if (showActionsDialog && group != null) {
+                val currentGroup = group
+                if (showActionsDialog && currentGroup != null) {
                     AlertDialog(
                         onDismissRequest = { showActionsDialog = false },
                         title = { Text("Group Options") },
@@ -186,7 +197,7 @@ class GroupPage : BaseActivity() {
                             Button(onClick = {
                                 showActionsDialog = false
                                 val editIntent = Intent(this@GroupPage, MainActivity::class.java).apply {
-                                    putExtra(MainActivity.EXTRA_EDIT_GROUP_ID, group.id)
+                                    putExtra(MainActivity.EXTRA_EDIT_GROUP_ID, currentGroup.id)
                                 }
                                 startActivity(editIntent)
                                 finish()
@@ -200,7 +211,7 @@ class GroupPage : BaseActivity() {
                                     showActionsDialog = false
                                     lifecycleScope.launch {
                                         val dao = AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao()
-                                        dao.deleteAppLimitGroup(group.toEntity())
+                                        dao.deleteAppLimitGroup(currentGroup.toEntity())
                                         if (dao.getActiveGroupCount() <= 0) {
                                             stopService(Intent(this@GroupPage, BackgroundChecker::class.java))
                                         }
@@ -226,11 +237,11 @@ class GroupPage : BaseActivity() {
     }
 
     companion object {
-        private const val EXTRA_GROUP = "extra_group"
+        private const val EXTRA_GROUP_ID = "extra_group_id"
 
         fun newIntent(context: Context, group: AppLimitGroup): Intent {
             return Intent(context, GroupPage::class.java).apply {
-                putExtra(EXTRA_GROUP, group)
+                putExtra(EXTRA_GROUP_ID, group.id)
             }
         }
     }

@@ -38,23 +38,28 @@ fun SetTimeLimitsScreen(
     val group by viewModel.group.observeAsState()
     val draft by viewModel.draft.observeAsState()
     val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
+    val existingGroup = group
 
-    val initialGroupName = draft?.groupName ?: group?.name ?: ""
-    val initialUseTimeLimit = draft?.useTimeLimit ?: (group?.timeHrLimit ?: 0 > 0 || group?.timeMinLimit ?: 0 > 0)
-    val initialTimeHrLimit = draft?.timeHrLimit ?: group?.timeHrLimit?.toString() ?: "0"
-    val initialTimeMinLimit = draft?.timeMinLimit ?: group?.timeMinLimit?.toString() ?: "0"
-    val initialLimitEach = draft?.limitEach ?: group?.limitEach ?: false
-    val initialUseTimeRange = draft?.useTimeRange ?: group?.useTimeRange ?: false
+    val initialGroupName = draft?.groupName ?: existingGroup?.name ?: ""
+    val initialUseTimeLimit = draft?.useTimeLimit ?: if (existingGroup == null) {
+        true
+    } else {
+        (existingGroup.timeHrLimit > 0 || existingGroup.timeMinLimit > 0)
+    }
+    val initialTimeHrLimit = draft?.timeHrLimit ?: existingGroup?.timeHrLimit?.toString() ?: "0"
+    val initialTimeMinLimit = draft?.timeMinLimit ?: existingGroup?.timeMinLimit?.toString() ?: "0"
+    val initialLimitEach = draft?.limitEach ?: existingGroup?.limitEach ?: false
+    val initialUseTimeRange = draft?.useTimeRange ?: existingGroup?.useTimeRange ?: false
     val initialBlockOutsideTimeRange =
-        draft?.blockOutsideTimeRange ?: group?.blockOutsideTimeRange ?: false
-    val initialStartHour = draft?.startHour ?: group?.startHour ?: 0
-    val initialStartMinute = draft?.startMinute ?: group?.startMinute ?: 0
-    val initialEndHour = draft?.endHour ?: group?.endHour ?: 23
-    val initialEndMinute = draft?.endMinute ?: group?.endMinute ?: 59
-    val initialWeekDays = draft?.weekDays ?: group?.weekDays ?: emptyList()
-    val initialCumulativeTime = draft?.cumulativeTime ?: group?.cumulativeTime ?: false
-    val initialUseReset = draft?.useReset ?: ((group?.resetMinutes ?: 0) > 0)
-    val groupResetMinutes = group?.resetMinutes ?: 0
+        draft?.blockOutsideTimeRange ?: existingGroup?.blockOutsideTimeRange ?: false
+    val initialStartHour = draft?.startHour ?: existingGroup?.startHour ?: 0
+    val initialStartMinute = draft?.startMinute ?: existingGroup?.startMinute ?: 0
+    val initialEndHour = draft?.endHour ?: existingGroup?.endHour ?: 23
+    val initialEndMinute = draft?.endMinute ?: existingGroup?.endMinute ?: 59
+    val initialWeekDays = draft?.weekDays ?: existingGroup?.weekDays ?: emptyList()
+    val initialCumulativeTime = draft?.cumulativeTime ?: existingGroup?.cumulativeTime ?: false
+    val initialUseReset = draft?.useReset ?: ((existingGroup?.resetMinutes ?: 0) > 0)
+    val groupResetMinutes = existingGroup?.resetMinutes ?: 0
     val initialResetHours = draft?.resetHours ?: (groupResetMinutes / 60).toString()
     val initialResetMinutes = draft?.resetMinutes ?: (groupResetMinutes % 60).toString()
 
@@ -199,6 +204,14 @@ fun SetTimeLimitsScreen(
                     useTimeLimit.value = it
                     if (!it) showNoTimeLimitWarning.value = true
                 })
+            }
+            if (!useTimeLimit.value) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "With time limit off, apps in this group will always be blocked when active.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
             if (useTimeLimit.value) {
@@ -423,7 +436,7 @@ fun SetTimeLimitsScreen(
             }
         }
 
-        if (showNoTimeLimitWarning.value) { AlertDialog(onDismissRequest = { showNoTimeLimitWarning.value = false }, title = { Text("No Time Limit") }, text = { Text("Without a time limit, apps in this group will not be blocked. Continue?") }, confirmButton = { Button({ showNoTimeLimitWarning.value = false }) { Text("Continue") } }, dismissButton = { Button({ showNoTimeLimitWarning.value = false; useTimeLimit.value = true }) { Text("Cancel") } }) }
+        if (showNoTimeLimitWarning.value) { AlertDialog(onDismissRequest = { showNoTimeLimitWarning.value = false }, title = { Text("Always Block App") }, text = { Text("Are you sure you want the app to be blocked with 0 time use?") }, confirmButton = { Button({ showNoTimeLimitWarning.value = false }) { Text("Continue") } }, dismissButton = { Button({ showNoTimeLimitWarning.value = false; useTimeLimit.value = true }) { Text("Cancel") } }) }
         if (showStartTimePicker.value) {
             val context = androidx.compose.ui.platform.LocalContext.current
             androidx.compose.runtime.LaunchedEffect(Unit) {

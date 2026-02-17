@@ -283,9 +283,23 @@ class BackgroundChecker : Service() {
             if (!AppLimitEvaluator.shouldCheckLimit(group, now)) continue
 
             val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
-            if (limitInMinutes <= 0) continue
-
             if (appInGroup != null) {
+                if (limitInMinutes <= 0) {
+                    val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }
+                    blockIntent.putExtra("app_name", appInGroup.appName)
+                    blockIntent.putExtra("app_package", appInGroup.appPackage)
+                    blockIntent.putExtra("group_name", group.name)
+                    blockIntent.putExtra("app_time_spent", usageMap[appInGroup.appPackage] ?: 0L)
+                    blockIntent.putExtra("group_time_spent", usageMap.values.sum())
+                    blockIntent.putExtra("time_limit_minutes", 0)
+                    blockIntent.putExtra("limit_each", group.limitEach)
+                    blockIntent.putExtra("use_time_range", group.useTimeRange)
+                    blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
+                    blockIntent.putExtra("blocked_for_outside_range", false)
+                    startActivity(blockIntent)
+                    continue
+                }
+
                 val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
                 val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }.toMutableMap()
                 val currentAppUsage = usageMap[appInGroup.appPackage] ?: 0L
