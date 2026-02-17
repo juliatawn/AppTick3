@@ -45,14 +45,16 @@ fun SetTimeLimitsScreen(
     val initialTimeMinLimit = draft?.timeMinLimit ?: group?.timeMinLimit?.toString() ?: "0"
     val initialLimitEach = draft?.limitEach ?: group?.limitEach ?: false
     val initialUseTimeRange = draft?.useTimeRange ?: group?.useTimeRange ?: false
+    val initialBlockOutsideTimeRange =
+        draft?.blockOutsideTimeRange ?: group?.blockOutsideTimeRange ?: false
     val initialStartHour = draft?.startHour ?: group?.startHour ?: 0
     val initialStartMinute = draft?.startMinute ?: group?.startMinute ?: 0
     val initialEndHour = draft?.endHour ?: group?.endHour ?: 23
     val initialEndMinute = draft?.endMinute ?: group?.endMinute ?: 59
     val initialWeekDays = draft?.weekDays ?: group?.weekDays ?: emptyList()
     val initialCumulativeTime = draft?.cumulativeTime ?: group?.cumulativeTime ?: false
-    val initialUseReset = draft?.useReset ?: ((group?.resetHours ?: 0) > 0)
-    val groupResetMinutes = group?.resetHours ?: 0
+    val initialUseReset = draft?.useReset ?: ((group?.resetMinutes ?: 0) > 0)
+    val groupResetMinutes = group?.resetMinutes ?: 0
     val initialResetHours = draft?.resetHours ?: (groupResetMinutes / 60).toString()
     val initialResetMinutes = draft?.resetMinutes ?: (groupResetMinutes % 60).toString()
 
@@ -62,6 +64,9 @@ fun SetTimeLimitsScreen(
     val timeMinLimit = remember(initialTimeMinLimit) { mutableStateOf(initialTimeMinLimit) }
     val limitEach = remember(initialLimitEach) { mutableStateOf(initialLimitEach) }
     val useTimeRange = remember(initialUseTimeRange) { mutableStateOf(initialUseTimeRange) }
+    val blockOutsideTimeRange = remember(initialBlockOutsideTimeRange) {
+        mutableStateOf(initialBlockOutsideTimeRange)
+    }
     val startHour = remember(initialStartHour) { mutableStateOf(initialStartHour) }
     val startMinute = remember(initialStartMinute) { mutableStateOf(initialStartMinute) }
     val endHour = remember(initialEndHour) { mutableStateOf(initialEndHour) }
@@ -86,6 +91,7 @@ fun SetTimeLimitsScreen(
                 timeMinLimit = timeMinLimit.value,
                 limitEach = limitEach.value,
                 useTimeRange = useTimeRange.value,
+                blockOutsideTimeRange = blockOutsideTimeRange.value,
                 startHour = startHour.value,
                 startMinute = startMinute.value,
                 endHour = endHour.value,
@@ -231,6 +237,43 @@ fun SetTimeLimitsScreen(
                         Spacer(Modifier.width(8.dp))
                         Button(onClick = { showEndTimePicker.value = true }, modifier = Modifier.weight(1f)) { Text("End: ${endHour.value}:${endMinute.value}") }
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Outside Time Range", style = MaterialTheme.typography.titleSmall)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        "Choose whether selected apps are fully blocked outside this range, or allowed with no limit.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { blockOutsideTimeRange.value = true },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (blockOutsideTimeRange.value) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline
+                            )
+                        ) {
+                            Text("Block Apps")
+                        }
+                        OutlinedButton(
+                            onClick = { blockOutsideTimeRange.value = false },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(
+                                1.dp,
+                                if (!blockOutsideTimeRange.value) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.outline
+                            )
+                        ) {
+                            Text("Allow No Limits")
+                        }
+                    }
                 }
             }
 
@@ -359,12 +402,13 @@ fun SetTimeLimitsScreen(
                             limitEach = limitEach.value,
                             weekDays = weekDays.value,
                             useTimeRange = useTimeRange.value,
+                            blockOutsideTimeRange = useTimeRange.value && blockOutsideTimeRange.value,
                             startHour = startHour.value,
                             startMinute = startMinute.value,
                             endHour = endHour.value,
                             endMinute = endMinute.value,
                             cumulativeTime = useReset.value && cumulativeTime.value,
-                            resetHours = if (useReset.value) resetTotalMinutes else 0,
+                            resetMinutes = if (useReset.value) resetTotalMinutes else 0,
                             apps = selectedApps.map {
                                 AppInGroup(
                                     it.appName ?: "",

@@ -31,10 +31,13 @@ interface AppLimitSettings {
     var groupName: String?
 
     /** The interval in hours after which the time usage resets. */
-    var resetHours: Int
+    var resetMinutes: Int
 
     /** If true, the app limit is only active within a specific time range. */
     var useTimeRange: Boolean
+
+    /** If true, selected apps are fully blocked outside the configured time range. */
+    var blockOutsideTimeRange: Boolean
 
     /** The start hour for the time range (0-23). */
     var startHour: Int

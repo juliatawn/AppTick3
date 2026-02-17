@@ -7,7 +7,9 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,7 +17,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Edit
@@ -41,6 +49,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -229,124 +240,135 @@ class GroupPage : BaseActivity() {
 fun GroupDetails(group: AppLimitGroup) {
     val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis }
     val groupUsedMillis = group.perAppUsage.sumOf { it.usedMillis.coerceAtLeast(0L) }
-    Column {
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text(
-                    text = group.name ?: "App Limit Group",
-                    style = MaterialTheme.typography.headlineMedium
-                )
-                Text(
-                    text = formatTimeRemaining(group.timeRemaining),
-                    style = MaterialTheme.typography.displaySmall,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Text(
-                    text = "Time Left",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "Time Used: ${formatTimeRemaining(groupUsedMillis)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                
-                if (group.cumulativeTime) {
-                    val limitInMillis = (group.timeHrLimit * 60 + group.timeMinLimit) * 60_000L
-                    val carriedOver = (group.timeRemaining - limitInMillis).coerceAtLeast(0L)
-                    if (carriedOver > 0) {
-                        Text(
-                            text = "(Includes ${formatTimeRemaining(carriedOver)} carried over)",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
-                }
-
-                Divider()
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AssistChip(
-                        onClick = {},
-                        enabled = false,
-                        label = { Text("${group.timeHrLimit}h ${group.timeMinLimit}m Limit") },
-                        colors = AssistChipDefaults.assistChipColors(
-                            disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    )
-                    AssistChip(
-                        onClick = {},
-                        enabled = false,
-                        label = { Text(if (group.limitEach) "Limit for EACH" else "Limit for ALL") },
-                        colors = AssistChipDefaults.assistChipColors(
-                            disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    )
-                }
-                
-                if (group.cumulativeTime) {
-                     AssistChip(
-                        onClick = {},
-                        enabled = false,
-                        label = { Text("Cumulative Time Enabled") },
-                        colors = AssistChipDefaults.assistChipColors(
-                            disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                            disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                    )
-                }
-
-                if (group.useTimeRange) {
-                    Text(
-                        text = "Active Hours: ${formatTime(group.startHour, group.startMinute)} - ${formatTime(group.endHour, group.endMinute)}",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-
-                Text(
-                    text = "Active Days: ${formatDays(group.weekDays)}",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                
-                val resetText = if (group.resetHours > 0) {
-                    val interval = "${group.resetHours / 60}h ${group.resetHours % 60}m"
-                    if (group.cumulativeTime) {
-                        "Cumulative: Daily + every $interval"
-                    } else {
-                        "Resets: Daily every $interval"
-                    }
-                } else {
-                    "Resets: Daily"
-                }
-                Text(
-                    text = resetText,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-
-                Text(
-                    text = "Next Reset: ${formatNextReset(group.nextResetTime)}",
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
+    val listState = rememberLazyListState()
+    val showCompactHeader by remember {
+        derivedStateOf {
+            listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
         }
+    }
 
-        Spacer(modifier = Modifier.size(8.dp))
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = group.name ?: "App Limit Group",
+                            style = MaterialTheme.typography.headlineMedium
+                        )
+                        Text(
+                            text = formatTimeRemaining(group.timeRemaining),
+                            style = MaterialTheme.typography.displaySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Time Left",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Time Used: ${formatTimeRemaining(groupUsedMillis)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
-        LazyColumn(modifier = Modifier.padding(top = 8.dp)) {
+                        if (group.cumulativeTime) {
+                            val limitInMillis = (group.timeHrLimit * 60 + group.timeMinLimit) * 60_000L
+                            val carriedOver = (group.timeRemaining - limitInMillis).coerceAtLeast(0L)
+                            if (carriedOver > 0) {
+                                Text(
+                                    text = "(Includes ${formatTimeRemaining(carriedOver)} carried over)",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
+
+                        Divider()
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            AssistChip(
+                                onClick = {},
+                                enabled = false,
+                                label = { Text("${group.timeHrLimit}h ${group.timeMinLimit}m Limit") },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            )
+                            AssistChip(
+                                onClick = {},
+                                enabled = false,
+                                label = { Text(if (group.limitEach) "Limit for EACH" else "Limit for ALL") },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            )
+                        }
+
+                        if (group.cumulativeTime) {
+                            AssistChip(
+                                onClick = {},
+                                enabled = false,
+                                label = { Text("Cumulative Time Enabled") },
+                                colors = AssistChipDefaults.assistChipColors(
+                                    disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                    disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                )
+                            )
+                        }
+
+                        if (group.useTimeRange) {
+                            Text(
+                                text = "Active Hours: ${formatTime(group.startHour, group.startMinute)} - ${formatTime(group.endHour, group.endMinute)}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+
+                        Text(
+                            text = "Active Days: ${formatDays(group.weekDays)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        val resetText = if (group.resetMinutes > 0) {
+                            val interval = "${group.resetMinutes / 60}h ${group.resetMinutes % 60}m"
+                            if (group.cumulativeTime) {
+                                "Cumulative: Daily + every $interval"
+                            } else {
+                                "Resets: Daily every $interval"
+                            }
+                        } else {
+                            "Resets: Daily"
+                        }
+                        Text(
+                            text = resetText,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Text(
+                            text = "Next Reset: ${formatNextReset(group.nextResetTime)}",
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
+                }
+            }
+
             items(group.apps) { app ->
                 val appInfo = AppInfo(
                     appName = app.appName,
@@ -358,6 +380,47 @@ fun GroupDetails(group: AppLimitGroup) {
                     timeLimit = group.timeHrLimit * 60 + group.timeMinLimit,
                     limitEach = group.limitEach
                 )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = showCompactHeader,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 4.dp),
+            enter = fadeIn() + slideInVertically { -it / 2 },
+            exit = fadeOut() + slideOutVertically { -it / 2 }
+        ) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = group.name ?: "App Limit Group",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "Left: ${formatTimeRemaining(group.timeRemaining)}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Used: ${formatTimeRemaining(groupUsedMillis)}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
         }
     }

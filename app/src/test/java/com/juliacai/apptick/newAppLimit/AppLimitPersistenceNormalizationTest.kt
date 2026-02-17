@@ -66,7 +66,7 @@ class AppLimitPersistenceNormalizationTest {
             id = 0L,
             timeHrLimit = 1,
             timeMinLimit = 0,
-            resetHours = 0,
+            resetMinutes = 0,
             nextResetTime = 0L
         )
 
@@ -88,7 +88,7 @@ class AppLimitPersistenceNormalizationTest {
             id = 0L,
             timeHrLimit = 1,
             timeMinLimit = 0,
-            resetHours = 2,
+            resetMinutes = 2 * 60, // 2 hours in minutes
             nextResetTime = 0L
         )
 
@@ -108,7 +108,7 @@ class AppLimitPersistenceNormalizationTest {
             id = 42L,
             timeHrLimit = 1,
             timeMinLimit = 0,
-            resetHours = 0,
+            resetMinutes = 0,
             nextResetTime = futureTime
         )
 
@@ -125,7 +125,7 @@ class AppLimitPersistenceNormalizationTest {
             id = 42L,
             timeHrLimit = 1,
             timeMinLimit = 0,
-            resetHours = 0,
+            resetMinutes = 0,
             nextResetTime = pastTime
         )
 

@@ -52,7 +52,7 @@ class LegacyDataMigrator(
 
             val name = parts[5].ifBlank { "App Limit Group" }
 
-            val resetHours = parts[6].toInt()
+            val resetMinutes = parts[6].toInt()
 
             val daysString = parts[7].removeSurrounding("[", "]")
             val weekDays = if (daysString.isBlank()) emptyList() else daysString.split(", ").mapNotNull { it.trim().toIntOrNull() }
@@ -71,7 +71,7 @@ class LegacyDataMigrator(
                 timeHrLimit = timeHrLimit,
                 timeMinLimit = timeMinLimit,
                 limitEach = limitEach,
-                resetHours = resetHours,
+                resetMinutes = resetMinutes,
                 weekDays = weekDays,
                 apps = apps,
                 paused = paused,

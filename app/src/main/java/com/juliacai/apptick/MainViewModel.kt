@@ -38,12 +38,14 @@ class MainViewModel(application: Application, private val appLimitGroupDao: AppL
     }
 
     fun updatePremiumStatus(isPremium: Boolean) {
-        _isPremium.postValue(isPremium)
-        getApplication<Application>()
+        val prefs = getApplication<Application>()
             .getSharedPreferences("groupPrefs", Application.MODE_PRIVATE)
-            .edit {
-                putBoolean("premium", isPremium)
-            }
+        val forceFreeForDebug = prefs.getBoolean("debug_force_free", false)
+        val effectivePremium = isPremium && !forceFreeForDebug
+        _isPremium.postValue(effectivePremium)
+        prefs.edit {
+            putBoolean("premium", effectivePremium)
+        }
     }
 
     fun togglePause(group: AppLimitGroup) {

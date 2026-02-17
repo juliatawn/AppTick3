@@ -42,6 +42,7 @@ ALWAYS BE SURE TO CHECK THIS FILE FOR GUIDELINES IN HOW TO DO THE CODE
   - hour and minute field with respective labels with radio buttons under for selecting "Limit for EACH" or "Limit for ALL"
   - an option that is on by default that lets you toggle the time limit option off or on - pops up a confirmation dialog on if they really want to set no time limit on the app
   - an option that is off by default that lets you set a time range the limit is active, it shows a start and end time. When you click on each of the selectors it brings up the clock selector option with am and pm options for each as well. If no option is set then by default the app limit is from 12am to 12am the next day.
+    - Option for users where when they toggle Time Range on it shows an additional option buttons to either block apps compleletly when not in the time range OR to allow apps with no limits when outside the time range
   - an option that is off by default that lets you set a reset interval with a min and hr text box options, this is so if someone for example sets 1hr 30min then the time limit will reset and start over (so as if they didnt use the app yet)
     - there is a checkbox option that lets you set cummulative time (it only displays this option if the reset interval is set), cummulative time means that the time limit will keep adding up each unused time to be carried over to the next reset interval, example my reset is 30mins from now, I have 5mins unused then when its 30mins from now I get those 5mins in addition to my regular time allotment)
   - the user can select days of the week they want this app limit group to be active as well - if none are selected it is counted as everyday selected but to the user it just shows as "Everyday" in the group details page and card on the m
@@ -53,7 +54,9 @@ ALWAYS BE SURE TO CHECK THIS FILE FOR GUIDELINES IN HOW TO DO THE CODE
   - If they try to get out of the activity and try to go back to the apps that are suppose to be now blocked due to the limit being reached, keep persistently quickly showing the blocking activity.
   - If the user chooses to click on a app limit group card they are then brought to a page (GroupPage an activity) that allows then to see all the  info on the limit settings they set for that app group (I.e Group name, limit for all, time amount etc.) as well as how much time spent on each app since the last time the limit was reset how much time they have left to use or if it is used up and next reset day and time, includes a back button on the top bar leading back to the main page
 
-
+= The same notification information should bw available as a floating bubble that displays when the user is in an app that is time limited AND they have the "Floating TIme Left Bubble" setting on set on in the Apptick SEttings page
+  - This bubble is  readable but not too intrusive or large, and possibly slightly see through if you think that would make it less intrusive and still be readable 
+    and the user can chose to dismiss it from being displayed (drag to X at bottom of screen like how bubbles in android os normally get removed) then a toast shows up notifyinf them they can click on the AppTick notification in the notification window to bring up the bubble agin
 ## Premium Mode Features and Options
 - Users can purchase premium mode
 - If they have the free mode a unlocked icon is displayed at the top bar, if they press it it will popup the activity to purchase premium mode to get features such as lockdown mode, password mode, security key mode, custom color theme:
@@ -112,7 +115,8 @@ Running on Darwin 25.3.0 (arm64)
     - `AppUsageItem.kt`: A data class that represents an item of app usage.
     - `AppUsageRow.kt`: A composable that displays a row of app usage information.
 - **backgroundProcesses**
-    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage with elapsed-time accounting, enforce time limits, and block Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability).
+    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage with elapsed-time accounting, enforce time limits, and block Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability). Supports time-range outside-window behavior per group (either block apps fully outside the range or allow no limits outside range). Notification/floating-bubble selection only considers currently enforceable profiles (active schedule + positive time limit), picks the lowest effective time remaining, and notes when multiple active profiles cover the same app. Also manages the floating bubble overlay lifecycle.
+    - `FloatingBubbleService.kt`: An overlay service that shows a small, semi-transparent draggable bubble with time remaining when the user is in a time-limited app. Drag-to-bottom dismiss target pattern. Controlled by the "floatingBubbleEnabled" preference and re-shown via the AppTick notification action.
 - **block**
     - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable.
     - `BlockWindowScreen.kt`: A composable that displays the screen that blocks the user from using an app when the time limit is reached.
@@ -128,7 +132,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppManager.kt`: Provides the installed app list used for selection while filtering safety-critical phone and messaging apps from being limited.
     - `AppSearchActivity.kt`: An activity that hosts the AppSearchScreen composable, which allows users to search for and select apps.
     - `AppUsageStats.kt`: An object that provides functions for querying app usage statistics.
-    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
+    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout, a scroll-triggered compact sticky summary header (group name + time left/used), and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
 - **groups**
     - `AppLimitGroups.kt`: A composable that displays a list of app limit groups and switches action behavior between edit/pause and lock-unlock callbacks when lock mode is active.
     - `AppInGroup.kt`: A data class that represents an app within an app limit group.
@@ -155,7 +159,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppLimitViewModel.kt`: ViewModel used by app-selection and time-limit setup flows to persist groups and ensure service state matches active groups.
     - `AppSearchScreen.kt`: A composable that provides a search bar for filtering a list of applications.
     - `AppSelectScreen.kt`: A composable that allows the user to select apps to limit.
-    - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled.
+    - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled, plus an outside-time-range behavior selector (block apps vs allow no limits).
 - **permissions**
     - `PermissionOnboardingScreen.kt`: A single composable that presents all 3 required permissions (Overlay, Usage Stats, Notifications) as steps in a unified onboarding flow with animated transitions, progress dots, and auto-advance on grant. Integrated into MainActivity's NavHost.
 - **premiumMode**
@@ -172,3 +176,5 @@ Running on Darwin 25.3.0 (arm64)
     - `ColorPickerScreenTest.kt`: Instrumentation tests that verify color wheel updates are isolated to the active tab target (text/background/icon), and that text-color edits do not mutate icon preview color in custom icon mode.
 - **androidTest**
     - `MainActivityLockModesIntentTest.kt`: Activity-level instrumentation tests that verify locked top-bar lock-mode icon behavior routes to password/security-key unlock activities or the lockdown blocked screen.
+- **test/backgroundProcesses**
+    - `NotificationGroupSelectionTest.kt`: Unit tests for `pickNotificationGroup()` active profile selection logic and `formatGroupNotificationText()` formatting, covering single/multiple/paused profiles and limitEach ranking.

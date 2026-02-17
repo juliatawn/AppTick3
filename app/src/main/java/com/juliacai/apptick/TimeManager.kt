@@ -13,12 +13,12 @@ class TimeManager(private val group: AppLimitGroup) {
 
     /**
      * Returns the next reset time for this group.
-     * - If a periodic reset interval is set (`resetHours > 0`), returns `now + resetHours` in millis.
+     * - If a periodic reset interval is set (`resetMinutes > 0`), returns `now + resetMinutes` in millis.
      * - Otherwise, defaults to midnight (12:00 AM) tomorrow in the device's timezone.
      */
     fun getNextResetTime(): Long {
-        return if (group.resetHours > 0) {
-            System.currentTimeMillis() + TimeUnit.HOURS.toMillis(group.resetHours.toLong())
+        return if (group.resetMinutes > 0) {
+            System.currentTimeMillis() + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
         } else {
             nextMidnight()
         }

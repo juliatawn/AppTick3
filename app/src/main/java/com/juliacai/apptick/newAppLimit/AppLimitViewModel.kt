@@ -129,9 +129,9 @@ internal fun normalizeGroupForPersistence(
     val normalizedNextReset = if (group.nextResetTime > now) {
         // Already has a valid future reset time — keep it.
         group.nextResetTime
-    } else if (group.resetHours > 0) {
-        // Periodic mode: next reset = now + reset interval.
-        now + TimeUnit.HOURS.toMillis(group.resetHours.toLong())
+    } else if (group.resetMinutes > 0) {
+        // Periodic: next reset = now + interval
+        now + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
     } else {
         // Daily mode: next reset = 12:00 AM tomorrow.
         TimeManager.nextMidnight(now)
@@ -151,6 +151,7 @@ data class SetTimeLimitDraft(
     val timeMinLimit: String,
     val limitEach: Boolean,
     val useTimeRange: Boolean,
+    val blockOutsideTimeRange: Boolean,
     val startHour: Int,
     val startMinute: Int,
     val endHour: Int,

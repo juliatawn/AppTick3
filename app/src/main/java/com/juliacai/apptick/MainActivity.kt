@@ -215,7 +215,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                             timeHrLimit = appLimitGroup.timeHrLimit,
                                             timeMinLimit = appLimitGroup.timeMinLimit,
                                             limitEach = appLimitGroup.limitEach,
-                                            resetHours = appLimitGroup.resetHours,
+                                            resetMinutes = appLimitGroup.resetMinutes,
                                             weekDays = appLimitGroup.weekDays,
                                             apps = appLimitGroup.apps,
                                             paused = appLimitGroup.paused,
@@ -494,8 +494,19 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         super.onResume()
         if (::prefs.isInitialized) {
             viewModel.updatePremiumStatus(prefs.getBoolean("premium", false))
-            if (shouldKeepServiceForSettingsProtection()) {
+            syncBackgroundServiceState()
+        }
+    }
+
+    private fun syncBackgroundServiceState() {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val activeGroupCount =
+                AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao().getActiveGroupCountSync()
+            val shouldRun = activeGroupCount > 0 || shouldKeepServiceForSettingsProtection()
+            if (shouldRun) {
                 BackgroundChecker.startServiceIfNotRunning(applicationContext)
+            } else {
+                applicationContext.stopService(Intent(applicationContext, BackgroundChecker::class.java))
             }
         }
     }

@@ -16,6 +16,7 @@ import android.os.Binder
 import android.os.Build
 import android.os.IBinder
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
@@ -26,6 +27,7 @@ import com.juliacai.apptick.LockState
 import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.R
+import com.juliacai.apptick.appLimit.AppLimitEvaluator
 import com.juliacai.apptick.block.BlockWindowActivity
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.AppLimitGroupEntity
@@ -67,6 +69,7 @@ class BackgroundChecker : Service() {
     private var lastForegroundApp: String? = null
     private var lastCheckElapsed: Long = 0L
     private var isScreenOn = true
+    private var bubbleShowReceiver: BroadcastReceiver? = null
     @Volatile
     private var fixedElapsedForTestingMs: Long? = null
 
@@ -112,6 +115,14 @@ class BackgroundChecker : Service() {
             addAction(Intent.ACTION_SCREEN_OFF)
         })
 
+        // Receiver for "Show Bubble" notification action
+        bubbleShowReceiver = BubbleShowReceiver()
+        registerReceiver(
+            bubbleShowReceiver,
+            IntentFilter(ACTION_SHOW_BUBBLE),
+            Context.RECEIVER_NOT_EXPORTED
+        )
+
         isRunning = true
         if (!disableBackgroundLoopForTesting) {
             observeGroups()
@@ -139,8 +150,28 @@ class BackgroundChecker : Service() {
             while (isActive) {
                 if (isScreenOn) {
                     val foregroundApp = getForegroundApp()
-                    checkAppLimits(foregroundApp)
-                    updateNotification(foregroundApp)
+                    if (foregroundApp != null) {
+                        lastForegroundApp = foregroundApp
+                    }
+                    val appToCheck = foregroundApp ?: lastForegroundApp
+                    
+                    try {
+                        checkAppLimits(appToCheck)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    try {
+                        updateNotification(appToCheck)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+
+                    try {
+                        updateFloatingBubble(appToCheck)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
                 delay(CHECK_INTERVAL)
             }
@@ -161,6 +192,9 @@ class BackgroundChecker : Service() {
             blockIntent.putExtra("group_time_spent", 0L)
             blockIntent.putExtra("time_limit_minutes", 0)
             blockIntent.putExtra("limit_each", false)
+            blockIntent.putExtra("use_time_range", false)
+            blockIntent.putExtra("block_outside_time_range", false)
+            blockIntent.putExtra("blocked_for_outside_range", false)
             startActivity(blockIntent)
             return
         }
@@ -191,16 +225,17 @@ class BackgroundChecker : Service() {
 
         for (entity in activeGroups) {
             val group = entity.toDomainModel()
+            val now = System.currentTimeMillis()
+            val appInGroup = group.apps.firstOrNull { it.appPackage == foregroundApp }
 
             // ── Daily / periodic reset check ──────────────────────────────────
-            val now = System.currentTimeMillis()
             if (group.nextResetTime in 1..now) {
                 val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
                 val fullLimitMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
 
                 // Advance nextResetTime based on mode
-                val newNextReset = if (group.resetHours > 0) {
-                    now + TimeUnit.HOURS.toMillis(group.resetHours.toLong())
+                val newNextReset = if (group.resetMinutes > 0) {
+                    now + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
                 } else {
                     TimeManager.nextMidnight(now)
                 }
@@ -219,12 +254,38 @@ class BackgroundChecker : Service() {
                 continue
             }
 
-            // Check if the limit is active for today/now
-            if (!com.juliacai.apptick.appLimit.AppLimitEvaluator.shouldCheckLimit(group)) continue
+            // If today is not active for this group, skip all enforcement and accounting.
+            if (!AppLimitEvaluator.isWithinActiveDays(group, now)) continue
 
-            val appInGroup = group.apps.firstOrNull { it.appPackage == foregroundApp }
+            // Optional strict mode: block listed apps completely outside the configured time range.
+            if (
+                appInGroup != null &&
+                group.useTimeRange &&
+                group.blockOutsideTimeRange &&
+                !AppLimitEvaluator.isWithinTimeRange(group, now)
+            ) {
+                val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }
+                blockIntent.putExtra("app_name", appInGroup.appName)
+                blockIntent.putExtra("app_package", appInGroup.appPackage)
+                blockIntent.putExtra("group_name", group.name)
+                blockIntent.putExtra("app_time_spent", usageMap[appInGroup.appPackage] ?: 0L)
+                blockIntent.putExtra("group_time_spent", usageMap.values.sum())
+                blockIntent.putExtra("time_limit_minutes", group.timeHrLimit * 60 + group.timeMinLimit)
+                blockIntent.putExtra("limit_each", group.limitEach)
+                blockIntent.putExtra("use_time_range", group.useTimeRange)
+                blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
+                blockIntent.putExtra("blocked_for_outside_range", true)
+                startActivity(blockIntent)
+                continue
+            }
+
+            // Check if the limit is active for today/now
+            if (!AppLimitEvaluator.shouldCheckLimit(group, now)) continue
+
+            val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+            if (limitInMinutes <= 0) continue
+
             if (appInGroup != null) {
-                val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
                 val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
                 val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }.toMutableMap()
                 val currentAppUsage = usageMap[appInGroup.appPackage] ?: 0L
@@ -243,6 +304,9 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("group_time_spent", groupTimeSpent)
                     blockIntent.putExtra("time_limit_minutes", group.timeHrLimit * 60 + group.timeMinLimit)
                     blockIntent.putExtra("limit_each", group.limitEach)
+                    blockIntent.putExtra("use_time_range", group.useTimeRange)
+                    blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
+                    blockIntent.putExtra("blocked_for_outside_range", false)
                     startActivity(blockIntent)
                 } else {
                     // Use real elapsed time instead of assuming exact interval
@@ -277,6 +341,13 @@ class BackgroundChecker : Service() {
         }
         val pendingIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE)
 
+        // "Show Bubble" action — sends broadcast to re-show dismissed bubble
+        val showBubbleIntent = Intent(ACTION_SHOW_BUBBLE).setPackage(packageName)
+        val showBubblePendingIntent = PendingIntent.getBroadcast(
+            this, 1, showBubbleIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
         mBuilder.apply {
             setSmallIcon(R.drawable.ic_launcher_foreground)
             setContentTitle("AppTick")
@@ -286,6 +357,11 @@ class BackgroundChecker : Service() {
             setOnlyAlertOnce(true)
             setOngoing(true)
             setContentIntent(pendingIntent)
+            addAction(
+                R.drawable.ic_launcher_foreground,
+                "Show Bubble",
+                showBubblePendingIntent
+            )
         }
 
         mNotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -301,11 +377,9 @@ class BackgroundChecker : Service() {
 
     private suspend fun updateNotification(currentApp: String?) {
         val contentText = if (currentApp != null) {
-            val groupEntity = cachedGroups.firstOrNull { entity ->
-                entity.apps.any { it.appPackage == currentApp }
-            }
-            if (groupEntity != null) {
-                val group = groupEntity.toDomainModel()
+            val info = pickNotificationGroup(cachedGroups, currentApp)
+            if (info != null) {
+                val group = info.entity.toDomainModel()
                 val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
                 val limitInMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
                 val appUsed = group.perAppUsage.firstOrNull { stat -> stat.appPackage == currentApp }?.usedMillis ?: 0L
@@ -314,7 +388,14 @@ class BackgroundChecker : Service() {
                 } else {
                     group.timeRemaining
                 }
-                formatGroupNotificationText(group.timeHrLimit, group.timeMinLimit, timeRemaining, group.nextResetTime)
+                formatGroupNotificationText(
+                    groupName = group.name ?: "Unnamed",
+                    limitHours = group.timeHrLimit,
+                    limitMinutes = group.timeMinLimit,
+                    timeRemainingMillis = timeRemaining,
+                    nextResetTimeMillis = group.nextResetTime,
+                    isMultiProfile = info.isMultiProfile
+                )
             } else {
                 "AppTick is running..."
             }
@@ -325,11 +406,150 @@ class BackgroundChecker : Service() {
         mNotificationManager.notify(notifId, mBuilder.build())
     }
 
-    private fun formatGroupNotificationText(
+    // ── Floating bubble management ────────────────────────────────────────────
+
+    private suspend fun updateFloatingBubble(currentApp: String?) {
+        val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+        val isPremium = prefs.getBoolean("premium", false)
+        if (!isPremium) {
+            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+            return
+        }
+        val bubbleEnabled = prefs.getBoolean(
+            FloatingBubbleService.PREF_FLOATING_BUBBLE_ENABLED, false
+        )
+        if (!bubbleEnabled) {
+            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+            return
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            Log.w("BG_Service", "Floating bubble enabled but overlay permission is missing")
+            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+            return
+        }
+        // If currentApp is null (transient UsageStats gap), leave bubble as-is
+        if (currentApp == null || currentApp == packageName) return
+
+        // Read fresh data from DB to avoid stale cachedGroups lag
+        val freshGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
+        val info = pickNotificationGroup(freshGroups, currentApp)
+        if (info == null) {
+            // User is in an app with no active limit — hide bubble
+            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+            return
+        }
+
+        val group = info.entity.toDomainModel()
+        val limitMillis = TimeUnit.MINUTES.toMillis(
+            (group.timeHrLimit * 60 + group.timeMinLimit).toLong()
+        )
+        val appUsed = group.perAppUsage
+            .firstOrNull { it.appPackage == currentApp }?.usedMillis ?: 0L
+        val timeRemaining = if (group.limitEach) {
+            (limitMillis - appUsed).coerceAtLeast(0L)
+        } else {
+            group.timeRemaining
+        }
+
+        val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(timeRemaining.coerceAtLeast(0L))
+        val hours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        val bubbleText = String.format("%02d:%02d", hours, minutes)
+
+        try {
+            startService(FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining))
+        } catch (_: Exception) {}
+    }
+
+
+    companion object {
+        private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
+        private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
+
+        @Volatile
+        var isRunning = false
+            private set
+
+        @VisibleForTesting
+        @Volatile
+        var disableBackgroundLoopForTesting: Boolean = false
+
+        fun startServiceIfNotRunning(context: Context) {
+            if (!isRunning) {
+                val intent = Intent(context, BackgroundChecker::class.java)
+                context.startForegroundService(intent)
+            }
+        }
+
+        /** Broadcast action for the "Show Bubble" notification button. */
+        const val ACTION_SHOW_BUBBLE = "com.juliacai.apptick.ACTION_SHOW_BUBBLE"
+
+        /**
+         * Picks the best group to display in the notification for [currentApp].
+         * Filters out paused groups, then selects the active group with the
+         * lowest effective time remaining. Returns null if no active group
+         * covers [currentApp].
+         */
+        @VisibleForTesting
+        fun pickNotificationGroup(
+            groups: List<AppLimitGroupEntity>,
+            currentApp: String,
+            nowMillis: Long = System.currentTimeMillis()
+        ): NotificationGroupInfo? {
+            val candidates = groups.mapNotNull { entity ->
+                val remaining = effectiveRemainingMillis(entity, currentApp, nowMillis) ?: return@mapNotNull null
+                entity to remaining
+            }
+            if (candidates.isEmpty()) return null
+
+            val best = candidates.minByOrNull { it.second } ?: return null
+
+            return NotificationGroupInfo(
+                entity = best.first,
+                isMultiProfile = candidates.size > 1
+            )
+        }
+
+        @VisibleForTesting
+        fun effectiveRemainingMillis(
+            entity: AppLimitGroupEntity,
+            currentApp: String,
+            nowMillis: Long = System.currentTimeMillis()
+        ): Long? {
+            if (entity.paused) return null
+            if (entity.apps.none { it.appPackage == currentApp }) return null
+
+            val group = entity.toDomainModel()
+            if (!AppLimitEvaluator.shouldCheckLimit(group, nowMillis)) return null
+
+            val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+            if (limitInMinutes <= 0) return null
+
+            val limitMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
+            return if (group.limitEach) {
+                val appUsed = group.perAppUsage
+                    .firstOrNull { it.appPackage == currentApp }?.usedMillis ?: 0L
+                (limitMillis - appUsed).coerceAtLeast(0L)
+            } else {
+                group.timeRemaining.coerceAtLeast(0L)
+            }
+        }
+    }
+
+    /** Holds the selected notification group and whether multiple active profiles exist. */
+    data class NotificationGroupInfo(
+        val entity: AppLimitGroupEntity,
+        val isMultiProfile: Boolean
+    )
+
+    @VisibleForTesting
+    fun formatGroupNotificationText(
+        groupName: String,
         limitHours: Int,
         limitMinutes: Int,
         timeRemainingMillis: Long,
-        nextResetTimeMillis: Long
+        nextResetTimeMillis: Long,
+        isMultiProfile: Boolean
     ): String {
         val totalLimitMinutes = limitHours * 60 + limitMinutes
         val totalLimitMillis = TimeUnit.MINUTES.toMillis(totalLimitMinutes.toLong())
@@ -344,7 +564,8 @@ class BackgroundChecker : Service() {
             "unscheduled"
         }
 
-        return "Used ${usedMinutes}m, left ${remainingMinutes}m, resets $resetText"
+        val base = "$groupName: Used ${usedMinutes}m, left ${remainingMinutes}m, resets $resetText"
+        return if (isMultiProfile) "$base (+ more profiles)" else base
     }
 
     // ── Foreground app detection ──────────────────────────────────────────────
@@ -376,6 +597,9 @@ class BackgroundChecker : Service() {
         isRunning = false
         serviceJob.cancel()
         unregisterReceiver(mReceiver)
+        try { unregisterReceiver(bubbleShowReceiver) } catch (_: Exception) {}
+        // Hide the floating bubble when the service stops
+        try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
         Log.i("BG_Service", "Service destroyed")
     }
 
@@ -390,25 +614,40 @@ class BackgroundChecker : Service() {
         }
     }
 
-    // ── Companion: service running check (no deprecated API) ──────────────────
+    // ── Companion object moved up next to updateNotification ──────────────────
 
-    companion object {
-        private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
-        private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
+    /**
+     * Receives the "Show Bubble" broadcast from the notification action.
+     * Clears the dismissed flag and re-shows the bubble with the latest text.
+     */
+    inner class BubbleShowReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val ctx = context ?: return
+            val prefs = ctx.getSharedPreferences("groupPrefs", MODE_PRIVATE)
+            prefs.edit().putBoolean(FloatingBubbleService.PREF_BUBBLE_DISMISSED, false).apply()
 
-        @Volatile
-        var isRunning = false
-            private set
-
-        @VisibleForTesting
-        @Volatile
-        var disableBackgroundLoopForTesting: Boolean = false
-
-        fun startServiceIfNotRunning(context: Context) {
-            if (!isRunning) {
-                val intent = Intent(context, BackgroundChecker::class.java)
-                context.startForegroundService(intent)
+            // Use lastForegroundApp — getForegroundApp() returns the notification
+            // shade when the user is pulling down to tap the action button.
+            val app = lastForegroundApp ?: return
+            val info = pickNotificationGroup(cachedGroups, app) ?: return
+            val group = info.entity.toDomainModel()
+            val limitMillis = TimeUnit.MINUTES.toMillis(
+                (group.timeHrLimit * 60 + group.timeMinLimit).toLong()
+            )
+            val appUsed = group.perAppUsage
+                .firstOrNull { it.appPackage == app }?.usedMillis ?: 0L
+            val timeRemaining = if (group.limitEach) {
+                (limitMillis - appUsed).coerceAtLeast(0L)
+            } else {
+                group.timeRemaining
             }
+            val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(timeRemaining.coerceAtLeast(0L))
+            val hours = totalMinutes / 60
+            val minutes = totalMinutes % 60
+            val bubbleText = String.format("%02d:%02d", hours, minutes)
+            try {
+                ctx.startService(FloatingBubbleService.showIntent(ctx, bubbleText, timeRemaining))
+            } catch (_: Exception) {}
         }
     }
 

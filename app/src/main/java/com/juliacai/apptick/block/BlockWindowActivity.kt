@@ -43,6 +43,9 @@ class BlockWindowActivity : AppCompatActivity() {
         val groupTimeSpent = intent.getLongExtra("group_time_spent", 0)
         val timeLimitMinutes = intent.getIntExtra("time_limit_minutes", 0)
         val limitEach = intent.getBooleanExtra("limit_each", false)
+        val useTimeRange = intent.getBooleanExtra("use_time_range", false)
+        val blockOutsideTimeRange = intent.getBooleanExtra("block_outside_time_range", false)
+        val blockedForOutsideRange = intent.getBooleanExtra("blocked_for_outside_range", false)
         val isPremium = prefs.getBoolean("premium", false)
         val primaryColor = AppTheme.getPrimaryColor(this)
         val backgroundColor = AppTheme.getBackgroundColor(this)
@@ -99,6 +102,9 @@ class BlockWindowActivity : AppCompatActivity() {
                     groupTimeSpent = groupTimeSpent,
                     timeLimitMinutes = timeLimitMinutes,
                     limitEach = limitEach,
+                    useTimeRange = useTimeRange,
+                    blockOutsideTimeRange = blockOutsideTimeRange,
+                    blockedForOutsideRange = blockedForOutsideRange,
                     isPremium = isPremium,
                     primaryColor = composePrimary,
                     backgroundColor = composeBackground

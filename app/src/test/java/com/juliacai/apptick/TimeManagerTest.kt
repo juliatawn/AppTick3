@@ -17,8 +17,8 @@ class TimeManagerTest {
 
     @Test
     fun `test get next reset time with periodic reset`() {
-        // Periodic mode: resetHours > 0 → next reset = now + resetHours
-        val group = AppLimitGroup(resetHours = 24)
+        // Periodic mode: resetMinutes > 0 → next reset = now + resetMinutes
+        val group = AppLimitGroup(resetMinutes = 24 * 60)
         val timeManager = TimeManager(group)
         val nextResetTime = timeManager.getNextResetTime()
 
@@ -39,9 +39,9 @@ class TimeManagerTest {
     }
 
     @Test
-    fun `test get next reset time when resetHours is zero defaults to midnight`() {
-        // Daily mode: resetHours == 0 → next reset = midnight tomorrow
-        val group = AppLimitGroup(resetHours = 0)
+    fun `test get next reset time when resetMinutes is zero defaults to midnight`() {
+        // Daily mode: resetMinutes == 0 → next reset = midnight tomorrow
+        val group = AppLimitGroup(resetMinutes = 0)
         val timeManager = TimeManager(group)
         val nextResetTime = timeManager.getNextResetTime()
 

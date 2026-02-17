@@ -55,6 +55,7 @@ fun SettingsScreen(
     var isDarkMode by remember { mutableStateOf(ThemeModeManager.isDarkModeEnabled(context)) }
     var isCustomColorMode by remember { mutableStateOf(ThemeModeManager.isCustomColorModeEnabled(context)) }
     var showTimeLeft by remember { mutableStateOf(groupPrefs.getBoolean("showTimeLeft", true)) }
+    var floatingBubbleEnabled by remember { mutableStateOf(groupPrefs.getBoolean("floatingBubbleEnabled", false)) }
     var hasPassword by remember { mutableStateOf(groupPrefs.getString("password", null) != null) }
     var premiumFeatureDialogFor by remember { mutableStateOf<String?>(null) }
 
@@ -209,6 +210,35 @@ fun SettingsScreen(
                     }
                 )
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Floating Time Left Bubble")
+                    Text(
+                        "Shows a small overlay with time remaining when using limited apps",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = floatingBubbleEnabled,
+                    onCheckedChange = {
+                        if (!isPremium) {
+                            promptPremium("Floating Time Left Bubble")
+                            return@Switch
+                        }
+                        floatingBubbleEnabled = it
+                        groupPrefs.edit { putBoolean("floatingBubbleEnabled", it) }
+                        // Clear dismissed flag when toggling on so bubble shows immediately
+                        if (it) {
+                            groupPrefs.edit { putBoolean("bubbleDismissed", false) }
+                        }
+                    }
+                )
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
@@ -270,7 +300,26 @@ fun SettingsScreen(
                         checked = isPremium,
                         onCheckedChange = {
                             isPremium = it
-                            groupPrefs.edit { putBoolean("premium", it) }
+                            if (it) {
+                                groupPrefs.edit {
+                                    putBoolean("debug_force_free", false)
+                                    putBoolean("premium", true)
+                                }
+                            } else {
+                                // Force free-user behavior even if billing callbacks run.
+                                groupPrefs.edit {
+                                    putBoolean("debug_force_free", true)
+                                    putBoolean("premium", false)
+                                    putBoolean("floatingBubbleEnabled", false)
+                                }
+                                isCustomColorMode = false
+                                isDarkMode = false
+                                floatingBubbleEnabled = false
+                                ThemeModeManager.persistCustomColorMode(context, false)
+                                ThemeModeManager.persistDarkMode(context, false)
+                                ThemeModeManager.apply(context)
+                                context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+                            }
                         }
                     )
                 }

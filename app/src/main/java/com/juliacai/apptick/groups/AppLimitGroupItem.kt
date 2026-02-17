@@ -122,6 +122,13 @@ fun AppLimitGroupItem(
             Text(text = formatActiveDaysInfo(group))
             if (group.useTimeRange) {
                 Text(text = formatTimeRangeInfo(group))
+                Text(
+                    text = if (group.blockOutsideTimeRange) {
+                        "Outside range: Block apps"
+                    } else {
+                        "Outside range: Allow no limits"
+                    }
+                )
             }
             Text(text = formatResetInfo(group))
         }
@@ -145,9 +152,9 @@ private fun formatTimeRangeInfo(group: AppLimitGroup): String {
 }
 
 private fun formatResetInfo(group: AppLimitGroup): String {
-    if (group.resetHours <= 0) return "Resets: Daily"
-    val hours = group.resetHours / 60
-    val minutes = group.resetHours % 60
+    if (group.resetMinutes <= 0) return "Resets: Daily"
+    val hours = group.resetMinutes / 60
+    val minutes = group.resetMinutes % 60
     val interval = "${hours}h ${minutes}m"
     return if (group.cumulativeTime) {
         "Cumulative: Daily + every $interval"

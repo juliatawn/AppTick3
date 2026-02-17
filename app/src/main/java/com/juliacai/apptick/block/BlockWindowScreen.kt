@@ -44,6 +44,9 @@ fun BlockWindowScreen(
     groupTimeSpent: Long,
     timeLimitMinutes: Int,
     limitEach: Boolean,
+    useTimeRange: Boolean,
+    blockOutsideTimeRange: Boolean,
+    blockedForOutsideRange: Boolean,
     isPremium: Boolean,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     backgroundColor: Color = MaterialTheme.colorScheme.background
@@ -84,7 +87,7 @@ fun BlockWindowScreen(
 
         // ── Title ─────────────────────────────────────────────────────────
         Text(
-            text = stringResource(R.string.time_limit_reached, appName),
+            text = "Blocked from $appName",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = primaryColor,
@@ -194,6 +197,22 @@ fun BlockWindowScreen(
                     value = formatMinutes(timeLimitMinutes),
                     primaryColor = primaryColor
                 )
+                if (useTimeRange) {
+                    Spacer(Modifier.height(8.dp))
+                    InfoRow(
+                        label = "Outside Range Mode",
+                        value = if (blockOutsideTimeRange) "Block apps" else "Allow no limits",
+                        primaryColor = primaryColor
+                    )
+                }
+                if (blockedForOutsideRange) {
+                    Spacer(Modifier.height(8.dp))
+                    InfoRow(
+                        label = "Block Reason",
+                        value = "Outside configured time range",
+                        primaryColor = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
 

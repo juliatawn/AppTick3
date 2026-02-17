@@ -77,6 +77,15 @@
                 android:value="Checks what app you are using so your app limit can block it when appropriate"/>
         </service>
 
+        <service
+            android:name=".backgroundProcesses.FloatingBubbleService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows floating time-remaining bubble overlay while user is in a time-limited app"/>
+        </service>
+
         <receiver
             android:name=".Receiver"
             android:enabled="true"

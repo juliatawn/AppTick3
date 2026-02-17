@@ -235,7 +235,8 @@ private fun formatTimeRangeInfo(group: AppLimitGroup): String {
     return if (!group.useTimeRange) {
         "All Day"
     } else {
-        "%02d:%02d - %02d:%02d".format(
+        val mode = if (group.blockOutsideTimeRange) "Block outside range" else "Allow outside range"
+        "%02d:%02d - %02d:%02d ($mode)".format(
             group.startHour, group.startMinute,
             group.endHour, group.endMinute
         )
@@ -243,8 +244,8 @@ private fun formatTimeRangeInfo(group: AppLimitGroup): String {
 }
 
 private fun formatResetType(group: AppLimitGroup): String {
-    if (group.resetHours <= 0) return "Standard (Resets Daily)"
-    val interval = "${group.resetHours / 60}h ${group.resetHours % 60}m"
+    if (group.resetMinutes <= 0) return "Standard (Resets Daily)"
+    val interval = "${group.resetMinutes / 60}h ${group.resetMinutes % 60}m"
     return if (group.cumulativeTime) {
         "Cumulative (Daily + every $interval)"
     } else {
@@ -257,4 +258,3 @@ private fun formatDays(days: List<Int>): String {
     val dayNames = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     return days.sorted().mapNotNull { dayNames.getOrNull(it - 1) }.joinToString(", ")
 }
-

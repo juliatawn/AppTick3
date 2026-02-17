@@ -213,7 +213,7 @@ class BackgroundCheckerTest {
             timeMinLimit = 0,
             timeRemaining = 10_000L,  // almost exhausted
             nextResetTime = now - 3_600_000L,  // expired 1 hour ago
-            resetHours = 0,  // daily mode
+            resetMinutes = 0,  // daily mode
             apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android")),
             perAppUsage = listOf(
                 com.juliacai.apptick.groups.AppUsageStat("com.instagram.android", 3_590_000L)
@@ -251,7 +251,7 @@ class BackgroundCheckerTest {
             timeMinLimit = 30,
             timeRemaining = 5_000L,
             nextResetTime = now - 60_000L,  // expired 1 minute ago
-            resetHours = 2,  // periodic: every 2 hours
+            resetMinutes = 120,  // periodic: every 2 hours (120 minutes)
             apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")),
             perAppUsage = listOf(
                 com.juliacai.apptick.groups.AppUsageStat("com.google.android.youtube", 1_795_000L)

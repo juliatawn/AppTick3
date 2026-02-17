@@ -52,7 +52,7 @@ fun AppLimitScreenPreview() {
             endHour = 0,
             endMinute = 0,
             cumulativeTime = true,
-            resetHours = 24,
+            resetMinutes = 24,
             paused = false
         ),
         AppLimitGroup(
@@ -80,7 +80,7 @@ fun AppLimitScreenPreview() {
             endHour = 22,
             endMinute = 0,
             cumulativeTime = false,
-            resetHours = 0,
+            resetMinutes = 0,
             paused = true
         )
     )
