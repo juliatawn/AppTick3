@@ -12,7 +12,9 @@ class SettingsActivity : AppCompatActivity() {
             SettingsScreen(
                 onBackClick = { finish() },
                 onCustomizeColors = {},
-                onUpgradeToPremium = {}
+                onUpgradeToPremium = {},
+                onOpenPremiumModeInfo = {},
+                onOpenAppLimitBackup = {}
             )
         }
     }

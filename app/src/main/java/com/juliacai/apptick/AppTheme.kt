@@ -26,6 +26,7 @@ object AppTheme {
     private const val KEY_PRIMARY_COLOR = "custom_primary_color"
     private const val KEY_ACCENT_COLOR = "custom_accent_color"
     private const val KEY_BACKGROUND_COLOR = "custom_background_color"
+    private const val KEY_CARD_COLOR = "custom_card_color"
     private const val KEY_ICON_COLOR = "custom_icon_color"
     private const val KEY_APP_ICON_COLOR_MODE = "app_icon_color_mode"
     private const val DEFAULT_PRIMARY_COLOR = "#3949AB" // Keep your purple default.
@@ -87,6 +88,19 @@ object AppTheme {
         return if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
     }
 
+    fun getCardColor(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val premiumEnabled = prefs.getBoolean("premium", false)
+        val customModeEnabled =
+            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
+
+        if (!customModeEnabled) {
+            return getBackgroundColor(context)
+        }
+
+        return prefs.getInt(KEY_CARD_COLOR, getBackgroundColor(context))
+    }
+
     fun getIconColor(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val premiumEnabled = prefs.getBoolean("premium", false)
@@ -126,6 +140,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 
     val savedPrimaryColor = prefs.getInt(KEY_PRIMARY_COLOR, 0)
     val savedBackgroundColor = prefs.getInt(KEY_BACKGROUND_COLOR, 0)
+    val savedCardColor = prefs.getInt(KEY_CARD_COLOR, 0)
     val savedIconColor = prefs.getInt(KEY_ICON_COLOR, 0)
     val appIconColorMode = prefs.getString(KEY_APP_ICON_COLOR_MODE, "system") ?: "system"
 
@@ -135,6 +150,7 @@ fun AppTheme(content: @Composable () -> Unit) {
 
     val defaultBackground = if (isSystemDark) ComposeColor.Black else ComposeColor.White
     val composeBackground = if (savedBackgroundColor != 0) ComposeColor(savedBackgroundColor) else defaultBackground
+    val composeCard = if (savedCardColor != 0) ComposeColor(savedCardColor) else composeBackground
 
     val systemThemeIconColor =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -163,23 +179,37 @@ fun AppTheme(content: @Composable () -> Unit) {
             darkColorScheme(
                 primary = composePrimary,
                 background = composeBackground,
-                surface = composeBackground,
+                surface = composeCard,
                 primaryContainer = composePrimary.copy(alpha = 0.24f),
                 onPrimary = composeIconColor,
                 onBackground = composeIconColor,
                 onSurface = composeIconColor,
                 onPrimaryContainer = composeIconColor
+            ).copy(
+                surfaceVariant = composeCard,
+                surfaceContainerLowest = composeCard,
+                surfaceContainerLow = composeCard,
+                surfaceContainer = composeCard,
+                surfaceContainerHigh = composeCard,
+                surfaceContainerHighest = composeCard
             )
         } else {
             lightColorScheme(
                 primary = composePrimary,
                 background = composeBackground,
-                surface = composeBackground,
+                surface = composeCard,
                 primaryContainer = composePrimary.copy(alpha = 0.16f),
                 onPrimary = composeIconColor,
                 onBackground = composeIconColor,
                 onSurface = composeIconColor,
                 onPrimaryContainer = composeIconColor
+            ).copy(
+                surfaceVariant = composeCard,
+                surfaceContainerLowest = composeCard,
+                surfaceContainerLow = composeCard,
+                surfaceContainer = composeCard,
+                surfaceContainerHigh = composeCard,
+                surfaceContainerHighest = composeCard
             )
         }
     } else if (isSystemDark) {
@@ -194,5 +224,6 @@ fun AppTheme(content: @Composable () -> Unit) {
 private const val PREFS_NAME = "groupPrefs"
 private const val KEY_PRIMARY_COLOR = "custom_primary_color"
 private const val KEY_BACKGROUND_COLOR = "custom_background_color"
+private const val KEY_CARD_COLOR = "custom_card_color"
 private const val KEY_ICON_COLOR = "custom_icon_color"
 private const val KEY_APP_ICON_COLOR_MODE = "app_icon_color_mode"

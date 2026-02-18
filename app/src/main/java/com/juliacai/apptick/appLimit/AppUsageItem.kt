@@ -23,7 +23,12 @@ import com.juliacai.apptick.AppInfo
 @Composable
 fun AppUsageItem(appInfo: AppInfo, timeLimit: Int) {
     val usageMinutes = appInfo.appTimeUse / 60000
-    val progress = (usageMinutes.toFloat() / timeLimit).coerceAtMost(1f)
+    val safeTimeLimit = timeLimit.coerceAtLeast(0)
+    val progress = if (safeTimeLimit > 0) {
+        (usageMinutes.toFloat() / safeTimeLimit.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
 
     Card(
         modifier = Modifier

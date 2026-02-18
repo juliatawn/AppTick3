@@ -136,11 +136,17 @@ internal fun normalizeGroupForPersistence(
         // Daily mode: next reset = 12:00 AM tomorrow.
         TimeManager.nextMidnight(now)
     }
+    val normalizedNextAdd = if (group.cumulativeTime && group.resetMinutes > 0) {
+        normalizedNextReset
+    } else {
+        0L
+    }
 
     return group.copy(
         perAppUsage = normalizedUsage,
         timeRemaining = normalizedTimeRemaining,
-        nextResetTime = normalizedNextReset
+        nextResetTime = normalizedNextReset,
+        nextAddTime = normalizedNextAdd
     )
 }
 

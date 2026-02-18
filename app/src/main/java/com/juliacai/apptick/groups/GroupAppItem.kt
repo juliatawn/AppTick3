@@ -26,11 +26,25 @@ import androidx.core.graphics.createBitmap
 import com.juliacai.apptick.AppInfo
 
 @Composable
-fun GroupAppItem(appInfo: AppInfo, timeLimit: Int, limitEach: Boolean) {
+fun GroupAppItem(
+    appInfo: AppInfo,
+    timeLimit: Int,
+    limitEach: Boolean,
+    sharedTimeRemainingMinutes: Int? = null
+) {
     val derivedTimeUsed = (appInfo.appTimeUse / 60_000L).toInt()
     val timeUsed = if (appInfo.timeUsed > 0) appInfo.timeUsed else derivedTimeUsed
-    val timeRemaining = timeLimit - timeUsed
-    val progress = (timeUsed.toFloat() / timeLimit).coerceAtMost(1f)
+    val safeTimeLimit = timeLimit.coerceAtLeast(0)
+    val timeRemaining = if (limitEach) {
+        (safeTimeLimit - timeUsed).coerceAtLeast(0)
+    } else {
+        (sharedTimeRemainingMinutes ?: (safeTimeLimit - timeUsed)).coerceAtLeast(0)
+    }
+    val progress = if (safeTimeLimit > 0) {
+        (timeUsed.toFloat() / safeTimeLimit.toFloat()).coerceIn(0f, 1f)
+    } else {
+        0f
+    }
 
     val context = LocalContext.current
     val iconBitmap = remember(appInfo.appPackage) {

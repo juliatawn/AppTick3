@@ -4,6 +4,9 @@ import android.content.Context
 import android.content.Intent
 import android.text.InputType
 import android.widget.EditText
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.foundation.layout.Column
@@ -13,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,16 +43,28 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
+import com.juliacai.apptick.data.AppLimitBackupManager
+import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.toDomainModel
+import com.juliacai.apptick.data.toEntity
+import com.juliacai.apptick.newAppLimit.normalizeGroupForPersistence
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
-
-
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
     onCustomizeColors: () -> Unit,
-    onUpgradeToPremium: () -> Unit
+    onUpgradeToPremium: () -> Unit,
+    onOpenPremiumModeInfo: () -> Unit,
+    onOpenAppLimitBackup: () -> Unit
 ) {
     val context = LocalContext.current
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
@@ -123,6 +141,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(it)
                 .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
             if (!isPremium) {
                 Card(
@@ -154,7 +173,6 @@ fun SettingsScreen(
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
-
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -243,6 +261,19 @@ fun SettingsScreen(
             Button(
                 onClick = {
                     if (!isPremium) {
+                        promptPremium("App Limit Backup")
+                        return@Button
+                    }
+                    onOpenAppLimitBackup()
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("App Limit Backup")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (!isPremium) {
                         promptPremium("Customize Colors")
                         return@Button
                     }
@@ -281,6 +312,13 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = onOpenPremiumModeInfo,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Premium Mode Info")
             }
 
             // Debug-only premium toggle
@@ -345,6 +383,208 @@ fun SettingsScreen(
             },
             dismissButton = {
                 androidx.compose.material3.OutlinedButton(onClick = { premiumFeatureDialogFor = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AppLimitBackupScreen(
+    onBackClick: () -> Unit
+) {
+    val context = LocalContext.current
+    val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
+    val coroutineScope = rememberCoroutineScope()
+    val dao = remember { AppTickDatabase.getDatabase(context).appLimitGroupDao() }
+    var backupInProgress by remember { mutableStateOf(false) }
+    var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    fun exportBackupToUri(uri: android.net.Uri) {
+        coroutineScope.launch {
+            backupInProgress = true
+            val error = withContext(Dispatchers.IO) {
+                runCatching {
+                    val groups = dao.getAllAppLimitGroupsImmediate()
+                    val backup = AppLimitBackupManager.createBackup(
+                        groups = groups,
+                        appSettings = AppLimitBackupManager.collectAppSettings(groupPrefs)
+                    )
+                    AppLimitBackupManager.writeBackupToUri(context, uri, backup)
+                }.exceptionOrNull()
+            }
+            backupInProgress = false
+            if (error == null) {
+                Toast.makeText(context, "Backup saved.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(
+                    context,
+                    "Backup failed: ${error.localizedMessage ?: "Unknown error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    fun importBackupFromUri(uri: android.net.Uri) {
+        coroutineScope.launch {
+            backupInProgress = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val backup = AppLimitBackupManager.readBackupFromUri(context, uri)
+                    val importedGroups = backup.groups.map { group ->
+                        normalizeGroupForPersistence(
+                            group = group.copy(
+                                id = 0L,
+                                timeRemaining = 0L,
+                                nextResetTime = 0L,
+                                nextAddTime = 0L,
+                                perAppUsage = emptyList()
+                            ).toDomainModel(),
+                            normalizedUsage = emptyList()
+                        ).toEntity()
+                    }
+                    dao.replaceAllAppLimitGroups(importedGroups)
+                    AppLimitBackupManager.applyAppSettings(groupPrefs, backup.appSettings)
+                    ThemeModeManager.apply(context)
+                    context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+
+                    val activeGroupCount = dao.getActiveGroupCount()
+                    if (activeGroupCount > 0) {
+                        BackgroundChecker.startServiceIfNotRunning(context.applicationContext)
+                    } else {
+                        context.applicationContext.stopService(
+                            Intent(context.applicationContext, BackgroundChecker::class.java)
+                        )
+                    }
+                    backup
+                }
+            }
+            backupInProgress = false
+            result.onSuccess { backup ->
+                Toast.makeText(
+                    context,
+                    "Imported ${backup.groups.size} app limit group(s) and AppTick settings.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }.onFailure { error ->
+                Toast.makeText(
+                    context,
+                    "Import failed: ${error.localizedMessage ?: "Unknown error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            exportBackupToUri(uri)
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            pendingImportUri = uri
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("App Limit Backup") },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(
+                "Back up all your app limit settings and AppTick app settings to a file.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                "Import your app limit settings and AppTick app settings from a backup file; it will overwrite your current app limit and app settings.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    if (backupInProgress) return@Button
+                    val timestamp = SimpleDateFormat(
+                        "yyyyMMdd-HHmmss",
+                        Locale.US
+                    ).format(Date())
+                    exportBackupLauncher.launch("apptick-backup-$timestamp.json")
+                },
+                enabled = !backupInProgress,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Save Backup")
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = {
+                    if (backupInProgress) return@Button
+                    importBackupLauncher.launch(arrayOf("application/json", "text/plain"))
+                },
+                enabled = !backupInProgress,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Restore Backup")
+            }
+            if (backupInProgress) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Processing backup...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+
+    pendingImportUri?.let { importUri ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pendingImportUri = null },
+            title = { Text("Restore Backup?") },
+            text = {
+                Text(
+                    "This will replace your current app limit groups and restore settings from the backup file."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        pendingImportUri = null
+                        importBackupFromUri(importUri)
+                    }
+                ) {
+                    Text("Restore")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.OutlinedButton(onClick = { pendingImportUri = null }) {
                     Text("Cancel")
                 }
             }

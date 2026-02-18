@@ -106,6 +106,31 @@ class ColorPickerScreenTest {
     }
 
     @Test
+    fun wheelOnCardTab_onlyUpdatesCardColor() {
+        setPremiumEnabled(enabled = true)
+        composeRule.setContent {
+            ColorPickerScreen(onBackClick = {})
+        }
+
+        composeRule.onNodeWithText("Card").performClick()
+
+        val backgroundBefore = getTextByTag("background_hex")
+        val cardBefore = getTextByTag("card_hex")
+
+        composeRule.onNodeWithTag("color_wheel").assertIsDisplayed()
+        composeRule.onNodeWithTag("color_wheel").performTouchInput {
+            down(Offset(84f, 168f))
+            up()
+        }
+
+        val backgroundAfter = getTextByTag("background_hex")
+        val cardAfter = getTextByTag("card_hex")
+
+        assertEquals("Background color should not change on Card tab", backgroundBefore, backgroundAfter)
+        assertNotEquals("Card color should change on Card tab", cardBefore, cardAfter)
+    }
+
+    @Test
     fun changingTextColor_doesNotChangeEffectiveIconPreview_whenIconSetCustom() {
         setPremiumEnabled(enabled = true)
         composeRule.setContent {

@@ -15,6 +15,7 @@ import android.graphics.Color
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.provider.Settings
 import android.util.Log
@@ -52,6 +53,7 @@ class BackgroundChecker : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
     private lateinit var usageStatsManager: UsageStatsManager
+    private lateinit var powerManager: PowerManager
     private lateinit var blockIntent: Intent
 
     private val db by lazy { AppTickDatabase.getDatabase(this) }
@@ -84,6 +86,8 @@ class BackgroundChecker : Service() {
 
         // Initialize UsageStatsManager once
         usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        isScreenOn = powerManager.isInteractive
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             try {
@@ -148,6 +152,8 @@ class BackgroundChecker : Service() {
             lastCheckElapsed = SystemClock.elapsedRealtime()
 
             while (isActive) {
+                // Self-heal screen state in case SCREEN_ON/OFF broadcasts are delayed or missed.
+                isScreenOn = powerManager.isInteractive
                 if (isScreenOn) {
                     val foregroundApp = getForegroundApp()
                     if (foregroundApp != null) {
@@ -195,6 +201,7 @@ class BackgroundChecker : Service() {
             blockIntent.putExtra("use_time_range", false)
             blockIntent.putExtra("block_outside_time_range", false)
             blockIntent.putExtra("blocked_for_outside_range", false)
+            blockIntent.putExtra("block_reason", "Used up time limit")
             startActivity(blockIntent)
             return
         }
@@ -232,6 +239,7 @@ class BackgroundChecker : Service() {
             if (group.nextResetTime in 1..now) {
                 val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
                 val fullLimitMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
+                val isPeriodicCumulative = group.cumulativeTime && group.resetMinutes > 0
 
                 // Advance nextResetTime based on mode
                 val newNextReset = if (group.resetMinutes > 0) {
@@ -242,11 +250,17 @@ class BackgroundChecker : Service() {
 
                 // Zero out all per-app usage
                 val clearedUsage = group.perAppUsage.map { it.copy(usedMillis = 0L) }
+                val newTimeRemaining = if (isPeriodicCumulative) {
+                    (group.timeRemaining.coerceAtLeast(0L) + fullLimitMillis).coerceAtLeast(0L)
+                } else {
+                    fullLimitMillis
+                }
 
                 appLimitGroupDao.updateAppLimitGroup(
                     entity.copy(
-                        timeRemaining = fullLimitMillis,
+                        timeRemaining = newTimeRemaining,
                         nextResetTime = newNextReset,
+                        nextAddTime = if (isPeriodicCumulative) newNextReset else 0L,
                         perAppUsage = clearedUsage
                     )
                 )
@@ -275,6 +289,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("use_time_range", group.useTimeRange)
                 blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                 blockIntent.putExtra("blocked_for_outside_range", true)
+                blockIntent.putExtra("block_reason", "Outside configured time range")
                 startActivity(blockIntent)
                 continue
             }
@@ -296,6 +311,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
+                    blockIntent.putExtra("block_reason", "Used up time limit")
                     startActivity(blockIntent)
                     continue
                 }
@@ -304,12 +320,31 @@ class BackgroundChecker : Service() {
                 val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }.toMutableMap()
                 val currentAppUsage = usageMap[appInGroup.appPackage] ?: 0L
 
-                val appLimitReached = currentAppUsage >= limitInMillis
-                val groupLimitReached = group.timeRemaining <= 0L
-                val isReached = if (group.limitEach) appLimitReached else groupLimitReached
+                // Project usage/remaining with this tick's elapsed time so blocking is immediate
+                // at expiry, not delayed until the following check.
+                val newAppUsage = (currentAppUsage + elapsed).coerceAtMost(limitInMillis)
+                val newTimeRemaining = if (group.limitEach) {
+                    (limitInMillis - newAppUsage).coerceAtLeast(0L)
+                } else {
+                    (group.timeRemaining - elapsed).coerceAtLeast(0L)
+                }
+                val isReached = if (group.limitEach) {
+                    newAppUsage >= limitInMillis
+                } else {
+                    newTimeRemaining <= 0L
+                }
 
                 if (isReached) {
-                    val appTimeSpent = currentAppUsage
+                    usageMap[appInGroup.appPackage] = newAppUsage
+                    val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
+                    appLimitGroupDao.updateAppLimitGroup(
+                        entity.copy(
+                            timeRemaining = newTimeRemaining,
+                            perAppUsage = updatedUsage
+                        )
+                    )
+
+                    val appTimeSpent = newAppUsage
                     val groupTimeSpent = usageMap.values.sum()
                     blockIntent.putExtra("app_name", appInGroup.appName)
                     blockIntent.putExtra("app_package", appInGroup.appPackage)
@@ -321,18 +356,10 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
+                    blockIntent.putExtra("block_reason", "Out of Time")
                     startActivity(blockIntent)
                 } else {
-                    // Use real elapsed time instead of assuming exact interval
-                    val newAppUsage = (currentAppUsage + elapsed).coerceAtMost(limitInMillis)
                     usageMap[appInGroup.appPackage] = newAppUsage
-
-                    val newTimeRemaining = if (group.limitEach) {
-                        (limitInMillis - newAppUsage).coerceAtLeast(0L)
-                    } else {
-                        (group.timeRemaining - elapsed).coerceAtLeast(0L)
-                    }
-
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
                     appLimitGroupDao.updateAppLimitGroup(
                         entity.copy(
@@ -349,6 +376,7 @@ class BackgroundChecker : Service() {
 
     private fun createNotification() {
         val channelId = "APPTICK_CHANNEL"
+        val defaultContentText = "AppTick is running..."
         mBuilder = NotificationCompat.Builder(applicationContext, channelId)
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
@@ -365,7 +393,8 @@ class BackgroundChecker : Service() {
         mBuilder.apply {
             setSmallIcon(R.drawable.ic_launcher_foreground)
             setContentTitle("AppTick")
-            setContentText("AppTick is running...")
+            setContentText(defaultContentText)
+            setStyle(NotificationCompat.BigTextStyle().bigText(defaultContentText))
             color = Color.argb(255, 0, 151, 167)
             priority = NotificationManager.IMPORTANCE_LOW
             setOnlyAlertOnce(true)
@@ -417,6 +446,7 @@ class BackgroundChecker : Service() {
             "AppTick is running..."
         }
         mBuilder.setContentText(contentText)
+        mBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
         mNotificationManager.notify(notifId, mBuilder.build())
     }
 
@@ -465,13 +495,12 @@ class BackgroundChecker : Service() {
             group.timeRemaining
         }
 
-        val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(timeRemaining.coerceAtLeast(0L))
-        val hours = totalMinutes / 60
-        val minutes = totalMinutes % 60
-        val bubbleText = String.format("%02d:%02d", hours, minutes)
+        val bubbleText = formatBubbleCountdown(timeRemaining)
 
         try {
-            startService(FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining))
+            startService(
+                FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, currentApp)
+            )
         } catch (_: Exception) {}
     }
 
@@ -582,6 +611,15 @@ class BackgroundChecker : Service() {
         return if (isMultiProfile) "$base (+ more profiles)" else base
     }
 
+    @VisibleForTesting
+    fun formatBubbleCountdown(timeRemainingMillis: Long): String {
+        val safeMillis = timeRemainingMillis.coerceAtLeast(0L)
+        val totalMinutes = if (safeMillis <= 0L) 0L else maxOf(1L, safeMillis / 60_000L)
+        val hours = totalMinutes / 60L
+        val minutes = totalMinutes % 60L
+        return String.format("%02d:%02d", hours, minutes)
+    }
+
     // ── Foreground app detection ──────────────────────────────────────────────
 
     private fun getForegroundApp(): String? {
@@ -655,12 +693,11 @@ class BackgroundChecker : Service() {
             } else {
                 group.timeRemaining
             }
-            val totalMinutes = TimeUnit.MILLISECONDS.toMinutes(timeRemaining.coerceAtLeast(0L))
-            val hours = totalMinutes / 60
-            val minutes = totalMinutes % 60
-            val bubbleText = String.format("%02d:%02d", hours, minutes)
+            val bubbleText = formatBubbleCountdown(timeRemaining)
             try {
-                ctx.startService(FloatingBubbleService.showIntent(ctx, bubbleText, timeRemaining))
+                ctx.startService(
+                    FloatingBubbleService.showIntent(ctx, bubbleText, timeRemaining, app)
+                )
             } catch (_: Exception) {}
         }
     }

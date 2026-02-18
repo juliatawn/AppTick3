@@ -10,7 +10,6 @@ import android.content.DialogInterface
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.data.AppTickDatabase
-import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
 import kotlinx.coroutines.launch
@@ -19,28 +18,24 @@ class AppLimitDetailsActivity : AppCompatActivity() {
 
     private val db by lazy { AppTickDatabase.getDatabase(this) }
     private val appLimitGroupDao by lazy { db.appLimitGroupDao() }
-    private var group: AppLimitGroup? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val groupId = intent.getLongExtra("GROUP_ID", -1) // Corrected key from "groupId" to "GROUP_ID" based on MainActivity
+        val groupId = intent.getLongExtra("GROUP_ID", -1)
         if (groupId == -1L) {
             finish()
             return
         }
 
-        lifecycleScope.launch {
-            group = appLimitGroupDao.getGroup(groupId)?.toDomainModel()
-            setContent {
-                MaterialTheme {
-                    AppLimitDetailsScreen(
-                        groupId = groupId,
-                        viewModel = androidx.lifecycle.ViewModelProvider(this@AppLimitDetailsActivity)[com.juliacai.apptick.MainViewModel::class.java], // Use ViewModelProvider
-                        onEditClick = { group?.let { showEditOptions(it) } },
-                        onBackClick = { finish() }
-                    )
-                }
+        setContent {
+            MaterialTheme {
+                AppLimitDetailsScreen(
+                    groupId = groupId,
+                    viewModel = androidx.lifecycle.ViewModelProvider(this@AppLimitDetailsActivity)[com.juliacai.apptick.MainViewModel::class.java],
+                    onEditClick = { selectedGroup -> showEditOptions(selectedGroup) },
+                    onBackClick = { finish() }
+                )
             }
         }
     }

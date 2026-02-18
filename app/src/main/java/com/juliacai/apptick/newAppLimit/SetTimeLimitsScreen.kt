@@ -3,6 +3,8 @@ package com.juliacai.apptick.newAppLimit
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,7 +21,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import android.content.Context
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.juliacai.apptick.appLimit.AppInGroup
@@ -32,9 +39,15 @@ fun SetTimeLimitsScreen(
     viewModel: AppLimitViewModel = viewModel(),
     onFinish: (AppLimitGroup) -> Unit,
     onCancel: () -> Unit,
-    onEditApps: () -> Unit = {}
+    onEditApps: () -> Unit = {},
+    onUpgradeToPremium: () -> Unit = {}
 ) {
     val scrollState = rememberScrollState()
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
+    var premiumFeatureDialogFor by remember { mutableStateOf<String?>(null) }
     val group by viewModel.group.observeAsState()
     val draft by viewModel.draft.observeAsState()
     val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
@@ -125,6 +138,13 @@ fun SetTimeLimitsScreen(
         Column(
             modifier = Modifier
                 .padding(paddingValues)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                }
                 .verticalScroll(scrollState)
                 .padding(16.dp)
         ) {
@@ -194,7 +214,19 @@ fun SetTimeLimitsScreen(
             Divider()
             Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedTextField(value = groupName.value, onValueChange = { groupName.value = it }, label = { Text("App Limit Group Name") }, modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(
+                value = groupName.value,
+                onValueChange = { groupName.value = it },
+                label = { Text("App Limit Group Name") },
+                modifier = Modifier.fillMaxWidth(),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }
+                )
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -218,9 +250,36 @@ fun SetTimeLimitsScreen(
                 Column {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row {
-                        OutlinedTextField(value = timeHrLimit.value, onValueChange = { timeHrLimit.value = it }, label = { Text("HH") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(
+                            value = timeHrLimit.value,
+                            onValueChange = { timeHrLimit.value = it.filter(Char::isDigit) },
+                            label = { Text("HH") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onNext = { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) }
+                            )
+                        )
                         Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(value = timeMinLimit.value, onValueChange = { timeMinLimit.value = it }, label = { Text("MM") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(
+                            value = timeMinLimit.value,
+                            onValueChange = { timeMinLimit.value = it.filter(Char::isDigit) },
+                            label = { Text("MM") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                }
+                            )
+                        )
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = limitEach.value, onClick = { limitEach.value = true })
@@ -239,16 +298,36 @@ fun SetTimeLimitsScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Set Time Range")
                 Spacer(Modifier.weight(1f))
-                Switch(checked = useTimeRange.value, onCheckedChange = { useTimeRange.value = it })
+                Switch(
+                    checked = useTimeRange.value,
+                    onCheckedChange = {
+                        val isPremium = groupPrefs.getBoolean("premium", false)
+                        if (it && !isPremium) {
+                            premiumFeatureDialogFor = "Set Time Range"
+                            return@Switch
+                        }
+                        useTimeRange.value = it
+                    }
+                )
             }
 
             if (useTimeRange.value) {
                 Column {
                     Spacer(modifier = Modifier.height(16.dp))
                     Row {
-                        Button(onClick = { showStartTimePicker.value = true }, modifier = Modifier.weight(1f)) { Text("Start: ${startHour.value}:${startMinute.value}") }
+                        Button(
+                            onClick = { showStartTimePicker.value = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Start: ${formatTime(context, startHour.value, startMinute.value)}")
+                        }
                         Spacer(Modifier.width(8.dp))
-                        Button(onClick = { showEndTimePicker.value = true }, modifier = Modifier.weight(1f)) { Text("End: ${endHour.value}:${endMinute.value}") }
+                        Button(
+                            onClick = { showEndTimePicker.value = true },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("End: ${formatTime(context, endHour.value, endMinute.value)}")
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -264,24 +343,50 @@ fun SetTimeLimitsScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        val isBlockAppsSelected = blockOutsideTimeRange.value
                         OutlinedButton(
                             onClick = { blockOutsideTimeRange.value = true },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(
                                 1.dp,
-                                if (blockOutsideTimeRange.value) MaterialTheme.colorScheme.primary
+                                if (isBlockAppsSelected) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.outline
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isBlockAppsSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
+                                contentColor = if (isBlockAppsSelected) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
                             )
                         ) {
                             Text("Block Apps")
                         }
+                        val isNoLimitsSelected = !isBlockAppsSelected
                         OutlinedButton(
                             onClick = { blockOutsideTimeRange.value = false },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(
                                 1.dp,
-                                if (!blockOutsideTimeRange.value) MaterialTheme.colorScheme.primary
+                                if (isNoLimitsSelected) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.outline
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isNoLimitsSelected) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.surface
+                                },
+                                contentColor = if (isNoLimitsSelected) {
+                                    MaterialTheme.colorScheme.onPrimary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
                             )
                         ) {
                             Text("Allow No Limits")
@@ -295,6 +400,23 @@ fun SetTimeLimitsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Active Days")
+            val isEverydaySelected = weekDays.value.isEmpty()
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(
+                    checked = isEverydaySelected,
+                    onCheckedChange = { checked ->
+                        if (checked) {
+                            weekDays.value = emptyList()
+                        } else if (weekDays.value.isEmpty()) {
+                            weekDays.value = listOf(1)
+                        }
+                    }
+                )
+                Text("Everyday")
+            }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 val days = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
                 days.forEachIndexed { index, day ->
@@ -333,6 +455,11 @@ fun SetTimeLimitsScreen(
                 Switch(
                     checked = useReset.value,
                     onCheckedChange = {
+                        val isPremium = groupPrefs.getBoolean("premium", false)
+                        if (it && !isPremium) {
+                            premiumFeatureDialogFor = "Reset Time Limits Periodically"
+                            return@Switch
+                        }
                         useReset.value = it
                         if (!it) {
                             cumulativeTime.value = false
@@ -352,18 +479,35 @@ fun SetTimeLimitsScreen(
                     Row {
                         OutlinedTextField(
                             value = resetHours.value,
-                            onValueChange = { resetHours.value = it },
+                            onValueChange = { resetHours.value = it.filter(Char::isDigit) },
                             label = { Text("Reset HH") },
                             modifier = Modifier.weight(1f),
-                            isError = isResetHoursError.value
+                            isError = isResetHoursError.value,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onNext = { focusManager.moveFocus(androidx.compose.ui.focus.FocusDirection.Right) }
+                            )
                         )
                         Spacer(Modifier.width(8.dp))
                         OutlinedTextField(
                             value = resetMinutes.value,
-                            onValueChange = { resetMinutes.value = it },
+                            onValueChange = { resetMinutes.value = it.filter(Char::isDigit) },
                             label = { Text("Reset MM") },
                             modifier = Modifier.weight(1f),
-                            isError = isResetHoursError.value
+                            isError = isResetHoursError.value,
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done
+                            ),
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onDone = {
+                                    focusManager.clearFocus()
+                                    keyboardController?.hide()
+                                }
+                            )
                         )
                     }
                     if (isResetHoursError.value) {
@@ -445,7 +589,7 @@ fun SetTimeLimitsScreen(
                     { _, hour, minute -> startHour.value = hour; startMinute.value = minute; showStartTimePicker.value = false },
                     startHour.value,
                     startMinute.value,
-                    false
+                    android.text.format.DateFormat.is24HourFormat(context)
                 ).apply {
                     setOnCancelListener { showStartTimePicker.value = false }
                     show()
@@ -460,12 +604,45 @@ fun SetTimeLimitsScreen(
                     { _, hour, minute -> endHour.value = hour; endMinute.value = minute; showEndTimePicker.value = false },
                     endHour.value,
                     endMinute.value,
-                    false
+                    android.text.format.DateFormat.is24HourFormat(context)
                 ).apply {
                     setOnCancelListener { showEndTimePicker.value = false }
                     show()
                 }
             }
         }
+
+        premiumFeatureDialogFor?.let { featureName ->
+            AlertDialog(
+                onDismissRequest = { premiumFeatureDialogFor = null },
+                title = { Text("Premium Feature") },
+                text = { Text("$featureName is available in Premium Mode.") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            premiumFeatureDialogFor = null
+                            onUpgradeToPremium()
+                        }
+                    ) {
+                        Text("Buy Premium")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = { premiumFeatureDialogFor = null }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
     }
+}
+
+private fun formatTime(context: Context, hourOfDay: Int, minute: Int): String {
+    val calendar = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, hourOfDay)
+        set(Calendar.MINUTE, minute)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+    return android.text.format.DateFormat.getTimeFormat(context).format(calendar.time)
 }

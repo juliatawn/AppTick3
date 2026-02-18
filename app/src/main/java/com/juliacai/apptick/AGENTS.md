@@ -42,7 +42,7 @@ ALWAYS BE SURE TO CHECK THIS FILE FOR GUIDELINES IN HOW TO DO THE CODE
   - hour and minute field with respective labels with radio buttons under for selecting "Limit for EACH" or "Limit for ALL"
   - an option that is on by default that lets you toggle the time limit option off or on - pops up a confirmation dialog on if they really want to set no time limit on the app
   - an option that is off by default that lets you set a time range the limit is active, it shows a start and end time. When you click on each of the selectors it brings up the clock selector option with am and pm options for each as well. If no option is set then by default the app limit is from 12am to 12am the next day.
-    - Option for users where when they toggle Time Range on it shows an additional option buttons to either block apps compleletly when not in the time range OR to allow apps with no limits when outside the time range
+    - Option for users where when they toggle Time Range on it shows an additional option buttons to either block apps compleletly when not in the time range OR to allow apps with no limits when outside the time range'
   - an option that is off by default that lets you set a reset interval with a min and hr text box options, this is so if someone for example sets 1hr 30min then the time limit will reset and start over (so as if they didnt use the app yet)
     - there is a checkbox option that lets you set cummulative time (it only displays this option if the reset interval is set), cummulative time means that the time limit will keep adding up each unused time to be carried over to the next reset interval, example my reset is 30mins from now, I have 5mins unused then when its 30mins from now I get those 5mins in addition to my regular time allotment)
   - the user can select days of the week they want this app limit group to be active as well - if none are selected it is counted as everyday selected but to the user it just shows as "Everyday" in the group details page and card on the m
@@ -106,7 +106,8 @@ Running on Darwin 25.3.0 (arm64)
     - `MainScreen.kt`: The main UI of the app, built with Jetpack Compose. It displays the top app bar, floating action button, and the list of app limit groups.
     - `MainViewModel.kt`: The ViewModel for the MainActivity, responsible for managing app-limit data, premium state, and pause/resume service lifecycle behavior.
     - `Receiver.kt`: A BroadcastReceiver that handles system events like boot and screen on/off to manage the BackgroundChecker service.
-    - `SettingsScreen.kt`: A composable that displays the app's settings, including a debug-only premium toggle for developer testing.
+    - `SettingsScreen.kt`: A composable that displays app settings (theme, notifications, premium controls) and includes Backup/Restore actions for app-limit settings via JSON file export/import.
+    - `TimeFormatting.kt`: Shared clock-time formatting utilities that render times using the device locale and 12/24-hour preference.
     - `TimeManager.kt`: Manages time-related calculations and formatting.
 - **appLimit**
     - `AppLimitDetailsScreen.kt`: A composable that displays the details of an app limit group.
@@ -124,6 +125,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppLimitGroupDao.kt`: The DAO for the AppLimitGroupEntity, providing methods for accessing the database.
     - `AppLimitGroupEntity.kt`: The Room entity for the AppLimitGroup.
     - `AppTickDatabase.kt`: The main Room database class for the application, defining the database configuration, entities, and providing access to the DAOs.
+    - `AppLimitBackupManager.kt`: Serializes/deserializes backup JSON for app-limit configurations plus AppTick UI settings (theme/colors/notification-bubble options) and handles reading/writing backup files through SAF Uris.
     - `Converters.kt`: A Room type converter class that handles the conversion of complex data types, such as lists of integers and AppInGroup objects, into a format that can be stored in the database.
     - `LegacyDataMigrator.kt`: Handles the migration of data from a legacy database schema.
     - `Mapper.kt`: Contains extension functions that handle the mapping between the AppLimitGroup domain model and the AppLimitGroupEntity database entity.
@@ -132,13 +134,13 @@ Running on Darwin 25.3.0 (arm64)
     - `AppManager.kt`: Provides the installed app list used for selection while filtering safety-critical phone and messaging apps from being limited.
     - `AppSearchActivity.kt`: An activity that hosts the AppSearchScreen composable, which allows users to search for and select apps.
     - `AppUsageStats.kt`: An object that provides functions for querying app usage statistics.
-    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout, a scroll-triggered compact sticky summary header (group name + time left/used), and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
+    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout, a scroll-triggered compact sticky summary header (group name + time left/used), a consistent device-preference time-range display, and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
 - **groups**
     - `AppLimitGroups.kt`: A composable that displays a list of app limit groups and switches action behavior between edit/pause and lock-unlock callbacks when lock mode is active.
     - `AppInGroup.kt`: A data class that represents an app within an app limit group.
     - `AppLimitGroupDao.kt`: The DAO for the AppLimitGroupEntity, providing methods for accessing the database.
     - `AppLimitGroupEntity.kt`: The Room entity for the AppLimitGroup.
-    - `AppLimitGroupItem.kt`: A composable that displays an app limit group, replacing pause/edit actions with lock actions when group editing is locked.
+    - `AppLimitGroupItem.kt`: A composable that displays an app limit group, replacing pause/edit actions with lock actions when group editing is locked, and showing time ranges using the device 12/24-hour preference.
     - `GroupAppItem.kt`: A composable that displays a single app within an app limit group, showing its icon, name, and a progress bar representing the time used.
     - `AppLimitGroupItem.kt`: A composable that displays an app limit group.
     - `AppLimitGroupAdapter.kt`: A RecyclerView adapter for displaying app limit groups.
@@ -159,7 +161,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppLimitViewModel.kt`: ViewModel used by app-selection and time-limit setup flows to persist groups and ensure service state matches active groups.
     - `AppSearchScreen.kt`: A composable that provides a search bar for filtering a list of applications.
     - `AppSelectScreen.kt`: A composable that allows the user to select apps to limit.
-    - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled, plus an outside-time-range behavior selector (block apps vs allow no limits).
+    - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled, plus an outside-time-range behavior selector (block apps vs allow no limits) and device-preference time rendering in range controls.
 - **permissions**
     - `PermissionOnboardingScreen.kt`: A single composable that presents all 3 required permissions (Overlay, Usage Stats, Notifications) as steps in a unified onboarding flow with animated transitions, progress dots, and auto-advance on grant. Integrated into MainActivity's NavHost.
 - **premiumMode**

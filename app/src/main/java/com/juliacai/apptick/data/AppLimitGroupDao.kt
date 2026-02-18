@@ -25,11 +25,17 @@ interface AppLimitGroupDao {
     @Query("SELECT * FROM app_limit_groups WHERE id = :groupId")
     suspend fun getGroup(groupId: Long): AppLimitGroupEntity?
 
+    @Query("SELECT * FROM app_limit_groups WHERE id = :groupId")
+    fun getGroupLive(groupId: Long): LiveData<AppLimitGroupEntity?>
+
     @Query("SELECT * FROM app_limit_groups WHERE apps LIKE '%' || :appPackage || '%' LIMIT 1")
     suspend fun getGroupContainingApp(appPackage: String): AppLimitGroupEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAppLimitGroup(appLimitGroup: AppLimitGroupEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAppLimitGroups(appLimitGroups: List<AppLimitGroupEntity>)
 
     @Update
     suspend fun updateAppLimitGroup(appLimitGroup: AppLimitGroupEntity)
@@ -39,4 +45,15 @@ interface AppLimitGroupDao {
 
     @Delete
     suspend fun deleteAppLimitGroup(appLimitGroup: AppLimitGroupEntity)
+
+    @Query("DELETE FROM app_limit_groups")
+    suspend fun deleteAllAppLimitGroups()
+
+    @Transaction
+    suspend fun replaceAllAppLimitGroups(appLimitGroups: List<AppLimitGroupEntity>) {
+        deleteAllAppLimitGroups()
+        if (appLimitGroups.isNotEmpty()) {
+            insertAppLimitGroups(appLimitGroups)
+        }
+    }
 }

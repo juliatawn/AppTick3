@@ -40,6 +40,7 @@ fun BlockWindowScreen(
     appName: String,
     appIcon: Painter?,
     groupName: String,
+    blockReason: String?,
     appTimeSpent: Long,
     groupTimeSpent: Long,
     timeLimitMinutes: Int,
@@ -104,6 +105,31 @@ fun BlockWindowScreen(
         )
 
         Spacer(modifier = Modifier.height(24.dp))
+
+        if (!blockReason.isNullOrBlank()) {
+            ElevatedCard(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "Block Reason",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = blockReason,
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+        }
 
         // ── Usage Progress Card ───────────────────────────────────────────
         ElevatedCard(
@@ -203,14 +229,6 @@ fun BlockWindowScreen(
                         label = "Outside Range Mode",
                         value = if (blockOutsideTimeRange) "Block apps" else "Allow no limits",
                         primaryColor = primaryColor
-                    )
-                }
-                if (blockedForOutsideRange) {
-                    Spacer(Modifier.height(8.dp))
-                    InfoRow(
-                        label = "Block Reason",
-                        value = "Outside configured time range",
-                        primaryColor = MaterialTheme.colorScheme.error
                     )
                 }
             }

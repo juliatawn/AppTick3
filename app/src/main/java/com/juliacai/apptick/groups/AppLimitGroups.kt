@@ -10,7 +10,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun AppLimitGroupsList(
     groups: List<AppLimitGroup>,
-    onGroupClick: (AppLimitGroup) -> Unit,
+    onCardClick: (AppLimitGroup) -> Unit,
+    onEditClick: (AppLimitGroup) -> Unit,
     onLockClick: (AppLimitGroup) -> Unit,
     isEditingLocked: Boolean,
     onPauseToggle: (AppLimitGroup) -> Unit = {},
@@ -23,9 +24,9 @@ fun AppLimitGroupsList(
                 isEditingLocked = isEditingLocked,
                 onLockClick = onLockClick,
                 onPauseToggle = onPauseToggle,
-                onEdit = onGroupClick,
+                onEdit = onEditClick,
                 onDelete = onDelete,
-                onClick = onGroupClick
+                onCardClick = onCardClick
             )
         }
     }

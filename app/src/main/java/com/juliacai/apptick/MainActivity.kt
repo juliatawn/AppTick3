@@ -37,6 +37,7 @@ import com.juliacai.apptick.appLimit.AppLimitDetailsScreen
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.LegacyDataMigrator
+import com.juliacai.apptick.deviceApps.GroupActionsDialog
 import com.juliacai.apptick.deviceApps.GroupPage
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppLimitGroupsList
@@ -48,6 +49,7 @@ import com.juliacai.apptick.newAppLimit.AppSelectScreen
 import com.juliacai.apptick.newAppLimit.SetTimeLimitsScreen
 import com.juliacai.apptick.permissions.PermissionOnboardingScreen
 import com.juliacai.apptick.premiumMode.LockModesBlockedScreen
+import com.juliacai.apptick.premiumMode.PremiumModeInfoScreen
 import com.juliacai.apptick.premiumMode.PremiumModeScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -133,6 +135,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             }
             var pendingOpenLockModes by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(launchOpenLockModes)
+            }
+            var selectedGroupForActions by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf<AppLimitGroup?>(null)
             }
 
             AppTheme {
@@ -231,8 +236,11 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                             perAppUsage = appLimitGroup.perAppUsage
                                         )
                                     },
-                                    onGroupClick = { group ->
+                                    onCardClick = { group ->
                                         startActivity(GroupPage.newIntent(this@MainActivity, group))
+                                    },
+                                    onEditClick = { group ->
+                                        selectedGroupForActions = group
                                     },
                                     onLockClick = { launchUnlockFlow() },
                                     isEditingLocked = isLockModesLocked,
@@ -241,13 +249,37 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 )
                             }
                         )
+
+                        val currentGroup = selectedGroupForActions
+                        if (currentGroup != null) {
+                            GroupActionsDialog(
+                                onDismiss = { selectedGroupForActions = null },
+                                onEdit = {
+                                    selectedGroupForActions = null
+                                    appLimitViewModel.startEditingGroup(currentGroup)
+                                    navController.navigate("setTimeLimit")
+                                },
+                                onDelete = {
+                                    selectedGroupForActions = null
+                                    viewModel.deleteGroup(currentGroup)
+                                }
+                            )
+                        }
                     }
 
                     composable("settings") {
                         SettingsScreen(
                             onBackClick = { navController.popBackStack() },
                             onCustomizeColors = { navController.navigate("colorPicker") },
-                            onUpgradeToPremium = { navController.navigate("premium") }
+                            onUpgradeToPremium = { navController.navigate("premium") },
+                            onOpenPremiumModeInfo = { navController.navigate("premiumModeInfo") },
+                            onOpenAppLimitBackup = { navController.navigate("appLimitBackup") }
+                        )
+                    }
+
+                    composable("appLimitBackup") {
+                        AppLimitBackupScreen(
+                            onBackClick = { navController.popBackStack() }
                         )
                     }
 
@@ -309,7 +341,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 if (!navController.popBackStack("selectApps", inclusive = false)) {
                                     navController.navigate("selectApps")
                                 }
-                            }
+                            },
+                            onUpgradeToPremium = { navController.navigate("premium") }
                         )
                     }
 
@@ -320,6 +353,12 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             activeLockMode = lockState.activeLockMode,
                             onPurchaseClick = { product -> launchPurchaseFlow(product) },
                             navController = navController,
+                            onBackClick = { navController.popBackStack() }
+                        )
+                    }
+
+                    composable("premiumModeInfo") {
+                        PremiumModeInfoScreen(
                             onBackClick = { navController.popBackStack() }
                         )
                     }

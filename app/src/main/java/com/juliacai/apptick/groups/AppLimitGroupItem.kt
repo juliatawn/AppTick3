@@ -29,6 +29,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
 import com.juliacai.apptick.R
+import com.juliacai.apptick.formatClockTime
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +40,7 @@ fun AppLimitGroupItem(
     onPauseToggle: (AppLimitGroup) -> Unit,
     onEdit: (AppLimitGroup) -> Unit,
     onDelete: (AppLimitGroup) -> Unit,
-    onClick: ((AppLimitGroup) -> Unit)? = null
+    onCardClick: ((AppLimitGroup) -> Unit)? = null
 ) {
     Card(
         modifier = Modifier
@@ -48,7 +49,7 @@ fun AppLimitGroupItem(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
-        onClick = { onClick?.invoke(group) ?: onEdit(group) }
+        onClick = { onCardClick?.invoke(group) ?: onEdit(group) }
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -121,7 +122,7 @@ fun AppLimitGroupItem(
             Text(text = formatTimeLimitInfo(group))
             Text(text = formatActiveDaysInfo(group))
             if (group.useTimeRange) {
-                Text(text = formatTimeRangeInfo(group))
+                Text(text = formatTimeRangeInfo(group, context))
                 Text(
                     text = if (group.blockOutsideTimeRange) {
                         "Outside range: Block apps"
@@ -144,11 +145,10 @@ private fun formatActiveDaysInfo(group: AppLimitGroup): String {
     return "Active: ${formatDays(group.weekDays)}"
 }
 
-private fun formatTimeRangeInfo(group: AppLimitGroup): String {
-    return "Time range: %02d:%02d - %02d:%02d".format(
-        group.startHour, group.startMinute,
-        group.endHour, group.endMinute
-    )
+private fun formatTimeRangeInfo(group: AppLimitGroup, context: android.content.Context): String {
+    return "Time range: ${formatClockTime(context, group.startHour, group.startMinute)} - ${
+        formatClockTime(context, group.endHour, group.endMinute)
+    }"
 }
 
 private fun formatResetInfo(group: AppLimitGroup): String {

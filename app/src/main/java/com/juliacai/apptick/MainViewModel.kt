@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.map
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
@@ -30,11 +31,9 @@ class MainViewModel(application: Application, private val appLimitGroupDao: AppL
     val isPremium: LiveData<Boolean> = _isPremium
 
     fun getGroup(groupId: Long): LiveData<AppLimitGroup?> {
-        val liveData = MutableLiveData<AppLimitGroup?>()
-        viewModelScope.launch {
-            liveData.postValue(appLimitGroupDao.getGroup(groupId)?.toDomainModel())
+        return appLimitGroupDao.getGroupLive(groupId).map { entity ->
+            entity?.toDomainModel()
         }
-        return liveData
     }
 
     fun updatePremiumStatus(isPremium: Boolean) {

@@ -36,13 +36,16 @@ import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.MainViewModel
+import com.juliacai.apptick.formatClockTime
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.GroupAppItem
+import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -152,6 +155,18 @@ private fun TimeRemainingCard(group: AppLimitGroup) {
                 color = if (group.timeRemaining <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                 fontWeight = FontWeight.Medium
             )
+            if (group.cumulativeTime) {
+                val limitInMillis = (group.timeHrLimit * 60L + group.timeMinLimit.toLong()) * 60_000L
+                val carriedOver = (group.timeRemaining - limitInMillis).coerceAtLeast(0L)
+                if (carriedOver > 0) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "Carried over: ${formatTimeRemaining(carriedOver)}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
             Spacer(Modifier.height(8.dp))
             Text(text = "Next reset: ${formatDateTime(group.nextResetTime)}", style = MaterialTheme.typography.bodyMedium)
             if (group.cumulativeTime) {
@@ -164,6 +179,7 @@ private fun TimeRemainingCard(group: AppLimitGroup) {
 
 @Composable
 private fun SettingsSummaryCard(group: AppLimitGroup) {
+    val context = LocalContext.current
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -177,7 +193,7 @@ private fun SettingsSummaryCard(group: AppLimitGroup) {
             
             SettingRow(label = "Daily Limit", value = "${group.timeHrLimit} hr ${group.timeMinLimit} min " + if (group.limitEach) "(Per App)" else "(Total)")
             SettingRow(label = "Active Days", value = formatDays(group.weekDays))
-            SettingRow(label = "Time Range", value = formatTimeRangeInfo(group))
+            SettingRow(label = "Time Range", value = formatTimeRangeInfo(group, context))
             SettingRow(label = "Type", value = formatResetType(group))
         }
     }
@@ -231,15 +247,18 @@ private fun formatDateTime(timestamp: Long): String {
     return SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(timestamp))
 }
 
-private fun formatTimeRangeInfo(group: AppLimitGroup): String {
+private fun formatTimeRangeInfo(group: AppLimitGroup, context: Context): String {
     return if (!group.useTimeRange) {
         "All Day"
     } else {
         val mode = if (group.blockOutsideTimeRange) "Block outside range" else "Allow outside range"
-        "%02d:%02d - %02d:%02d ($mode)".format(
-            group.startHour, group.startMinute,
-            group.endHour, group.endMinute
-        )
+        "${formatClockTime(context, group.startHour, group.startMinute)} - ${
+            formatClockTime(
+                context,
+                group.endHour,
+                group.endMinute
+            )
+        } ($mode)"
     }
 }
 

@@ -7,6 +7,7 @@ import androidx.test.filters.MediumTest
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.ServiceTestRule
 import com.juliacai.apptick.appLimit.AppInGroup
+import com.juliacai.apptick.block.BlockWindowActivity
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.AppLimitGroupDao
@@ -20,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 
 @ExperimentalCoroutinesApi
@@ -276,5 +278,75 @@ class BackgroundCheckerTest {
         val twoHoursMs = 2 * 60 * 60 * 1000L
         assertTrue(updated.nextResetTime >= now + twoHoursMs - 5000)
         assertTrue(updated.nextResetTime <= now + twoHoursMs + 5000)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testPeriodicCumulativeResetAddsCarryOverOnlyWhenEnabled() = runTest {
+        val now = System.currentTimeMillis()
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Periodic Cumulative Reset Test",
+            timeHrLimit = 0,
+            timeMinLimit = 30,
+            timeRemaining = 600_000L, // 10 min carried over before reset
+            nextResetTime = now - 60_000L,
+            resetMinutes = 120,
+            cumulativeTime = true,
+            apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")),
+            perAppUsage = listOf(
+                com.juliacai.apptick.groups.AppUsageStat("com.google.android.youtube", 1_200_000L)
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
+
+        service.checkAppLimits("com.other.app")
+
+        val updated = dao.getGroup(1)!!
+        // 30 min interval limit + 10 min carry-over = 40 min remaining
+        assertEquals(2_400_000L, updated.timeRemaining)
+        val ytUsage = updated.perAppUsage.firstOrNull { it.appPackage == "com.google.android.youtube" }
+        assertEquals(0L, ytUsage?.usedMillis ?: -1L)
+        assertTrue(updated.nextAddTime > now)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCrossingExpiryInSingleTickBlocksImmediately() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Immediate Block",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            limitEach = false,
+            timeRemaining = 1_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.instagram.android")
+
+            val blockedActivity = instrumentation.waitForMonitorWithTimeout(monitor, 3_000L)
+            assertNotNull("Expected block window when expiry is crossed in one tick", blockedActivity)
+            blockedActivity?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+
+        val updatedGroup = dao.getGroup(1)!!
+        assertEquals(0L, updatedGroup.timeRemaining)
     }
 }

@@ -105,25 +105,29 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
 
     val savedPrimary = remember { prefs.getInt("custom_primary_color", Color(0xFF3949AB).toArgb()) }
     val savedBackground = remember { prefs.getInt("custom_background_color", Color.White.toArgb()) }
+    val savedCard = remember { prefs.getInt("custom_card_color", savedBackground) }
     val savedIcon = remember { prefs.getInt("custom_icon_color", Color.Black.toArgb()) }
     val savedIconMode = remember { prefs.getString("app_icon_color_mode", "system") ?: "system" }
 
     val primaryColorState = rememberColorState(Color(savedPrimary))
     val backgroundColorState = rememberColorState(Color(savedBackground))
+    val cardColorState = rememberColorState(Color(savedCard))
     val iconColorState = rememberColorState(Color(savedIcon))
 
     var iconColorMode by remember { mutableStateOf(savedIconMode) }
     var selectedTab by remember { mutableIntStateOf(0) }
 
-    val tabs = listOf("Text", "Background", "Icon")
+    val tabs = listOf("Text", "Background", "Card", "Icon")
     val activeState = when (selectedTab) {
         0 -> primaryColorState
         1 -> backgroundColorState
+        2 -> cardColorState
         else -> iconColorState
     }
 
     val composePrimary = primaryColorState.color
     val composeBackground = backgroundColorState.color
+    val composeCard = cardColorState.color
     val systemThemeIconColor =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             if (isAppDark) dynamicDarkColorScheme(context).primary else dynamicLightColorScheme(context).primary
@@ -147,23 +151,37 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
             darkColorScheme(
                 primary = composePrimary,
                 background = composeBackground,
-                surface = composeBackground,
+                surface = composeCard,
                 primaryContainer = composePrimary.copy(alpha = 0.24f),
                 onPrimary = composeIconColor,
                 onBackground = composeIconColor,
                 onSurface = composeIconColor,
                 onPrimaryContainer = composeIconColor
+            ).copy(
+                surfaceVariant = composeCard,
+                surfaceContainerLowest = composeCard,
+                surfaceContainerLow = composeCard,
+                surfaceContainer = composeCard,
+                surfaceContainerHigh = composeCard,
+                surfaceContainerHighest = composeCard
             )
         } else {
             lightColorScheme(
                 primary = composePrimary,
                 background = composeBackground,
-                surface = composeBackground,
+                surface = composeCard,
                 primaryContainer = composePrimary.copy(alpha = 0.16f),
                 onPrimary = composeIconColor,
                 onBackground = composeIconColor,
                 onSurface = composeIconColor,
                 onPrimaryContainer = composeIconColor
+            ).copy(
+                surfaceVariant = composeCard,
+                surfaceContainerLowest = composeCard,
+                surfaceContainerLow = composeCard,
+                surfaceContainer = composeCard,
+                surfaceContainerHigh = composeCard,
+                surfaceContainerHighest = composeCard
             )
         }
     } else if (isAppDark) {
@@ -199,7 +217,7 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
                 // ── Fixed Preview Card ──────────────────────────────────────
                 PreviewCard(
                     primary = primaryColorState.color,
-                    background = backgroundColorState.color,
+                    card = cardColorState.color,
                     icon = previewIconColor
                 )
 
@@ -236,9 +254,10 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
                         // I'll keep them as summary but maybe smaller.
                         Text("Primary: ${primaryColorState.hex}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("primary_hex"))
                         Text("Background: ${backgroundColorState.hex}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("background_hex"))
+                        Text("Card: ${cardColorState.hex}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("card_hex"))
                         Text("Icon: ${iconColorState.hex}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("icon_hex"))
 
-                        if (selectedTab == 2) {
+                        if (selectedTab == 3) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
@@ -252,7 +271,7 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
                             }
                         }
 
-                        if (selectedTab != 2 || iconColorMode == "custom") {
+                        if (selectedTab != 3 || iconColorMode == "custom") {
                             // Unified swatches for all tabs
                             val swatches = unifiedSwatches
 
@@ -351,6 +370,7 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
                                 prefs.edit()
                                     .putInt("custom_primary_color", primaryColorState.color.toArgb())
                                     .putInt("custom_background_color", backgroundColorState.color.toArgb())
+                                    .putInt("custom_card_color", cardColorState.color.toArgb())
                                     .putInt("custom_icon_color", iconColorState.color.toArgb())
                                     .putString("app_icon_color_mode", iconColorMode)
                                     .putBoolean("custom_color_mode", true)
@@ -368,7 +388,7 @@ fun ColorPickerScreen(onBackClick: () -> Unit) {
 }
 
 @Composable
-private fun PreviewCard(primary: Color, background: Color, icon: Color) {
+private fun PreviewCard(primary: Color, card: Color, icon: Color) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -390,7 +410,7 @@ private fun PreviewCard(primary: Color, background: Color, icon: Color) {
                     .fillMaxWidth(0.85f)
                     .height(60.dp)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(background)
+                    .background(card)
                     .border(1.dp, Color.Gray.copy(alpha = 0.35f), RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center
             ) {

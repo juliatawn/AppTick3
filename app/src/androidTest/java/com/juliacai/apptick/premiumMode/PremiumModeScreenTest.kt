@@ -48,7 +48,7 @@ class PremiumModeScreenTest {
             )
         }
 
-        composeTestRule.onNodeWithText("Unlock Premium Features!").assertIsDisplayed()
-        composeTestRule.onNodeWithText("Support the developer and get access to exclusive features like Lockdown Mode, Password Mode, and more!").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Support the developer and unlock Premium Mode").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Support the developer and gain these handy features:").assertIsDisplayed()
     }
 }

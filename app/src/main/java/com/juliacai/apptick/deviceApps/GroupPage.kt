@@ -59,12 +59,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.BaseActivity
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.ThemeModeManager
+import com.juliacai.apptick.formatClockTime
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.toDomainModel
@@ -78,20 +80,25 @@ import java.util.Date
 import java.util.Locale
 
 class GroupPage : BaseActivity() {
+    private var groupId: Long = -1L
+    private var group by mutableStateOf<AppLimitGroup?>(null)
+    private var showActionsDialog by mutableStateOf(false)
+
+    private fun refreshGroup() {
+        if (groupId <= 0L) return
+        lifecycleScope.launch {
+            group = AppTickDatabase.getDatabase(applicationContext)
+                .appLimitGroupDao()
+                .getGroup(groupId)
+                ?.toDomainModel()
+        }
+    }
+
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val groupId = intent.getLongExtra(EXTRA_GROUP_ID, -1L)
-        var group by mutableStateOf<AppLimitGroup?>(null)
-        if (groupId > 0L) {
-            lifecycleScope.launch {
-                group = AppTickDatabase.getDatabase(applicationContext)
-                    .appLimitGroupDao()
-                    .getGroup(groupId)
-                    ?.toDomainModel()
-            }
-        }
-        var showActionsDialog by mutableStateOf(false)
+        groupId = intent.getLongExtra(EXTRA_GROUP_ID, -1L)
+        refreshGroup()
 
         setContent {
             val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
@@ -101,12 +108,14 @@ class GroupPage : BaseActivity() {
 
             val savedPrimaryColor = prefs.getInt("custom_primary_color", 0)
             val savedBackgroundColor = prefs.getInt("custom_background_color", 0)
+            val savedCardColor = prefs.getInt("custom_card_color", 0)
             val savedIconColor = prefs.getInt("custom_icon_color", 0)
             val appIconColorMode = prefs.getString("app_icon_color_mode", "system") ?: "system"
 
             val composePrimary = if (savedPrimaryColor != 0) Color(savedPrimaryColor) else Color(0xFF3949AB)
             val defaultBackground = if (isSystemDark) Color.Black else Color.White
             val composeBackground = if (savedBackgroundColor != 0) Color(savedBackgroundColor) else defaultBackground
+            val composeCard = if (savedCardColor != 0) Color(savedCardColor) else composeBackground
 
             val systemThemeIconColor =
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -126,23 +135,37 @@ class GroupPage : BaseActivity() {
                     darkColorScheme(
                         primary = composePrimary,
                         background = composeBackground,
-                        surface = composeBackground,
+                        surface = composeCard,
                         primaryContainer = composePrimary.copy(alpha = 0.24f),
                         onPrimary = composeIconColor,
                         onBackground = composeIconColor,
                         onSurface = composeIconColor,
                         onPrimaryContainer = composeIconColor
+                    ).copy(
+                        surfaceVariant = composeCard,
+                        surfaceContainerLowest = composeCard,
+                        surfaceContainerLow = composeCard,
+                        surfaceContainer = composeCard,
+                        surfaceContainerHigh = composeCard,
+                        surfaceContainerHighest = composeCard
                     )
                 } else {
                     lightColorScheme(
                         primary = composePrimary,
                         background = composeBackground,
-                        surface = composeBackground,
+                        surface = composeCard,
                         primaryContainer = composePrimary.copy(alpha = 0.16f),
                         onPrimary = composeIconColor,
                         onBackground = composeIconColor,
                         onSurface = composeIconColor,
                         onPrimaryContainer = composeIconColor
+                    ).copy(
+                        surfaceVariant = composeCard,
+                        surfaceContainerLowest = composeCard,
+                        surfaceContainerLow = composeCard,
+                        surfaceContainer = composeCard,
+                        surfaceContainerHigh = composeCard,
+                        surfaceContainerHighest = composeCard
                     )
                 }
             } else if (isSystemDark) {
@@ -189,51 +212,41 @@ class GroupPage : BaseActivity() {
 
                 val currentGroup = group
                 if (showActionsDialog && currentGroup != null) {
-                    AlertDialog(
-                        onDismissRequest = { showActionsDialog = false },
-                        title = { Text("Group Options") },
-                        text = { Text("Choose what you want to do with this app limit group.") },
-                        confirmButton = {
-                            Button(onClick = {
-                                showActionsDialog = false
-                                val editIntent = Intent(this@GroupPage, MainActivity::class.java).apply {
-                                    putExtra(MainActivity.EXTRA_EDIT_GROUP_ID, currentGroup.id)
-                                }
-                                startActivity(editIntent)
-                                finish()
-                            }) {
-                                Text("Edit")
+                    GroupActionsDialog(
+                        onDismiss = { showActionsDialog = false },
+                        onEdit = {
+                            showActionsDialog = false
+                            val editIntent = Intent(this@GroupPage, MainActivity::class.java).apply {
+                                putExtra(MainActivity.EXTRA_EDIT_GROUP_ID, currentGroup.id)
                             }
+                            startActivity(editIntent)
+                            finish()
                         },
-                        dismissButton = {
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = {
-                                    showActionsDialog = false
-                                    lifecycleScope.launch {
-                                        val dao = AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao()
-                                        dao.deleteAppLimitGroup(currentGroup.toEntity())
-                                        if (dao.getActiveGroupCount() <= 0) {
-                                            stopService(Intent(this@GroupPage, BackgroundChecker::class.java))
-                                        }
-                                        Toast.makeText(
-                                            this@GroupPage,
-                                            "Group deleted",
-                                            Toast.LENGTH_SHORT
-                                        ).show()
-                                        finish()
-                                    }
-                                }) {
-                                    Text("Delete")
+                        onDelete = {
+                            showActionsDialog = false
+                            lifecycleScope.launch {
+                                val dao = AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao()
+                                dao.deleteAppLimitGroup(currentGroup.toEntity())
+                                if (dao.getActiveGroupCount() <= 0) {
+                                    stopService(Intent(this@GroupPage, BackgroundChecker::class.java))
                                 }
-                                OutlinedButton(onClick = { showActionsDialog = false }) {
-                                    Text("Cancel")
-                                }
+                                Toast.makeText(
+                                    this@GroupPage,
+                                    "Group deleted",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                finish()
                             }
                         }
                     )
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshGroup()
     }
 
     companion object {
@@ -248,7 +261,36 @@ class GroupPage : BaseActivity() {
 }
 
 @Composable
+fun GroupActionsDialog(
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Group Options") },
+        text = { Text("Choose what you want to do with this app limit group.") },
+        confirmButton = {
+            Button(onClick = onEdit) {
+                Text("Edit")
+            }
+        },
+        dismissButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDelete) {
+                    Text("Delete")
+                }
+                OutlinedButton(onClick = onDismiss) {
+                    Text("Cancel")
+                }
+            }
+        }
+    )
+}
+
+@Composable
 fun GroupDetails(group: AppLimitGroup) {
+    val context = LocalContext.current
     val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis }
     val groupUsedMillis = group.perAppUsage.sumOf { it.usedMillis.coerceAtLeast(0L) }
     val listState = rememberLazyListState()
@@ -347,7 +389,13 @@ fun GroupDetails(group: AppLimitGroup) {
 
                         if (group.useTimeRange) {
                             Text(
-                                text = "Active Hours: ${formatTime(group.startHour, group.startMinute)} - ${formatTime(group.endHour, group.endMinute)}",
+                                text = "Active Hours: ${formatTime(context, group.startHour, group.startMinute)} - ${
+                                    formatTime(
+                                        context,
+                                        group.endHour,
+                                        group.endMinute
+                                    )
+                                }",
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
@@ -389,7 +437,12 @@ fun GroupDetails(group: AppLimitGroup) {
                 GroupAppItem(
                     appInfo = appInfo,
                     timeLimit = group.timeHrLimit * 60 + group.timeMinLimit,
-                    limitEach = group.limitEach
+                    limitEach = group.limitEach,
+                    sharedTimeRemainingMinutes = if (group.limitEach) {
+                        null
+                    } else {
+                        (group.timeRemaining / 60_000L).toInt().coerceAtLeast(0)
+                    }
                 )
             }
         }
@@ -448,11 +501,8 @@ private fun formatNextReset(nextResetMillis: Long): String {
     return SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(nextResetMillis))
 }
 
-private fun formatTime(hour: Int, minute: Int): String {
-    val cal = java.util.Calendar.getInstance()
-    cal.set(java.util.Calendar.HOUR_OF_DAY, hour)
-    cal.set(java.util.Calendar.MINUTE, minute)
-    return SimpleDateFormat("h:mm a", Locale.getDefault()).format(cal.time)
+private fun formatTime(context: Context, hour: Int, minute: Int): String {
+    return formatClockTime(context, hour, minute)
 }
 
 private fun formatDays(days: List<Int>?): String {
