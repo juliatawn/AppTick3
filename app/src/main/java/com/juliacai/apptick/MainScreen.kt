@@ -1,19 +1,25 @@
 package com.juliacai.apptick
 
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -21,23 +27,37 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     appLimitGroupCount: Int,
     showLockedIcon: Boolean,
+    showBatteryWarning: Boolean,
+    batteryWarningText: String,
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onPremiumClick: () -> Unit,
+    onOpenAppBatterySettings: () -> Unit,
+    onOpenGeneralBatterySettings: () -> Unit,
+    onRefreshBatteryStatus: () -> Unit,
     listContent: @Composable () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("AppTick") },
+                title = {
+                    Text(
+                        text = "AppTick",
+                        modifier = Modifier.pointerInput(Unit) {
+                            detectTapGestures { }
+                        }
+                    )
+                },
                 actions = {
                     IconButton(onClick = onPremiumClick) {
                         if (showLockedIcon) {
@@ -79,6 +99,46 @@ fun MainScreen(
                 .padding(paddingValues)
                 .fillMaxSize()
         ) {
+            if (showBatteryWarning) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "Background Reliability Warning",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            batteryWarningText,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = onOpenAppBatterySettings,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Open App Battery Settings")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onOpenGeneralBatterySettings,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Open General Battery Settings")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = onRefreshBatteryStatus,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Refresh")
+                        }
+                    }
+                }
+            }
             Box(
                 modifier = Modifier
                     .weight(1f)

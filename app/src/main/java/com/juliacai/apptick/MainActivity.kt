@@ -36,6 +36,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.juliacai.apptick.appLimit.AppLimitDetailsScreen
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.data.LegacyDataMigrator
 import com.juliacai.apptick.deviceApps.GroupActionsDialog
 import com.juliacai.apptick.deviceApps.GroupPage
@@ -47,6 +48,8 @@ import com.juliacai.apptick.lockModes.SecurityKeySettingsScreen
 import com.juliacai.apptick.newAppLimit.AppLimitViewModel
 import com.juliacai.apptick.newAppLimit.AppSelectScreen
 import com.juliacai.apptick.newAppLimit.SetTimeLimitsScreen
+import com.juliacai.apptick.permissions.BatteryOptimizationHelper
+import com.juliacai.apptick.permissions.BatteryOptimizationStatus
 import com.juliacai.apptick.permissions.PermissionOnboardingScreen
 import com.juliacai.apptick.premiumMode.LockModesBlockedScreen
 import com.juliacai.apptick.premiumMode.PremiumModeInfoScreen
@@ -71,6 +74,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
     private var mService: BackgroundChecker? = null
     private var mBound = false
+    private val batteryOptimizationStatusState =
+        androidx.compose.runtime.mutableStateOf<BatteryOptimizationStatus?>(null)
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(className: ComponentName, service: IBinder) {
@@ -99,6 +104,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         createNotificationChannel()
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+        batteryOptimizationStatusState.value = BatteryOptimizationHelper.getStatus(applicationContext)
         val hasSeenLoading = prefs.getBoolean("has_seen_launch_loading", false)
         if (!hasSeenLoading) {
             setContent { AppLaunchLoadingScreen() }
@@ -127,6 +133,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val groups by viewModel.groups.observeAsState(emptyList())
             val isPremium by viewModel.isPremium.observeAsState(false)
             val premiumEnabled = isPremium || isPremiumEnabledNow()
+            val batteryStatus =
+                batteryOptimizationStatusState.value ?: BatteryOptimizationHelper.getStatus(applicationContext)
             val lockState = readLockState()
             val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
             val isLockModesLocked = lockDecision.isLocked
@@ -139,8 +147,25 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             var selectedGroupForActions by androidx.compose.runtime.remember {
                 androidx.compose.runtime.mutableStateOf<AppLimitGroup?>(null)
             }
+            var savedGroupOrder by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(GroupCardOrderStore.readOrder(prefs))
+            }
+            val orderedGroups = androidx.compose.runtime.remember(groups, savedGroupOrder) {
+                GroupCardOrderStore.applyOrder(groups, savedGroupOrder) { it.id }
+            }
 
             AppTheme {
+                androidx.compose.runtime.LaunchedEffect(groups) {
+                    val sanitizedOrder = GroupCardOrderStore.sanitizeOrder(
+                        savedGroupOrder,
+                        groups.map { it.id }
+                    )
+                    if (sanitizedOrder != savedGroupOrder) {
+                        savedGroupOrder = sanitizedOrder
+                        GroupCardOrderStore.writeOrder(prefs, sanitizedOrder)
+                    }
+                }
+
                 androidx.compose.runtime.LaunchedEffect(pendingEditGroupId) {
                     val groupId = pendingEditGroupId ?: return@LaunchedEffect
                     appLimitViewModel.loadGroupForEditing(groupId)
@@ -174,9 +199,23 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     }
 
                     composable("main") {
+                        val persistGroupOrder: (List<Long>) -> Unit = { newOrder ->
+                            savedGroupOrder = newOrder
+                            GroupCardOrderStore.writeOrder(prefs, newOrder)
+                        }
+
                         MainScreen(
-                            appLimitGroupCount = groups.size,
+                            appLimitGroupCount = orderedGroups.size,
                             showLockedIcon = isLockModesLocked,
+                            showBatteryWarning = !batteryStatus.unrestricted,
+                            batteryWarningText = buildString {
+                                append("AppTick may not block reliably until battery mode is set to Unrestricted.")
+                                append(" Ignore battery optimizations: ")
+                                append(if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
+                                append(". Background restricted: ")
+                                append(if (batteryStatus.backgroundRestricted) "Yes" else "No")
+                                append(".")
+                            },
                             onFabClick = {
                                 if (isLimitEditingLocked()) {
                                     launchUnlockFlow()
@@ -186,10 +225,20 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     navController.navigate("selectApps")
                                 }
                             },
-                            onSettingsClick = { navController.navigate("settings") },
+                            onSettingsClick = {
+                                if (navController.currentDestination?.route != "settings") {
+                                    navController.navigate("settings") {
+                                        launchSingleTop = true
+                                    }
+                                }
+                            },
                             onPremiumClick = {
                                 if (!isPremiumEnabledNow()) {
-                                    navController.navigate("premium")
+                                    if (navController.currentDestination?.route != "premium") {
+                                        navController.navigate("premium") {
+                                            launchSingleTop = true
+                                        }
+                                    }
                                     return@MainScreen
                                 }
 
@@ -199,7 +248,11 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     System.currentTimeMillis()
                                 )
                                 if (!decision.isLocked) {
-                                    navController.navigate("premium")
+                                    if (navController.currentDestination?.route != "premium") {
+                                        navController.navigate("premium") {
+                                            launchSingleTop = true
+                                        }
+                                    }
                                 } else if (
                                     currentState.activeLockMode == LockMode.PASSWORD ||
                                     currentState.activeLockMode == LockMode.SECURITY_KEY
@@ -208,12 +261,38 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 } else if (currentState.activeLockMode == LockMode.LOCKDOWN) {
                                     navController.navigate("lockModesBlocked")
                                 } else {
-                                    navController.navigate("premium")
+                                    if (navController.currentDestination?.route != "premium") {
+                                        navController.navigate("premium") {
+                                            launchSingleTop = true
+                                        }
+                                    }
                                 }
+                            },
+                            onOpenAppBatterySettings = {
+                                if (!BatteryOptimizationHelper.openAppBatterySettings(this@MainActivity)) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Unable to open battery settings",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            onOpenGeneralBatterySettings = {
+                                if (!BatteryOptimizationHelper.openGeneralBatterySettings(this@MainActivity)) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Unable to open battery settings",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            onRefreshBatteryStatus = {
+                                batteryOptimizationStatusState.value =
+                                    BatteryOptimizationHelper.getStatus(applicationContext)
                             },
                             listContent = {
                                 AppLimitGroupsList(
-                                    groups = groups.map { appLimitGroup ->
+                                    groups = orderedGroups.map { appLimitGroup ->
                                         AppLimitGroup(
                                             id = appLimitGroup.id,
                                             name = appLimitGroup.name,
@@ -225,6 +304,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                             apps = appLimitGroup.apps,
                                             paused = appLimitGroup.paused,
                                             useTimeRange = appLimitGroup.useTimeRange,
+                                            blockOutsideTimeRange = appLimitGroup.blockOutsideTimeRange,
                                             startHour = appLimitGroup.startHour,
                                             startMinute = appLimitGroup.startMinute,
                                             endHour = appLimitGroup.endHour,
@@ -245,7 +325,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     onLockClick = { launchUnlockFlow() },
                                     isEditingLocked = isLockModesLocked,
                                     onPauseToggle = { group -> viewModel.togglePause(group) },
-                                    onDelete = { group -> viewModel.deleteGroup(group) }
+                                    onDelete = { group -> viewModel.deleteGroup(group) },
+                                    onReorder = { reorderedIds ->
+                                        persistGroupOrder(reorderedIds)
+                                    }
                                 )
                             }
                         )
@@ -531,6 +614,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
     override fun onResume() {
         super.onResume()
+        batteryOptimizationStatusState.value = BatteryOptimizationHelper.getStatus(applicationContext)
         if (::prefs.isInitialized) {
             viewModel.updatePremiumStatus(prefs.getBoolean("premium", false))
             syncBackgroundServiceState()
@@ -542,11 +626,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val activeGroupCount =
                 AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao().getActiveGroupCountSync()
             val shouldRun = activeGroupCount > 0 || shouldKeepServiceForSettingsProtection()
-            if (shouldRun) {
-                BackgroundChecker.startServiceIfNotRunning(applicationContext)
-            } else {
-                applicationContext.stopService(Intent(applicationContext, BackgroundChecker::class.java))
-            }
+            BackgroundChecker.applyDesiredServiceState(applicationContext, shouldRun)
         }
     }
 

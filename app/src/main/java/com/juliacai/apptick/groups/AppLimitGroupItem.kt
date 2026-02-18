@@ -1,6 +1,7 @@
 package com.juliacai.apptick.groups
 
 import android.content.pm.PackageManager
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,10 +41,11 @@ fun AppLimitGroupItem(
     onPauseToggle: (AppLimitGroup) -> Unit,
     onEdit: (AppLimitGroup) -> Unit,
     onDelete: (AppLimitGroup) -> Unit,
-    onCardClick: ((AppLimitGroup) -> Unit)? = null
+    onCardClick: ((AppLimitGroup) -> Unit)? = null,
+    modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(8.dp),
         colors = CardDefaults.cardColors(
@@ -110,7 +112,7 @@ fun AppLimitGroupItem(
                         }
                     }
                     if (appInfo != null) {
-                        androidx.compose.foundation.Image(
+                        Image(
                             bitmap = appInfo,
                             contentDescription = app.appName,
                             modifier = Modifier.size(48.dp).padding(end = 8.dp)

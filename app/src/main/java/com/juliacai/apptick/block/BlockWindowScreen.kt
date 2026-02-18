@@ -32,6 +32,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTickLogo
 import com.juliacai.apptick.R
 import java.util.concurrent.TimeUnit
 
@@ -241,10 +242,10 @@ fun BlockWindowScreen(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(top = 24.dp, bottom = 8.dp)
         ) {
-            Image(
-                painter = androidx.compose.ui.res.painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = "AppTick Logo",
-                modifier = Modifier.size(24.dp)
+            AppTickLogo(
+                containerSize = 24.dp,
+                iconSize = 14.dp,
+                backgroundColorOverride = Color(0xFF3949AB)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(

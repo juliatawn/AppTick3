@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.AlarmManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
@@ -27,6 +28,7 @@ import com.juliacai.apptick.LockPolicy
 import com.juliacai.apptick.LockState
 import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
+import com.juliacai.apptick.Receiver
 import com.juliacai.apptick.R
 import com.juliacai.apptick.appLimit.AppLimitEvaluator
 import com.juliacai.apptick.block.BlockWindowActivity
@@ -517,11 +519,72 @@ class BackgroundChecker : Service() {
         @Volatile
         var disableBackgroundLoopForTesting: Boolean = false
 
+        private const val WATCHDOG_REQUEST_CODE = 4812
+        private const val WATCHDOG_INTERVAL_MS = 45_000L
+
+        private fun watchdogPendingIntent(
+            context: Context,
+            flags: Int
+        ): PendingIntent? {
+            return PendingIntent.getBroadcast(
+                context,
+                WATCHDOG_REQUEST_CODE,
+                Intent(context, Receiver::class.java).apply {
+                    action = Receiver.ACTION_SERVICE_WATCHDOG
+                    setPackage(context.packageName)
+                },
+                flags
+            )
+        }
+
+        fun scheduleServiceWatchdog(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val pendingIntent = watchdogPendingIntent(
+                context,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            val triggerAt = SystemClock.elapsedRealtime() + WATCHDOG_INTERVAL_MS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.set(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+            }
+        }
+
+        fun cancelServiceWatchdog(context: Context) {
+            val existing = watchdogPendingIntent(
+                context,
+                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            alarmManager.cancel(existing)
+            existing.cancel()
+        }
+
+        fun applyDesiredServiceState(context: Context, shouldRun: Boolean) {
+            if (shouldRun) {
+                startServiceIfNotRunning(context)
+                scheduleServiceWatchdog(context)
+            } else {
+                context.stopService(Intent(context, BackgroundChecker::class.java))
+                cancelServiceWatchdog(context)
+            }
+        }
+
         fun startServiceIfNotRunning(context: Context) {
             if (!isRunning) {
                 val intent = Intent(context, BackgroundChecker::class.java)
                 context.startForegroundService(intent)
             }
+            scheduleServiceWatchdog(context)
         }
 
         /** Broadcast action for the "Show Bubble" notification button. */

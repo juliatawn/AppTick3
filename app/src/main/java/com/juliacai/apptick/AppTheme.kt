@@ -121,6 +121,29 @@ object AppTheme {
         }
     }
 
+    fun getLogoBackgroundColor(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val premiumEnabled = prefs.getBoolean("premium", false)
+        val customModeEnabled =
+            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
+        val iconColorMode = prefs.getString(KEY_APP_ICON_COLOR_MODE, "system") ?: "system"
+
+        if (customModeEnabled && iconColorMode == "custom" && prefs.contains(KEY_ICON_COLOR)) {
+            return prefs.getInt(KEY_ICON_COLOR, DEFAULT_PRIMARY_COLOR.toColorInt())
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val dynamicScheme = if (isSystemDarkMode(context)) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
+            return dynamicScheme.primary.toArgb()
+        }
+
+        return DEFAULT_PRIMARY_COLOR.toColorInt()
+    }
+
     fun isSystemDarkMode(context: Context): Boolean {
         val currentNightMode =
             context.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK

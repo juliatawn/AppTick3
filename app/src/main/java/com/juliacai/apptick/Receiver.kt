@@ -14,15 +14,31 @@ class Receiver : BroadcastReceiver() {
 
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
+            Intent.ACTION_MY_PACKAGE_REPLACED,
+            Intent.ACTION_USER_PRESENT,
             Intent.ACTION_SCREEN_ON -> {
                 val pendingResult = goAsync()
                 Thread {
                     try {
                         val activeGroupCount =
                             AppTickDatabase.getDatabase(context).appLimitGroupDao().getActiveGroupCountSync()
-                        if (activeGroupCount > 0 || shouldKeepServiceForSettingsProtection(context)) {
-                            BackgroundChecker.startServiceIfNotRunning(context)
-                        }
+                        val shouldRun =
+                            activeGroupCount > 0 || shouldKeepServiceForSettingsProtection(context)
+                        BackgroundChecker.applyDesiredServiceState(context, shouldRun)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }.start()
+            }
+            ACTION_SERVICE_WATCHDOG -> {
+                val pendingResult = goAsync()
+                Thread {
+                    try {
+                        val activeGroupCount =
+                            AppTickDatabase.getDatabase(context).appLimitGroupDao().getActiveGroupCountSync()
+                        val shouldRun =
+                            activeGroupCount > 0 || shouldKeepServiceForSettingsProtection(context)
+                        BackgroundChecker.applyDesiredServiceState(context, shouldRun)
                     } finally {
                         pendingResult.finish()
                     }
@@ -78,5 +94,9 @@ class Receiver : BroadcastReceiver() {
             lockdownRecurringDays = recurringDays,
             lockdownRecurringUsedKey = prefs.getString("lockdown_weekly_used_key", null)
         )
+    }
+
+    companion object {
+        const val ACTION_SERVICE_WATCHDOG = "com.juliacai.apptick.ACTION_SERVICE_WATCHDOG"
     }
 }

@@ -30,6 +30,7 @@ fun GroupAppItem(
     appInfo: AppInfo,
     timeLimit: Int,
     limitEach: Boolean,
+    modifier: Modifier = Modifier,
     sharedTimeRemainingMinutes: Int? = null
 ) {
     val derivedTimeUsed = (appInfo.appTimeUse / 60_000L).toInt()
@@ -66,7 +67,7 @@ fun GroupAppItem(
     }
 
     Card(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
     ) {

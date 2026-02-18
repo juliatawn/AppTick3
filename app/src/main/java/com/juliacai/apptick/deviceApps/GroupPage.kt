@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -52,16 +53,21 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.BaseActivity
 import com.juliacai.apptick.MainActivity
@@ -202,10 +208,23 @@ class GroupPage : BaseActivity() {
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(padding)
-                            .padding(16.dp)
+                        .padding(16.dp)
                     ) {
                         group?.let {
-                            GroupDetails(it)
+                            GroupDetails(
+                                group = it,
+                                onAppsReordered = { reorderedApps ->
+                                    val current = group ?: return@GroupDetails
+                                    if (current.apps == reorderedApps) return@GroupDetails
+                                    val updatedGroup = current.copy(apps = reorderedApps)
+                                    group = updatedGroup
+                                    lifecycleScope.launch {
+                                        AppTickDatabase.getDatabase(applicationContext)
+                                            .appLimitGroupDao()
+                                            .updateAppLimitGroup(updatedGroup.toEntity())
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -227,9 +246,10 @@ class GroupPage : BaseActivity() {
                             lifecycleScope.launch {
                                 val dao = AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao()
                                 dao.deleteAppLimitGroup(currentGroup.toEntity())
-                                if (dao.getActiveGroupCount() <= 0) {
-                                    stopService(Intent(this@GroupPage, BackgroundChecker::class.java))
-                                }
+                                BackgroundChecker.applyDesiredServiceState(
+                                    applicationContext,
+                                    dao.getActiveGroupCount() > 0
+                                )
                                 Toast.makeText(
                                     this@GroupPage,
                                     "Group deleted",
@@ -289,15 +309,31 @@ fun GroupActionsDialog(
 }
 
 @Composable
-fun GroupDetails(group: AppLimitGroup) {
+fun GroupDetails(
+    group: AppLimitGroup,
+    onAppsReordered: (List<com.juliacai.apptick.appLimit.AppInGroup>) -> Unit = {}
+) {
     val context = LocalContext.current
     val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis }
     val groupUsedMillis = group.perAppUsage.sumOf { it.usedMillis.coerceAtLeast(0L) }
     val listState = rememberLazyListState()
+    val orderedApps = remember { mutableStateListOf<com.juliacai.apptick.appLimit.AppInGroup>() }
+    var draggingAppPackage by remember { mutableStateOf<String?>(null) }
+    var draggingOffsetY by remember { mutableFloatStateOf(0f) }
+    var orderChangedDuringDrag by remember { mutableStateOf(false) }
     val showCompactHeader by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
         }
+    }
+    LaunchedEffect(group.apps) {
+        if (orderedApps != group.apps) {
+            orderedApps.clear()
+            orderedApps.addAll(group.apps)
+        }
+        draggingAppPackage = null
+        draggingOffsetY = 0f
+        orderChangedDuringDrag = false
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -398,6 +434,14 @@ fun GroupDetails(group: AppLimitGroup) {
                                 }",
                                 style = MaterialTheme.typography.bodyMedium
                             )
+                            Text(
+                                text = if (group.blockOutsideTimeRange) {
+                                    "Outside Range: Block Apps"
+                                } else {
+                                    "Outside Range: Allow No Limits"
+                                },
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
 
                         Text(
@@ -428,16 +472,81 @@ fun GroupDetails(group: AppLimitGroup) {
                 }
             }
 
-            items(group.apps) { app ->
+            item {
+                Text(
+                    text = "Tip: Long-press and drag app cards to reorder.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            items(orderedApps, key = { it.appPackage }) { app ->
                 val appInfo = AppInfo(
                     appName = app.appName,
                     appPackage = app.appPackage,
                     appTimeUse = usageByPackage[app.appPackage] ?: 0L
                 )
+                val isDragging = draggingAppPackage == app.appPackage
+                val dragModifier = Modifier.pointerInput(app.appPackage, orderedApps.size) {
+                    detectDragGesturesAfterLongPress(
+                        onDragStart = {
+                            draggingAppPackage = app.appPackage
+                            draggingOffsetY = 0f
+                            orderChangedDuringDrag = false
+                        },
+                        onDrag = { change, dragAmount ->
+                            if (draggingAppPackage != app.appPackage) return@detectDragGesturesAfterLongPress
+                            change.consume()
+                            draggingOffsetY += dragAmount.y
+
+                            val visibleItems = listState.layoutInfo.visibleItemsInfo
+                            val draggedInfo = visibleItems.firstOrNull { it.key == app.appPackage }
+                                ?: return@detectDragGesturesAfterLongPress
+                            val draggedCenterY = draggedInfo.offset + (draggedInfo.size / 2f) + draggingOffsetY
+                            val targetInfo = visibleItems.firstOrNull { itemInfo ->
+                                val targetKey = itemInfo.key as? String ?: return@firstOrNull false
+                                targetKey != app.appPackage &&
+                                    draggedCenterY >= itemInfo.offset &&
+                                    draggedCenterY <= itemInfo.offset + itemInfo.size
+                            } ?: return@detectDragGesturesAfterLongPress
+
+                            val fromIndex = orderedApps.indexOfFirst { it.appPackage == app.appPackage }
+                            val targetPackage = targetInfo.key as? String ?: return@detectDragGesturesAfterLongPress
+                            val toIndex = orderedApps.indexOfFirst { it.appPackage == targetPackage }
+                            if (fromIndex == -1 || toIndex == -1 || fromIndex == toIndex) {
+                                return@detectDragGesturesAfterLongPress
+                            }
+
+                            val moved = orderedApps.removeAt(fromIndex)
+                            orderedApps.add(toIndex, moved)
+                            draggingOffsetY += (draggedInfo.offset - targetInfo.offset).toFloat()
+                            orderChangedDuringDrag = true
+                        },
+                        onDragEnd = {
+                            if (orderChangedDuringDrag) {
+                                onAppsReordered(orderedApps.toList())
+                            }
+                            draggingAppPackage = null
+                            draggingOffsetY = 0f
+                            orderChangedDuringDrag = false
+                        },
+                        onDragCancel = {
+                            if (orderChangedDuringDrag) {
+                                onAppsReordered(orderedApps.toList())
+                            }
+                            draggingAppPackage = null
+                            draggingOffsetY = 0f
+                            orderChangedDuringDrag = false
+                        }
+                    )
+                }
                 GroupAppItem(
                     appInfo = appInfo,
                     timeLimit = group.timeHrLimit * 60 + group.timeMinLimit,
                     limitEach = group.limitEach,
+                    modifier = dragModifier
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer { translationY = if (isDragging) draggingOffsetY else 0f },
                     sharedTimeRemainingMinutes = if (group.limitEach) {
                         null
                     } else {

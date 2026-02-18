@@ -103,10 +103,10 @@ Running on Darwin 25.3.0 (arm64)
     - `DateTimePickerDialog.kt`: A dialog for picking a date and time.
     - `LockPolicy.kt`: Pure lock-evaluation rules for password/security-key/lockdown logic, including weekly one-time unlock windows.
     - `MainActivity.kt`: The main activity of the application, responsible for checking permissions, setting up billing, displaying the main UI, and handling edit-group deep links into SetTimeLimitsScreen.
-    - `MainScreen.kt`: The main UI of the app, built with Jetpack Compose. It displays the top app bar, floating action button, and the list of app limit groups.
+    - `MainScreen.kt`: The main UI of the app, built with Jetpack Compose. It displays the top app bar, floating action button, battery-reliability warning banner when optimization is restrictive, and the list of app limit groups.
     - `MainViewModel.kt`: The ViewModel for the MainActivity, responsible for managing app-limit data, premium state, and pause/resume service lifecycle behavior.
-    - `Receiver.kt`: A BroadcastReceiver that handles system events like boot and screen on/off to manage the BackgroundChecker service.
-    - `SettingsScreen.kt`: A composable that displays app settings (theme, notifications, premium controls) and includes Backup/Restore actions for app-limit settings via JSON file export/import.
+    - `Receiver.kt`: A BroadcastReceiver that handles boot/unlock/screen/package-update events plus a watchdog alarm broadcast to keep `BackgroundChecker` running whenever limits or settings-protection require enforcement.
+    - `SettingsScreen.kt`: A composable that displays app settings (theme, notifications, premium controls), includes a `Battery Reliability` button that opens a dialog with quick links to battery settings/status refresh, and includes Backup/Restore actions for app-limit settings via JSON file export/import.
     - `TimeFormatting.kt`: Shared clock-time formatting utilities that render times using the device locale and 12/24-hour preference.
     - `TimeManager.kt`: Manages time-related calculations and formatting.
 - **appLimit**
@@ -116,7 +116,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppUsageItem.kt`: A data class that represents an item of app usage.
     - `AppUsageRow.kt`: A composable that displays a row of app usage information.
 - **backgroundProcesses**
-    - `BackgroundChecker.kt`: A service that runs in the background to monitor app usage with elapsed-time accounting, enforce time limits, and block Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability). Supports time-range outside-window behavior per group (either block apps fully outside the range or allow no limits outside range). Notification/floating-bubble selection only considers currently enforceable profiles (active schedule + positive time limit), picks the lowest effective time remaining, and notes when multiple active profiles cover the same app. Also manages the floating bubble overlay lifecycle.
+    - `BackgroundChecker.kt`: A foreground service that monitors app usage with elapsed-time accounting, enforces time limits, and blocks Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability). Includes watchdog alarm scheduling/cancellation APIs so service state stays aligned with active limits/settings-protection across OEM process kills. Supports time-range outside-window behavior per group (either block apps fully outside the range or allow no limits outside range). Notification/floating-bubble selection only considers currently enforceable profiles (active schedule + positive time limit), picks the lowest effective time remaining, and notes when multiple active profiles cover the same app. Also manages the floating bubble overlay lifecycle.
     - `FloatingBubbleService.kt`: An overlay service that shows a small, semi-transparent draggable bubble with time remaining when the user is in a time-limited app. Drag-to-bottom dismiss target pattern. Controlled by the "floatingBubbleEnabled" preference and re-shown via the AppTick notification action.
 - **block**
     - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable.
@@ -163,7 +163,8 @@ Running on Darwin 25.3.0 (arm64)
     - `AppSelectScreen.kt`: A composable that allows the user to select apps to limit.
     - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled, plus an outside-time-range behavior selector (block apps vs allow no limits) and device-preference time rendering in range controls.
 - **permissions**
-    - `PermissionOnboardingScreen.kt`: A single composable that presents all 3 required permissions (Overlay, Usage Stats, Notifications) as steps in a unified onboarding flow with animated transitions, progress dots, and auto-advance on grant. Integrated into MainActivity's NavHost.
+    - `PermissionOnboardingScreen.kt`: A single composable that presents all 3 required permissions (Overlay, Usage Stats, Notifications) as steps in a unified onboarding flow with animated transitions, progress dots, and auto-advance on grant.
+    - `BatteryOptimizationHelper.kt`: Helper for checking battery/background restriction status and opening app/general battery optimization settings with fallbacks across Android devices/OEM skins.
 - **premiumMode**
     - `LockdownModeActivity.kt`: An activity that hosts the LockdownModeScreen composable.
     - `LockdownModeScreen.kt`: A composable that allows the user to configure the "Lockdown Mode" premium feature, including optional Device Admin-backed uninstall protection.

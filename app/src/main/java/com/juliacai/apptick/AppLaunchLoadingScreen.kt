@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -19,6 +20,12 @@ fun AppLaunchLoadingScreen() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        AppTickLogo(
+            containerSize = 96.dp,
+            iconSize = 56.dp,
+            backgroundColorOverride = Color(0xFF3949AB)
+        )
+        Spacer(modifier = Modifier.height(14.dp))
         Text(
             text = "AppTick",
             style = MaterialTheme.typography.headlineLarge

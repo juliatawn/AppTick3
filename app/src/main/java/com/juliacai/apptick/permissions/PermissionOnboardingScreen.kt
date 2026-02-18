@@ -51,7 +51,6 @@ import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.juliacai.apptick.R
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -153,7 +152,6 @@ fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
     var currentStep by rememberSaveable { mutableIntStateOf(0) }
 
     // Re-check permissions on every resume to auto-advance
-    val lifecycleOwner = LocalLifecycleOwner.current
     val resumeCounter = rememberResumeTrigger()
 
     LaunchedEffect(resumeCounter) {

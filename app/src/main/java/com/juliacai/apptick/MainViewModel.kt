@@ -1,7 +1,6 @@
 package com.juliacai.apptick
 
 import android.app.Application
-import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
@@ -52,11 +51,10 @@ class MainViewModel(application: Application, private val appLimitGroupDao: AppL
             val updatedGroup = group.copy(paused = !group.paused)
             appLimitGroupDao.updateAppLimitGroup(updatedGroup.toEntity())
             val appContext = getApplication<Application>()
-            if (appLimitGroupDao.getActiveGroupCount() > 0) {
-                BackgroundChecker.startServiceIfNotRunning(appContext)
-            } else {
-                appContext.stopService(Intent(appContext, BackgroundChecker::class.java))
-            }
+            BackgroundChecker.applyDesiredServiceState(
+                appContext,
+                appLimitGroupDao.getActiveGroupCount() > 0
+            )
         }
     }
 

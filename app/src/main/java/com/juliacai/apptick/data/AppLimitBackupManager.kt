@@ -19,7 +19,8 @@ data class BackupAppSettings(
     val customBackgroundColor: Int?,
     val customCardColor: Int?,
     val customIconColor: Int?,
-    val appIconColorMode: String?
+    val appIconColorMode: String?,
+    val groupCardOrder: List<Long>? = null
 )
 
 data class AppLimitBackup(
@@ -30,7 +31,7 @@ data class AppLimitBackup(
 )
 
 object AppLimitBackupManager {
-    private const val CURRENT_SCHEMA_VERSION = 1
+    private const val CURRENT_SCHEMA_VERSION = 2
     private val gson = Gson()
     private const val KEY_SHOW_TIME_LEFT = "showTimeLeft"
     private const val KEY_FLOATING_BUBBLE_ENABLED = "floatingBubbleEnabled"
@@ -42,6 +43,7 @@ object AppLimitBackupManager {
     private const val KEY_CUSTOM_CARD_COLOR = "custom_card_color"
     private const val KEY_CUSTOM_ICON_COLOR = "custom_icon_color"
     private const val KEY_APP_ICON_COLOR_MODE = "app_icon_color_mode"
+    private const val KEY_GROUP_CARD_ORDER = GroupCardOrderStore.KEY_GROUP_CARD_ORDER
 
     fun createBackup(
         groups: List<AppLimitGroupEntity>,
@@ -113,7 +115,12 @@ object AppLimitBackupManager {
                 customIconColor = settingsObject.get("customIconColor")?.asInt
                     ?: settingsObject.get(KEY_CUSTOM_ICON_COLOR)?.asInt,
                 appIconColorMode = settingsObject.get("appIconColorMode")?.asString
-                    ?: settingsObject.get(KEY_APP_ICON_COLOR_MODE)?.asString
+                    ?: settingsObject.get(KEY_APP_ICON_COLOR_MODE)?.asString,
+                groupCardOrder = settingsObject.get("groupCardOrder")?.let { element ->
+                    gson.fromJson<List<Long>>(element, object : TypeToken<List<Long>>() {}.type)
+                } ?: settingsObject.get(KEY_GROUP_CARD_ORDER)?.let { element ->
+                    gson.fromJson<List<Long>>(element, object : TypeToken<List<Long>>() {}.type)
+                }
             )
         )
     }
@@ -133,7 +140,8 @@ object AppLimitBackupManager {
                 prefs.getString(KEY_APP_ICON_COLOR_MODE, "system")
             } else {
                 null
-            }
+            },
+            groupCardOrder = GroupCardOrderStore.readOrder(prefs).takeIf { it.isNotEmpty() }
         )
     }
 
@@ -149,6 +157,11 @@ object AppLimitBackupManager {
             if (settings.customCardColor != null) putInt(KEY_CUSTOM_CARD_COLOR, settings.customCardColor) else remove(KEY_CUSTOM_CARD_COLOR)
             if (settings.customIconColor != null) putInt(KEY_CUSTOM_ICON_COLOR, settings.customIconColor) else remove(KEY_CUSTOM_ICON_COLOR)
             if (settings.appIconColorMode != null) putString(KEY_APP_ICON_COLOR_MODE, settings.appIconColorMode) else remove(KEY_APP_ICON_COLOR_MODE)
+            if (settings.groupCardOrder != null) {
+                putString(KEY_GROUP_CARD_ORDER, gson.toJson(settings.groupCardOrder))
+            } else {
+                remove(KEY_GROUP_CARD_ORDER)
+            }
             apply()
         }
     }

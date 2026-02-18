@@ -3,4 +3,5 @@
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
     <color name="secondary_text">#8A000000</color>
+    <color name="launcher_icon_background">#3949AB</color>
 </resources>

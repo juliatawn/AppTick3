@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ dynamic system accent for launcher icon background -->
+    <color name="launcher_icon_background">@android:color/system_accent1_600</color>
+</resources>

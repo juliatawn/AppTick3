@@ -45,14 +45,15 @@ class AppLimitBackupManagerTest {
                 customBackgroundColor = 333,
                 customCardColor = 444,
                 customIconColor = 555,
-                appIconColorMode = "custom"
+                appIconColorMode = "custom",
+                groupCardOrder = listOf(12L, 99L)
             )
         )
         val json = AppLimitBackupManager.toJson(backup)
 
         val parsed = AppLimitBackupManager.fromJson(json)
 
-        assertThat(parsed.schemaVersion).isEqualTo(1)
+        assertThat(parsed.schemaVersion).isEqualTo(2)
         assertThat(parsed.groups).hasSize(1)
         assertThat(parsed.groups.first()).isEqualTo(
             group.copy(
@@ -68,6 +69,7 @@ class AppLimitBackupManagerTest {
         assertThat(parsed.appSettings.customColorModeEnabled).isTrue()
         assertThat(parsed.appSettings.customPrimaryColor).isEqualTo(111)
         assertThat(parsed.appSettings.appIconColorMode).isEqualTo("custom")
+        assertThat(parsed.appSettings.groupCardOrder).containsExactly(12L, 99L).inOrder()
     }
 
     @Test
@@ -87,5 +89,6 @@ class AppLimitBackupManagerTest {
         assertThat(parsed.appSettings.floatingBubbleEnabled).isFalse()
         assertThat(parsed.appSettings.darkModeEnabled).isFalse()
         assertThat(parsed.appSettings.customColorModeEnabled).isFalse()
+        assertThat(parsed.appSettings.groupCardOrder).isNull()
     }
 }

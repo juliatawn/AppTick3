@@ -26,6 +26,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -46,9 +47,7 @@ import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppLimitBackupManager
 import com.juliacai.apptick.data.AppTickDatabase
-import com.juliacai.apptick.data.toDomainModel
-import com.juliacai.apptick.data.toEntity
-import com.juliacai.apptick.newAppLimit.normalizeGroupForPersistence
+import com.juliacai.apptick.permissions.BatteryOptimizationHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -56,6 +55,7 @@ import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -76,6 +76,8 @@ fun SettingsScreen(
     var floatingBubbleEnabled by remember { mutableStateOf(groupPrefs.getBoolean("floatingBubbleEnabled", false)) }
     var hasPassword by remember { mutableStateOf(groupPrefs.getString("password", null) != null) }
     var premiumFeatureDialogFor by remember { mutableStateOf<String?>(null) }
+    var batteryStatus by remember { mutableStateOf(BatteryOptimizationHelper.getStatus(context)) }
+    var showBatteryDialog by remember { mutableStateOf(false) }
 
     fun promptPremium(featureName: String) {
         premiumFeatureDialogFor = featureName
@@ -290,6 +292,16 @@ fun SettingsScreen(
             ) {
                 Text("Customize Colors")
             }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = {
+                    batteryStatus = BatteryOptimizationHelper.getStatus(context)
+                    showBatteryDialog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Battery Reliability")
+            }
             if (!isPremium) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
@@ -313,12 +325,14 @@ fun SettingsScreen(
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onOpenPremiumModeInfo,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Premium Mode Info")
+            if (isPremium) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = onOpenPremiumModeInfo,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Premium Mode Info")
+                }
             }
 
             // Debug-only premium toggle
@@ -388,6 +402,72 @@ fun SettingsScreen(
             }
         )
     }
+
+    if (showBatteryDialog) {
+        val details = buildString {
+            append("Ignore battery optimizations: ")
+            append(if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
+            append("\nBackground restricted: ")
+            append(if (batteryStatus.backgroundRestricted) "Yes" else "No")
+        }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showBatteryDialog = false },
+            title = { Text("Battery Reliability") },
+            text = {
+                Column {
+                    Text(
+                        if (batteryStatus.unrestricted) {
+                            "AppTick battery mode is set for reliable background tracking."
+                        } else {
+                            "Set AppTick to Unrestricted battery mode for stronger blocking reliability."
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        details,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            if (!BatteryOptimizationHelper.openAppBatterySettings(context)) {
+                                Toast.makeText(context, "Unable to open battery settings", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Open App Battery Settings")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (!BatteryOptimizationHelper.openGeneralBatterySettings(context)) {
+                                Toast.makeText(context, "Unable to open battery settings", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Open General Battery Settings")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            batteryStatus = BatteryOptimizationHelper.getStatus(context)
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Refresh Status")
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { showBatteryDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -395,12 +475,21 @@ fun SettingsScreen(
 fun AppLimitBackupScreen(
     onBackClick: () -> Unit
 ) {
+    data class ImportSummary(
+        val importedGroupCount: Int,
+        val removedAppCount: Int,
+        val droppedGroupCount: Int,
+        val limitsActive: Boolean
+    )
+
     val context = LocalContext.current
+    val appContext = context.applicationContext
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
     val coroutineScope = rememberCoroutineScope()
     val dao = remember { AppTickDatabase.getDatabase(context).appLimitGroupDao() }
     var backupInProgress by remember { mutableStateOf(false) }
     var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var lastRestoreResultMessage by remember { mutableStateOf<String?>(null) }
 
     fun exportBackupToUri(uri: android.net.Uri) {
         coroutineScope.launch {
@@ -417,10 +506,10 @@ fun AppLimitBackupScreen(
             }
             backupInProgress = false
             if (error == null) {
-                Toast.makeText(context, "Backup saved.", Toast.LENGTH_LONG).show()
+                Toast.makeText(appContext, "Backup saved.", Toast.LENGTH_LONG).show()
             } else {
                 Toast.makeText(
-                    context,
+                    appContext,
                     "Backup failed: ${error.localizedMessage ?: "Unknown error"}",
                     Toast.LENGTH_LONG
                 ).show()
@@ -434,47 +523,90 @@ fun AppLimitBackupScreen(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val backup = AppLimitBackupManager.readBackupFromUri(context, uri)
-                    val importedGroups = backup.groups.map { group ->
-                        normalizeGroupForPersistence(
-                            group = group.copy(
-                                id = 0L,
-                                timeRemaining = 0L,
-                                nextResetTime = 0L,
-                                nextAddTime = 0L,
-                                perAppUsage = emptyList()
-                            ).toDomainModel(),
-                            normalizedUsage = emptyList()
-                        ).toEntity()
+                    val installedPackages = context.packageManager
+                        .getInstalledApplications(0)
+                        .map { it.packageName }
+                        .toSet()
+
+                    var removedAppCount = 0
+                    var droppedGroupCount = 0
+                    val importedGroups = backup.groups.mapNotNull { group ->
+                        val filteredApps = group.apps.filter { app ->
+                            val exists = installedPackages.contains(app.appPackage)
+                            if (!exists) {
+                                removedAppCount += 1
+                            }
+                            exists
+                        }
+                        if (filteredApps.isEmpty()) {
+                            droppedGroupCount += 1
+                            return@mapNotNull null
+                        }
+
+                        val sanitized = group.copy(
+                            id = 0L,
+                            apps = filteredApps,
+                            timeRemaining = 0L,
+                            nextResetTime = 0L,
+                            nextAddTime = 0L,
+                            perAppUsage = emptyList()
+                        )
+                        val limitInMillis =
+                            ((sanitized.timeHrLimit * 60L) + sanitized.timeMinLimit.toLong())
+                                .coerceAtLeast(0L) * 60_000L
+                        val now = System.currentTimeMillis()
+                        val nextReset = if (sanitized.resetMinutes > 0) {
+                            now + TimeUnit.MINUTES.toMillis(sanitized.resetMinutes.toLong())
+                        } else {
+                            TimeManager.nextMidnight(now)
+                        }
+                        val nextAdd = if (sanitized.cumulativeTime && sanitized.resetMinutes > 0) {
+                            nextReset
+                        } else {
+                            0L
+                        }
+                        sanitized.copy(
+                            timeRemaining = limitInMillis,
+                            nextResetTime = nextReset,
+                            nextAddTime = nextAdd
+                        )
                     }
                     dao.replaceAllAppLimitGroups(importedGroups)
                     AppLimitBackupManager.applyAppSettings(groupPrefs, backup.appSettings)
-                    ThemeModeManager.apply(context)
-                    context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
 
                     val activeGroupCount = dao.getActiveGroupCount()
-                    if (activeGroupCount > 0) {
-                        BackgroundChecker.startServiceIfNotRunning(context.applicationContext)
-                    } else {
-                        context.applicationContext.stopService(
-                            Intent(context.applicationContext, BackgroundChecker::class.java)
-                        )
-                    }
-                    backup
+                    BackgroundChecker.applyDesiredServiceState(
+                        context.applicationContext,
+                        activeGroupCount > 0
+                    )
+                    ImportSummary(
+                        importedGroupCount = importedGroups.size,
+                        removedAppCount = removedAppCount,
+                        droppedGroupCount = droppedGroupCount,
+                        limitsActive = activeGroupCount > 0
+                    )
                 }
             }
             backupInProgress = false
-            result.onSuccess { backup ->
+            result.onSuccess { summary ->
+                ThemeModeManager.apply(context)
+                context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+                val message = buildString {
+                    append("Imported ${summary.importedGroupCount}. Removed ${summary.removedAppCount} apps, ${summary.droppedGroupCount} groups.")
+                    if (summary.limitsActive) {
+                        append(" Limits are now active.")
+                    }
+                }
                 Toast.makeText(
-                    context,
-                    "Imported ${backup.groups.size} app limit group(s) and AppTick settings.",
+                    appContext,
+                    message,
                     Toast.LENGTH_LONG
                 ).show()
+                lastRestoreResultMessage = message
             }.onFailure { error ->
-                Toast.makeText(
-                    context,
-                    "Import failed: ${error.localizedMessage ?: "Unknown error"}",
-                    Toast.LENGTH_LONG
-                ).show()
+                val message = "Import failed: ${error.localizedMessage ?: "Unknown error"}"
+                Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+                lastRestoreResultMessage = message
             }
         }
     }
@@ -527,6 +659,12 @@ fun AppLimitBackupScreen(
                 "Import your app limit settings and AppTick app settings from a backup file; it will overwrite your current app limit and app settings.",
                 style = MaterialTheme.typography.bodyMedium
             )
+            Spacer(modifier = Modifier.height(6.dp))
+            Text(
+                "If an app from the backup is not installed on this phone, its app-limit entry is skipped during import.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = {
@@ -557,6 +695,14 @@ fun AppLimitBackupScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Processing backup...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            lastRestoreResultMessage?.let { message ->
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    "Last restore result: $message",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
