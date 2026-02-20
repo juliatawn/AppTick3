@@ -5,6 +5,7 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -23,6 +28,8 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -35,19 +42,31 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
+import com.juliacai.apptick.LockMode
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.premiumMode.DeviceAdmin
+import com.juliacai.apptick.verticalScrollWithIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SecurityKeySettingsScreen(navController: NavController) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val prefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
     val activity = context as? Activity
     val devicePolicyManager = remember(context) {
@@ -58,15 +77,43 @@ fun SecurityKeySettingsScreen(navController: NavController) {
     }
 
     var securityKey by remember { mutableStateOf("") }
-    var confirmSecurityKey by remember { mutableStateOf("") }
     var recoveryEmail by remember { mutableStateOf(prefs.getString("recovery_email_security_key", "") ?: "") }
-    var lockSettings by remember { mutableStateOf(prefs.getBoolean("blockSettings", false)) }
+    var enableAdminProtection by remember { mutableStateOf(prefs.getBoolean("useDeviceAdminUninstallProtection", false)) }
+    var recoveryEmailVerified by remember {
+        mutableStateOf(
+            prefs.getBoolean("recovery_email_security_key_verified", false) &&
+                !prefs.getString("recovery_email_security_key", null).isNullOrBlank()
+        )
+    }
+    var activeLockMode by remember {
+        mutableStateOf(
+            runCatching {
+                LockMode.valueOf(prefs.getString("active_lock_mode", "NONE") ?: "NONE")
+            }.getOrDefault(LockMode.NONE)
+        )
+    }
     var isAdminGranted by remember { mutableStateOf(devicePolicyManager.isAdminActive(adminComponentName)) }
 
     val deviceAdminLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         isAdminGranted = devicePolicyManager.isAdminActive(adminComponentName)
         val message = if (isAdminGranted) "Device admin enabled" else "Device admin not enabled"
         Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
+
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, prefs, devicePolicyManager, adminComponentName) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                isAdminGranted = devicePolicyManager.isAdminActive(adminComponentName)
+                activeLockMode = runCatching {
+                    LockMode.valueOf(prefs.getString("active_lock_mode", "NONE") ?: "NONE")
+                }.getOrDefault(LockMode.NONE)
+                recoveryEmailVerified = prefs.getBoolean("recovery_email_security_key_verified", false) &&
+                    prefs.getString("recovery_email_security_key", null)
+                        .equals(recoveryEmail, ignoreCase = true)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Scaffold(
@@ -89,23 +136,45 @@ fun SecurityKeySettingsScreen(navController: NavController) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScrollWithIndicator(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Set a security key to unlock AppTick limit changes.")
+            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("Security key setup", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "Set your security key, then verify recovery email before enabling Security Key mode.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+            Text(
+                text = if (activeLockMode == LockMode.SECURITY_KEY) "Security key mode: On" else "Security key mode: Off",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (activeLockMode != LockMode.NONE && activeLockMode != LockMode.SECURITY_KEY) {
+                Text(
+                    text = "Another mode is active ($activeLockMode). Disable it before enabling Security Key mode.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
 
             OutlinedTextField(
                 value = securityKey,
                 onValueChange = { securityKey = it },
                 label = { Text("Security Key") },
-                visualTransformation = PasswordVisualTransformation(),
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            OutlinedTextField(
-                value = confirmSecurityKey,
-                onValueChange = { confirmSecurityKey = it },
-                label = { Text("Confirm Security Key") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(
+                    onNext = { focusManager.moveFocus(FocusDirection.Down) }
+                ),
                 visualTransformation = PasswordVisualTransformation(),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -114,15 +183,67 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                 value = recoveryEmail,
                 onValueChange = { recoveryEmail = it },
                 label = { Text("Recovery Email") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                    }
+                ),
                 modifier = Modifier.fillMaxWidth()
             )
+            Text(
+                text = "Current recovery email: ${recoveryEmail.ifBlank { "Not set" }}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                if (recoveryEmailVerified) "Recovery email verified" else "Recovery email not verified yet",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (recoveryEmailVerified) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+            )
+            OutlinedButton(
+                onClick = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    val trimmedEmail = recoveryEmail.trim()
+                    if (!Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+                        Toast.makeText(context, "Enter a valid recovery email", Toast.LENGTH_SHORT).show()
+                        return@OutlinedButton
+                    }
+                    prefs.edit {
+                        putString("recovery_email_security_key", trimmedEmail)
+                        putBoolean("recovery_email_security_key_verified", false)
+                    }
+                    recoveryEmailVerified = false
+
+                    RecoveryEmailHelper.sendRecoveryLink(
+                        context = context,
+                        email = trimmedEmail,
+                        purpose = RecoveryEmailHelper.PURPOSE_SETUP_SECURITY_KEY,
+                        onSuccess = {
+                            Toast.makeText(
+                                context,
+                                "Verification link sent. Open it from your email, then return here.",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        },
+                        onError = { error ->
+                            Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                        }
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Verify Recovery Email")
+            }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = lockSettings, onCheckedChange = { lockSettings = it })
-                Text("Protect uninstall from Settings")
+                Checkbox(checked = enableAdminProtection, onCheckedChange = { enableAdminProtection = it })
+                Text("Use Device Admin to harden uninstall protection (optional)")
             }
             Text("Device Admin: ${if (isAdminGranted) "Enabled" else "Not enabled"}")
-            Text("When enabled, AppTick blocks the Settings uninstall page while lock mode is active.")
+            Text("Device Admin is optional and only used for uninstall hardening.")
 
             Button(
                 onClick = {
@@ -152,15 +273,38 @@ fun SecurityKeySettingsScreen(navController: NavController) {
 
             Button(
                 onClick = {
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                    if (activeLockMode != LockMode.NONE && activeLockMode != LockMode.SECURITY_KEY) {
+                        Toast.makeText(
+                            context,
+                            "Only one lock mode can be enabled at a time. Disable $activeLockMode first.",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@Button
+                    }
                     if (securityKey.isBlank()) {
                         Toast.makeText(context, "Enter a security key", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    if (securityKey != confirmSecurityKey) {
-                        Toast.makeText(context, "Security keys do not match", Toast.LENGTH_SHORT).show()
+                    val trimmedEmail = recoveryEmail.trim()
+                    if (!Patterns.EMAIL_ADDRESS.matcher(trimmedEmail).matches()) {
+                        Toast.makeText(context, "Enter a valid recovery email", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    if (lockSettings && !isAdminGranted) {
+                    val emailVerifiedForCurrentValue =
+                        prefs.getBoolean("recovery_email_security_key_verified", false) &&
+                            prefs.getString("recovery_email_security_key", null)
+                                .equals(trimmedEmail, ignoreCase = true)
+                    if (!emailVerifiedForCurrentValue) {
+                        Toast.makeText(
+                            context,
+                            "Verify the recovery email first using the email link",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@Button
+                    }
+                    if (enableAdminProtection && !isAdminGranted) {
                         Toast.makeText(
                             context,
                             "Enable Device Admin before turning on uninstall protection",
@@ -173,37 +317,45 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                         putBoolean("security_key_enabled", true)
                         putString("active_lock_mode", "SECURITY_KEY")
                         putString("security_key_value", securityKey)
-                        putString("recovery_email_security_key", recoveryEmail)
-                        putBoolean("blockSettings", lockSettings)
+                        putString("recovery_email_security_key", trimmedEmail)
+                        putBoolean("recovery_email_security_key_verified", true)
+                        putBoolean("useDeviceAdminUninstallProtection", enableAdminProtection)
                         putBoolean("locked", true)
                         putBoolean("securityKeyUnlocked", false)
+                        putBoolean("passUnlocked", false)
                     }
-                    if (lockSettings) {
+                    if (enableAdminProtection) {
                         BackgroundChecker.startServiceIfNotRunning(context.applicationContext)
                     }
                     Toast.makeText(context, "Security key enabled", Toast.LENGTH_SHORT).show()
                     navController.popBackStack()
                 },
+                enabled = activeLockMode == LockMode.NONE || activeLockMode == LockMode.SECURITY_KEY,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save Security Key")
+                if (activeLockMode == LockMode.NONE || activeLockMode == LockMode.SECURITY_KEY) {
+                    Text("Enable Security Key Mode")
+                } else {
+                    Text("Disable $activeLockMode first")
+                }
             }
 
-            Button(
-                onClick = {
-                    prefs.edit {
-                        remove("security_key_value")
-                        remove("recovery_email_security_key")
-                        putBoolean("security_key_enabled", false)
-                        putString("active_lock_mode", "NONE")
-                        putBoolean("securityKeyUnlocked", false)
-                    }
-                    Toast.makeText(context, "Security key disabled", Toast.LENGTH_SHORT).show()
-                    navController.popBackStack()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Disable Security Key")
+            if (activeLockMode == LockMode.SECURITY_KEY) {
+                Button(
+                    onClick = {
+                        prefs.edit {
+                            remove("security_key_value")
+                            putBoolean("security_key_enabled", false)
+                            putString("active_lock_mode", "NONE")
+                            putBoolean("securityKeyUnlocked", false)
+                        }
+                        Toast.makeText(context, "Security key disabled", Toast.LENGTH_SHORT).show()
+                        navController.popBackStack()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Disable Security Key Mode")
+                }
             }
         }
     }

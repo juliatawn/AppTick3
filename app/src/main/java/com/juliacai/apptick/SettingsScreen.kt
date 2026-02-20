@@ -42,11 +42,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppLimitBackupManager
 import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.permissions.BatteryOptimizationHelper
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
@@ -64,7 +68,8 @@ fun SettingsScreen(
     onCustomizeColors: () -> Unit,
     onUpgradeToPremium: () -> Unit,
     onOpenPremiumModeInfo: () -> Unit,
-    onOpenAppLimitBackup: () -> Unit
+    onOpenAppLimitBackup: () -> Unit,
+    onOpenChangelog: () -> Unit
 ) {
     val context = LocalContext.current
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
@@ -104,7 +109,6 @@ fun SettingsScreen(
                                 remove("password")
                                 putBoolean("locked", false)
                                 putBoolean("blockMain", false)
-                                putBoolean("blockSettings", false)
                             }
                             hasPassword = false
                         }
@@ -143,7 +147,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(it)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScrollWithIndicator()
         ) {
             if (!isPremium) {
                 Card(
@@ -294,6 +298,13 @@ fun SettingsScreen(
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(
+                onClick = onOpenChangelog,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Changelog")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
                 onClick = {
                     batteryStatus = BatteryOptimizationHelper.getStatus(context)
                     showBatteryDialog = true
@@ -404,11 +415,12 @@ fun SettingsScreen(
     }
 
     if (showBatteryDialog) {
-        val details = buildString {
-            append("Ignore battery optimizations: ")
-            append(if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
-            append("\nBackground restricted: ")
-            append(if (batteryStatus.backgroundRestricted) "Yes" else "No")
+        val detailItems = buildList {
+            add("Ignore battery optimizations:" to if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
+            add("Background restricted:" to if (batteryStatus.backgroundRestricted) "Yes" else "No")
+            if (batteryStatus.hasAdditionalOemRestrictions) {
+                add("OEM startup controls:" to "Detected")
+            }
         }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showBatteryDialog = false },
@@ -423,8 +435,32 @@ fun SettingsScreen(
                         }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
+                    detailItems.forEach { (label, value) ->
+                        Text(
+                            text = buildAnnotatedString {
+                                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                                append(label)
+                                pop()
+                                append(" ")
+                                append(value)
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                    val oemGuidance = batteryStatus.oemGuidance
+                    if (oemGuidance != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            oemGuidance,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        details,
+                        "Some manufacturers aggressively kill apps in the background. If reliability issues continue, review device-specific steps at dontkillmyapp.com.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -449,6 +485,30 @@ fun SettingsScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("Open General Battery Settings")
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            if (!BatteryOptimizationHelper.openDontKillMyApp(context)) {
+                                Toast.makeText(context, "Unable to open dontkillmyapp.com", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Open dontkillmyapp.com")
+                    }
+                    if (batteryStatus.hasAdditionalOemRestrictions) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                if (!BatteryOptimizationHelper.openManufacturerBackgroundSettings(context)) {
+                                    Toast.makeText(context, "Unable to open OEM startup settings", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Open OEM Startup Settings")
+                        }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedButton(
@@ -544,7 +604,8 @@ fun AppLimitBackupScreen(
                         }
 
                         val sanitized = group.copy(
-                            id = 0L,
+                            // Keep backup IDs stable so saved main-page card ordering remains valid.
+                            id = if (group.id > 0L) group.id else 0L,
                             apps = filteredApps,
                             timeRemaining = 0L,
                             nextResetTime = 0L,
@@ -572,7 +633,13 @@ fun AppLimitBackupScreen(
                         )
                     }
                     dao.replaceAllAppLimitGroups(importedGroups)
-                    AppLimitBackupManager.applyAppSettings(groupPrefs, backup.appSettings)
+                    val importedIds = importedGroups.map { it.id }.filter { it > 0L }
+                    val appSettingsToApply = backup.appSettings.copy(
+                        groupCardOrder = backup.appSettings.groupCardOrder?.let { savedOrder ->
+                            GroupCardOrderStore.sanitizeOrder(savedOrder, importedIds)
+                        }?.takeIf { it.isNotEmpty() }
+                    )
+                    AppLimitBackupManager.applyAppSettings(groupPrefs, appSettingsToApply)
 
                     val activeGroupCount = dao.getActiveGroupCount()
                     BackgroundChecker.applyDesiredServiceState(
@@ -648,7 +715,7 @@ fun AppLimitBackupScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .verticalScrollWithIndicator()
         ) {
             Text(
                 "Back up all your app limit settings and AppTick app settings to a file.",

@@ -31,6 +31,8 @@ import androidx.core.graphics.createBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.rememberScrollbarColor
+import com.juliacai.apptick.verticalScrollWithIndicator
 import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -145,7 +147,7 @@ fun SetTimeLimitsScreen(
                     focusManager.clearFocus()
                     keyboardController?.hide()
                 }
-                .verticalScroll(scrollState)
+                .verticalScrollWithIndicator(scrollState, rememberScrollbarColor())
                 .padding(16.dp)
         ) {
             // Selected Apps Section

@@ -11,10 +11,16 @@ import android.provider.Settings
 data class BatteryOptimizationStatus(
     val unrestricted: Boolean,
     val ignoringBatteryOptimizations: Boolean,
-    val backgroundRestricted: Boolean
+    val backgroundRestricted: Boolean,
+    val hasAdditionalOemRestrictions: Boolean,
+    val oemGuidance: String?
 )
 
 object BatteryOptimizationHelper {
+    const val DONT_KILL_MY_APP_URL = "https://dontkillmyapp.com/"
+
+    private val HONOR_HUAWEI_BRANDS = setOf("honor", "huawei")
+    private val XIAOMI_BRANDS = setOf("xiaomi", "redmi", "poco")
 
     fun getStatus(context: Context): BatteryOptimizationStatus {
         val appContext = context.applicationContext
@@ -32,10 +38,25 @@ object BatteryOptimizationHelper {
             false
         }
 
+        val manufacturer = Build.MANUFACTURER.orEmpty().lowercase()
+        val brand = Build.BRAND.orEmpty().lowercase()
+        val honorHuaweiDetected = HONOR_HUAWEI_BRANDS.any { manufacturer.contains(it) || brand.contains(it) }
+        val xiaomiDetected = XIAOMI_BRANDS.any { manufacturer.contains(it) || brand.contains(it) }
+        val hasAdditionalOemRestrictions = honorHuaweiDetected || xiaomiDetected
+        val oemGuidance = if (honorHuaweiDetected) {
+            "Also allow AppTick in App launch/Auto-start and set battery to No restrictions in Honor/Huawei system settings."
+        } else if (xiaomiDetected) {
+            "Also enable Auto-start for AppTick in Security app and set Battery saver to No restrictions on Xiaomi/Redmi/POCO."
+        } else {
+            null
+        }
+
         return BatteryOptimizationStatus(
-            unrestricted = ignoringBatteryOptimizations && !backgroundRestricted,
+            unrestricted = ignoringBatteryOptimizations && !backgroundRestricted && !hasAdditionalOemRestrictions,
             ignoringBatteryOptimizations = ignoringBatteryOptimizations,
-            backgroundRestricted = backgroundRestricted
+            backgroundRestricted = backgroundRestricted,
+            hasAdditionalOemRestrictions = hasAdditionalOemRestrictions,
+            oemGuidance = oemGuidance
         )
     }
 
@@ -67,6 +88,29 @@ object BatteryOptimizationHelper {
             Intent(Settings.ACTION_SETTINGS)
         )
         return launchFirstAvailable(context, intents)
+    }
+
+    fun openManufacturerBackgroundSettings(context: Context): Boolean {
+        val packageUri = Uri.parse("package:${context.packageName}")
+        val intents = listOf(
+            Intent().setClassName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+            Intent("miui.intent.action.OP_AUTO_START"),
+            Intent().setClassName("com.miui.securitycenter", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity").apply {
+                putExtra("package_name", context.packageName)
+                putExtra("package_label", context.packageName)
+            },
+            Intent().setClassName("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+            Intent().setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"),
+            Intent().setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+            Intent("huawei.intent.action.HSM_PROTECTED_APPS"),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+        )
+        return launchFirstAvailable(context, intents)
+    }
+
+    fun openDontKillMyApp(context: Context): Boolean {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DONT_KILL_MY_APP_URL))
+        return launchFirstAvailable(context, listOf(intent))
     }
 
     private fun launchFirstAvailable(context: Context, intents: List<Intent>): Boolean {

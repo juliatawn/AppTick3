@@ -23,7 +23,7 @@ fun AppLaunchLoadingScreen() {
         AppTickLogo(
             containerSize = 96.dp,
             iconSize = 56.dp,
-            backgroundColorOverride = Color(0xFF3949AB)
+            backgroundColorOverride = Color(0xFF6F34AD)
         )
         Spacer(modifier = Modifier.height(14.dp))
         Text(

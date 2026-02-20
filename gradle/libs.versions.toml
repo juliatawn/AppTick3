@@ -32,7 +32,7 @@ turbine = "1.2.1"
 androidxTestRules = "1.7.0"
 gson = "2.13.2"
 credentials = "1.5.0"
-firebaseBom = "33.7.0"
+firebaseBom = "33.9.0"
 googleServices = "4.4.2"
 
 [libraries]

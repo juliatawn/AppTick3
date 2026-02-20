@@ -1,11 +1,13 @@
 package com.juliacai.apptick.groups
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -15,9 +17,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.juliacai.apptick.data.GroupCardOrderStore
+import com.juliacai.apptick.lazyColumnScrollIndicator
+import com.juliacai.apptick.rememberScrollbarColor
 
 @Composable
 fun AppLimitGroupsList(
@@ -28,12 +33,19 @@ fun AppLimitGroupsList(
     isEditingLocked: Boolean,
     onPauseToggle: (AppLimitGroup) -> Unit = {},
     onDelete: (AppLimitGroup) -> Unit = {},
-    onReorder: (List<Long>) -> Unit = {}
+    onReorder: (List<Long>) -> Unit = {},
+    autoScrollTargetSize: Int? = null,
+    onAutoScrollHandled: () -> Unit = {}
 ) {
     val listState = rememberLazyListState()
     val orderedIds = remember { mutableStateListOf<Long>() }
     var draggingItemId by remember { mutableLongStateOf(-1L) }
     var draggingOffsetY by remember { mutableFloatStateOf(0f) }
+    var autoScrollSpeedPxPerFrame by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val edgeThresholdPx = with(density) { 96.dp.toPx() }
+    val maxAutoScrollPxPerFrame = with(density) { 22.dp.toPx() }
+    val scrollbarColor = rememberScrollbarColor()
 
     LaunchedEffect(groups) {
         val availableIds = groups.map { it.id }
@@ -44,12 +56,31 @@ fun AppLimitGroupsList(
         }
     }
 
+    LaunchedEffect(draggingItemId, autoScrollSpeedPxPerFrame) {
+        if (draggingItemId == -1L || autoScrollSpeedPxPerFrame == 0f) return@LaunchedEffect
+        while (draggingItemId != -1L && autoScrollSpeedPxPerFrame != 0f) {
+            val consumed = listState.scrollBy(autoScrollSpeedPxPerFrame)
+            if (consumed == 0f) break
+            draggingOffsetY += consumed
+            withFrameNanos { }
+        }
+    }
+
+    LaunchedEffect(autoScrollTargetSize, orderedIds.size) {
+        val targetSize = autoScrollTargetSize ?: return@LaunchedEffect
+        if (orderedIds.isEmpty() || orderedIds.size < targetSize) return@LaunchedEffect
+        listState.scrollToItem(orderedIds.lastIndex)
+        onAutoScrollHandled()
+    }
+
     val groupById = remember(groups) { groups.associateBy { it.id } }
     val orderedGroups = orderedIds.mapNotNull { id -> groupById[id] }
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.padding(8.dp)
+        modifier = Modifier
+            .padding(8.dp)
+            .lazyColumnScrollIndicator(listState, scrollbarColor)
     ) {
         items(
             count = orderedGroups.size,
@@ -64,6 +95,7 @@ fun AppLimitGroupsList(
                         onDragStart = {
                             draggingItemId = group.id
                             draggingOffsetY = 0f
+                            autoScrollSpeedPxPerFrame = 0f
                         },
                         onDrag = { change, dragAmount ->
                             if (draggingItemId != group.id) return@detectDragGesturesAfterLongPress
@@ -73,6 +105,21 @@ fun AppLimitGroupsList(
                             val visibleItems = listState.layoutInfo.visibleItemsInfo
                             val draggedInfo = visibleItems.firstOrNull { it.key == group.id } ?: return@detectDragGesturesAfterLongPress
                             val draggedCenterY = draggedInfo.offset + (draggedInfo.size / 2f) + draggingOffsetY
+                            val viewportStart = listState.layoutInfo.viewportStartOffset.toFloat()
+                            val viewportEnd = listState.layoutInfo.viewportEndOffset.toFloat()
+                            val topEdge = viewportStart + edgeThresholdPx
+                            val bottomEdge = viewportEnd - edgeThresholdPx
+                            autoScrollSpeedPxPerFrame = when {
+                                draggedCenterY < topEdge -> {
+                                    val intensity = ((topEdge - draggedCenterY) / edgeThresholdPx).coerceIn(0f, 1f)
+                                    -maxAutoScrollPxPerFrame * intensity
+                                }
+                                draggedCenterY > bottomEdge -> {
+                                    val intensity = ((draggedCenterY - bottomEdge) / edgeThresholdPx).coerceIn(0f, 1f)
+                                    maxAutoScrollPxPerFrame * intensity
+                                }
+                                else -> 0f
+                            }
                             val targetInfo = visibleItems.firstOrNull { item ->
                                 item.key != group.id &&
                                     draggedCenterY >= item.offset &&
@@ -94,10 +141,12 @@ fun AppLimitGroupsList(
                         onDragEnd = {
                             draggingItemId = -1L
                             draggingOffsetY = 0f
+                            autoScrollSpeedPxPerFrame = 0f
                         },
                         onDragCancel = {
                             draggingItemId = -1L
                             draggingOffsetY = 0f
+                            autoScrollSpeedPxPerFrame = 0f
                         }
                     )
                 }

@@ -14,7 +14,8 @@ class SettingsActivity : AppCompatActivity() {
                 onCustomizeColors = {},
                 onUpgradeToPremium = {},
                 onOpenPremiumModeInfo = {},
-                onOpenAppLimitBackup = {}
+                onOpenAppLimitBackup = {},
+                onOpenChangelog = {}
             )
         }
     }

@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -45,6 +46,8 @@ import com.juliacai.apptick.MainViewModel
 import com.juliacai.apptick.formatClockTime
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.GroupAppItem
+import com.juliacai.apptick.lazyColumnScrollIndicator
+import com.juliacai.apptick.rememberScrollbarColor
 import android.content.Context
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -59,6 +62,8 @@ fun AppLimitDetailsScreen(
     onEditClick: (AppLimitGroup) -> Unit,
 ) {
     val group by viewModel.getGroup(groupId).observeAsState()
+    val detailsListState = rememberLazyListState()
+    val scrollbarColor = rememberScrollbarColor()
 
     Scaffold(
         topBar = {
@@ -92,9 +97,11 @@ fun AppLimitDetailsScreen(
             }
         } else {
             LazyColumn(
+                state = detailsListState,
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(paddingValues),
+                    .padding(paddingValues)
+                    .lazyColumnScrollIndicator(detailsListState, scrollbarColor),
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
@@ -210,6 +217,8 @@ private fun SettingRow(label: String, value: String) {
 @Composable
 private fun AppUsageCard(group: AppLimitGroup) {
     val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis }
+    val usageListState = rememberLazyListState()
+    val scrollbarColor = rememberScrollbarColor()
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -218,7 +227,12 @@ private fun AppUsageCard(group: AppLimitGroup) {
                 Text("App Usage", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             }
             Spacer(Modifier.height(16.dp))
-            LazyColumn(modifier = Modifier.height(300.dp)) {
+            LazyColumn(
+                state = usageListState,
+                modifier = Modifier
+                    .height(300.dp)
+                    .lazyColumnScrollIndicator(usageListState, scrollbarColor)
+            ) {
                 items(group.apps) { app ->
                     val appInfo = AppInfo(
                         appName = app.appName,

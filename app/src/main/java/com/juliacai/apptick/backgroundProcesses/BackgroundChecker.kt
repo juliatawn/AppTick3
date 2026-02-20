@@ -5,6 +5,8 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.app.AlarmManager
+import android.app.KeyguardManager
+import android.app.usage.UsageStats
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.BroadcastReceiver
@@ -56,6 +58,7 @@ class BackgroundChecker : Service() {
 
     private lateinit var usageStatsManager: UsageStatsManager
     private lateinit var powerManager: PowerManager
+    private lateinit var keyguardManager: KeyguardManager
     private lateinit var blockIntent: Intent
 
     private val db by lazy { AppTickDatabase.getDatabase(this) }
@@ -89,6 +92,7 @@ class BackgroundChecker : Service() {
         // Initialize UsageStatsManager once
         usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
         powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
         isScreenOn = powerManager.isInteractive
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -154,9 +158,14 @@ class BackgroundChecker : Service() {
             lastCheckElapsed = SystemClock.elapsedRealtime()
 
             while (isActive) {
-                // Self-heal screen state in case SCREEN_ON/OFF broadcasts are delayed or missed.
-                isScreenOn = powerManager.isInteractive
-                if (isScreenOn) {
+                val shouldTrackUsage = shouldTrackUsageNow()
+                isScreenOn = shouldTrackUsage
+
+                if (!shouldTrackUsage) {
+                    // Keep elapsed baseline fresh so lock/off time is never charged on resume.
+                    lastCheckElapsed = SystemClock.elapsedRealtime()
+                    try { startService(FloatingBubbleService.hideIntent(this@BackgroundChecker)) } catch (_: Exception) {}
+                } else {
                     val foregroundApp = getForegroundApp()
                     if (foregroundApp != null) {
                         lastForegroundApp = foregroundApp
@@ -203,6 +212,7 @@ class BackgroundChecker : Service() {
             blockIntent.putExtra("use_time_range", false)
             blockIntent.putExtra("block_outside_time_range", false)
             blockIntent.putExtra("blocked_for_outside_range", false)
+            blockIntent.putExtra("next_reset_time", 0L)
             blockIntent.putExtra("block_reason", "Used up time limit")
             startActivity(blockIntent)
             return
@@ -291,6 +301,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("use_time_range", group.useTimeRange)
                 blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                 blockIntent.putExtra("blocked_for_outside_range", true)
+                blockIntent.putExtra("next_reset_time", group.nextResetTime)
                 blockIntent.putExtra("block_reason", "Outside configured time range")
                 startActivity(blockIntent)
                 continue
@@ -313,6 +324,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
+                    blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Used up time limit")
                     startActivity(blockIntent)
                     continue
@@ -358,6 +370,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
+                    blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Out of Time")
                     startActivity(blockIntent)
                 } else {
@@ -510,6 +523,9 @@ class BackgroundChecker : Service() {
     companion object {
         private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
         private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
+        private const val FOREGROUND_EVENT_LOOKBACK_MS = 15_000L
+        private const val FOREGROUND_USAGE_LOOKBACK_MS = 2 * 60_000L
+        private const val FOREGROUND_USAGE_MAX_AGE_MS = 15_000L
 
         @Volatile
         var isRunning = false
@@ -521,6 +537,7 @@ class BackgroundChecker : Service() {
 
         private const val WATCHDOG_REQUEST_CODE = 4812
         private const val WATCHDOG_INTERVAL_MS = 45_000L
+        private const val WATCHDOG_RETRY_DELAY_MS = 3_000L
 
         private fun watchdogPendingIntent(
             context: Context,
@@ -580,11 +597,43 @@ class BackgroundChecker : Service() {
         }
 
         fun startServiceIfNotRunning(context: Context) {
-            if (!isRunning) {
-                val intent = Intent(context, BackgroundChecker::class.java)
-                context.startForegroundService(intent)
+            if (isRunning) {
+                scheduleServiceWatchdog(context)
+                return
             }
+
+            val intent = Intent(context, BackgroundChecker::class.java)
+            val started = runCatching {
+                context.startForegroundService(intent)
+            }.isSuccess
+
+            if (!started) {
+                scheduleImmediateServiceRetry(context)
+            }
+
             scheduleServiceWatchdog(context)
+        }
+
+        private fun scheduleImmediateServiceRetry(context: Context) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val pendingIntent = watchdogPendingIntent(
+                context,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            ) ?: return
+            val triggerAt = SystemClock.elapsedRealtime() + WATCHDOG_RETRY_DELAY_MS
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                alarmManager.setAndAllowWhileIdle(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+            } else {
+                alarmManager.set(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    triggerAt,
+                    pendingIntent
+                )
+            }
         }
 
         /** Broadcast action for the "Show Bubble" notification button. */
@@ -687,16 +736,39 @@ class BackgroundChecker : Service() {
 
     private fun getForegroundApp(): String? {
         val time = System.currentTimeMillis()
-        val events = usageStatsManager.queryEvents(time - 1000 * 5, time)
+        val events = usageStatsManager.queryEvents(time - FOREGROUND_EVENT_LOOKBACK_MS, time)
         var foregroundApp: String? = null
+        var latestForegroundEventTime = 0L
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(event)
-            if (event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND) {
-                foregroundApp = event.packageName
+            val isForegroundEvent = event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
+                    (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+                            event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
+            if (isForegroundEvent && !event.packageName.isNullOrBlank()) {
+                if (event.timeStamp >= latestForegroundEventTime) {
+                    latestForegroundEventTime = event.timeStamp
+                    foregroundApp = event.packageName
+                }
             }
         }
-        return foregroundApp
+        if (!foregroundApp.isNullOrBlank()) return foregroundApp
+
+        // Service can restart while user stays in one app; no new foreground event fires.
+        // Fall back to most recently used package so checks resume immediately.
+        return usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            time - FOREGROUND_USAGE_LOOKBACK_MS,
+            time
+        )
+            ?.asSequence()
+            ?.filter { stat: UsageStats ->
+                !stat.packageName.isNullOrBlank() &&
+                        stat.lastTimeUsed > 0L &&
+                        (time - stat.lastTimeUsed) <= FOREGROUND_USAGE_MAX_AGE_MS
+            }
+            ?.maxByOrNull { it.lastTimeUsed }
+            ?.packageName
     }
 
     // ── Service lifecycle ─────────────────────────────────────────────────────
@@ -715,6 +787,8 @@ class BackgroundChecker : Service() {
         try { unregisterReceiver(bubbleShowReceiver) } catch (_: Exception) {}
         // Hide the floating bubble when the service stops
         try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+        // Recover quickly if OEM/user UI stops the foreground service while limits remain active.
+        scheduleImmediateServiceRetry(this)
         Log.i("BG_Service", "Service destroyed")
     }
 
@@ -723,10 +797,28 @@ class BackgroundChecker : Service() {
     inner class ScreenStateReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_SCREEN_ON -> isScreenOn = true
-                Intent.ACTION_SCREEN_OFF -> isScreenOn = false
+                Intent.ACTION_SCREEN_ON -> {
+                    isScreenOn = shouldTrackUsageNow()
+                    // Prevent large elapsed jumps if checks resume before next loop iteration.
+                    lastCheckElapsed = SystemClock.elapsedRealtime()
+                }
+                Intent.ACTION_SCREEN_OFF -> {
+                    isScreenOn = false
+                    // Screen-off/lock periods must not be counted as app usage.
+                    lastCheckElapsed = SystemClock.elapsedRealtime()
+                }
             }
         }
+    }
+
+    private fun shouldTrackUsageNow(): Boolean {
+        val interactive = powerManager.isInteractive
+        val locked = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            keyguardManager.isDeviceLocked
+        } else {
+            keyguardManager.inKeyguardRestrictedInputMode()
+        }
+        return interactive && !locked
     }
 
     // ── Companion object moved up next to updateNotification ──────────────────
@@ -776,7 +868,8 @@ class BackgroundChecker : Service() {
     private fun shouldBlockSettingsAccess(foregroundApp: String?): Boolean {
         val packageName = foregroundApp ?: return false
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("blockSettings", false)) return false
+        val shouldProtectUninstall = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
+        if (!shouldProtectUninstall) return false
 
         val lockState = readLockState(prefs)
         val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
@@ -785,17 +878,13 @@ class BackgroundChecker : Service() {
                 putString("active_lock_mode", "NONE")
                 remove("lockdown_end_time")
                 remove("lockdown_weekly_used_key")
+                putBoolean("lockdown_prompt_after_unlock", true)
             }
-        }
-
-        // Block direct Settings access while the lock policy is actively locked.
-        if (isSettingsPackage(packageName) && lockDecision.isLocked) {
-            return true
         }
 
         // Uninstall confirmation often switches to package-installer/permission-controller apps.
         // Keep these blocked whenever uninstall protection is enabled and a lock mode is configured.
-        if (isUninstallFlowPackage(packageName) && LockPolicy.hasAnyConfiguredLockMode(lockState)) {
+        if (shouldProtectUninstall && isUninstallFlowPackage(packageName) && LockPolicy.hasAnyConfiguredLockMode(lockState)) {
             return true
         }
 
@@ -804,7 +893,8 @@ class BackgroundChecker : Service() {
 
     private fun shouldKeepServiceForSettingsProtection(): Boolean {
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("blockSettings", false)) return false
+        val shouldProtect = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
+        if (!shouldProtect) return false
         return LockPolicy.hasAnyConfiguredLockMode(readLockState(prefs))
     }
 
@@ -836,12 +926,6 @@ class BackgroundChecker : Service() {
             lockdownRecurringDays = recurringDays,
             lockdownRecurringUsedKey = prefs.getString("lockdown_weekly_used_key", null)
         )
-    }
-
-    private fun isSettingsPackage(packageName: String): Boolean {
-        if (packageName == "com.android.settings") return true
-        if (packageName == "com.samsung.android.settings") return true
-        return packageName.contains(".settings")
     }
 
     private fun isUninstallFlowPackage(packageName: String): Boolean {

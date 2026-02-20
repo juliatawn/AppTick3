@@ -79,11 +79,19 @@ fun AppLimitGroupItem(
                         )
                     }
                 } else {
-                    IconButton(onClick = { onPauseToggle(group) }) {
-                        Icon(
-                            painter = painterResource(id = if (group.paused) R.drawable.ic_play else R.drawable.ic_pause),
-                            contentDescription = "Toggle Pause"
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { onPauseToggle(group) }) {
+                            Icon(
+                                painter = painterResource(id = if (group.paused) R.drawable.ic_play else R.drawable.ic_pause),
+                                contentDescription = "Toggle Pause"
+                            )
+                        }
+                        if (group.paused) {
+                            Text(
+                                text = "PAUSED",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                     IconButton(onClick = { onEdit(group) }) {
                         Icon(painter = painterResource(id = R.drawable.ic_edit), contentDescription = "Edit")

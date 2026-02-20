@@ -1,6 +1,8 @@
 package com.juliacai.apptick.premiumMode
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,11 +14,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -31,9 +36,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.juliacai.apptick.LockdownType
+import com.juliacai.apptick.verticalScrollWithIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,13 +46,16 @@ fun LockdownModeScreen(
     statusText: String,
     lockdownType: LockdownType,
     recurringDays: List<Int>, // 1=Mon, 7=Sun
+    selectedDate: String,
+    selectedTime: String,
     protectSettingsUninstall: Boolean,
     isDeviceAdminGranted: Boolean,
     onLockdownTypeChanged: (LockdownType) -> Unit,
     onRecurringDaysChanged: (List<Int>) -> Unit,
+    onDateClick: () -> Unit,
+    onTimeClick: () -> Unit,
     onProtectSettingsUninstallToggled: (Boolean) -> Unit,
     onEnableDeviceAdminClick: () -> Unit,
-    onConfigureEndTimeClick: () -> Unit,
     onStartLockdownClick: () -> Unit,
     onDisableLockdownClick: () -> Unit,
     onBackClick: () -> Unit,
@@ -73,29 +81,26 @@ fun LockdownModeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp),
+                .padding(16.dp)
+                .verticalScrollWithIndicator(),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(text = statusText, style = MaterialTheme.typography.bodyLarge)
-            
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.bodyLarge,
+                    modifier = Modifier.padding(14.dp)
+                )
+            }
+
             if (isLockdownActive) {
-                // If active, user can only Disable (if allowed)
-                // "Each lock mode when set has a START MODE button or CANCEL button at the bottom... If user sets up lockmode, when they reenter it will show settings..."
-                // Logic: If locked, they can only "Disable Lockdown".
-                // But wait, if they are here, they passed the security check (if needed).
-                // Lockdown doesn't have a password itself (unless Password Mode is separate).
-                // If Lockdown is active, they can't change settings UNLESS they are in a window?
-                // If they are in a window, they can change settings OR disable it.
-                // StatusText should say "Active until..." or "Window open until...".
-                
                 Button(
                     onClick = onDisableLockdownClick,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Disable Lockdown")
+                    Text("Turn Off Lockdown")
                 }
             } else {
-                // Configuration Mode
                 TabRow(selectedTabIndex = if (lockdownType == LockdownType.ONE_TIME) 0 else 1) {
                     Tab(
                         selected = lockdownType == LockdownType.ONE_TIME,
@@ -112,17 +117,55 @@ fun LockdownModeScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 if (lockdownType == LockdownType.ONE_TIME) {
-                    Text("Lock editing until a specific date and time.")
-                    Button(
-                        onClick = onConfigureEndTimeClick,
-                        modifier = Modifier.fillMaxWidth()
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
                     ) {
-                        Text("Set End Date/Time")
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Lock, contentDescription = null)
+                                Spacer(modifier = Modifier.size(8.dp))
+                                Text(
+                                    "Unlock on one date",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                            Text("Pick a date/time when editing can happen.")
+                        }
+                    }
+                    Button(onClick = onDateClick, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = "Date: $selectedDate")
+                    }
+                    Button(onClick = onTimeClick, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = "Time: $selectedTime")
                     }
                 } else {
-                    Text("Allow editing only on specific days of the week.")
-                    // Day Selector
-                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    ElevatedCard(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Lock, contentDescription = null)
+                                Spacer(modifier = Modifier.size(8.dp))
+                                Text(
+                                    "Unlock on selected weekdays",
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                            }
+                            Text("Choose the day(s) when edits and start/stop are allowed.")
+                            Text(
+                                "Outside selected days, limits lock again automatically until the next selected day. On selected days, you can still lock sooner after changes if you want. While Lockdown mode is configured, Password and Security Key modes stay unavailable."
+                            )
+                        }
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                         val days = listOf("Mo", "Tu", "We", "Th", "Fr", "Sa", "Su")
                         days.forEachIndexed { index, day ->
                             val dayIndex = index + 1 // 1=Mon
@@ -152,37 +195,64 @@ fun LockdownModeScreen(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
+
+                ElevatedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Checkbox(
-                        checked = protectSettingsUninstall,
-                        onCheckedChange = onProtectSettingsUninstallToggled
-                    )
-                    Text("Protect uninstall from Settings")
-                }
-                
-                if (protectSettingsUninstall) {
-                    Text("Device Admin: ${if (isDeviceAdminGranted) "Enabled" else "Not enabled"}")
-                    if (!isDeviceAdminGranted) {
-                         Button(
-                            onClick = onEnableDeviceAdminClick,
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Lock, contentDescription = null)
+                            Spacer(modifier = Modifier.size(8.dp))
+                            Text(
+                                "Uninstall protection",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Enable Device Admin")
+                            Checkbox(
+                                checked = protectSettingsUninstall,
+                                onCheckedChange = onProtectSettingsUninstallToggled
+                            )
+                            Text("Use Device Admin to reduce uninstall bypass")
+                        }
+                        Text(
+                            "This does not lock the Settings app. It only helps prevent uninstall attempts."
+                        )
+                        Text("Device Admin: ${if (isDeviceAdminGranted) "Enabled" else "Not enabled"}")
+                        if (!isDeviceAdminGranted) {
+                            OutlinedButton(
+                                onClick = onEnableDeviceAdminClick,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Enable Device Admin")
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.weight(1f))
-
-                Button(
-                    onClick = onStartLockdownClick,
-                    modifier = Modifier.fillMaxWidth()
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Start Lockdown")
+                    OutlinedButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = onStartLockdownClick,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Save")
+                    }
                 }
             }
         }

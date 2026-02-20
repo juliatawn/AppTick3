@@ -12,15 +12,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
@@ -35,6 +36,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.rememberAsyncImagePainter
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.deviceApps.AppListViewModel
+import com.juliacai.apptick.lazyColumnScrollIndicator
+import com.juliacai.apptick.rememberScrollbarColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,18 +50,29 @@ fun AppSelectScreen(
     val apps by appListViewModel.filteredApps.collectAsState()
     val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
     val searchTerm by appListViewModel.searchTerm.collectAsState()
+    val listState = rememberLazyListState()
+    val scrollbarColor = rememberScrollbarColor()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Select Apps to Limit") },
+                navigationIcon = {
+                    IconButton(
+                        onClick = onCancel,
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 actions = {
-                    TextButton(onClick = onCancel) {
-                        Text("Cancel")
+                    IconButton(
+                        onClick = onNextClick,
+                        modifier = Modifier.size(52.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = "Next")
                     }
-                    IconButton(onClick = onNextClick) {
-                        Icon(Icons.Default.ArrowForward, contentDescription = "Next")
-                    }
+                    Spacer(modifier = Modifier.width(8.dp))
                 }
             )
         }
@@ -75,7 +89,12 @@ fun AppSelectScreen(
             if (apps.isEmpty()) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
             } else {
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .lazyColumnScrollIndicator(listState, scrollbarColor)
+                ) {
                     items(apps) { app ->
                         val isSelected = selectedApps.contains(app)
                         AppListItem(app = app, isSelected = isSelected, onAppSelected = { 

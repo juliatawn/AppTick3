@@ -54,7 +54,7 @@ class MainViewModelTest {
         runBlocking {
             whenever(dao.getActiveGroupCount()).thenReturn(0)
         }
-        viewModel = MainViewModel(application, dao)
+        viewModel = MainViewModel(application, dao) { _, _ -> }
     }
 
     @After

@@ -30,6 +30,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -38,6 +41,7 @@ import androidx.navigation.compose.rememberNavController
 import com.android.billingclient.api.ProductDetails
 import com.juliacai.apptick.LockMode
 import com.juliacai.apptick.lockModes.SetPassword
+import com.juliacai.apptick.verticalScrollWithIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -110,7 +114,7 @@ fun PremiumModeScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScrollWithIndicator(),
             verticalArrangement = Arrangement.Top,
             horizontalAlignment = Alignment.Start
         ) {
@@ -120,6 +124,60 @@ fun PremiumModeScreen(
                     style = MaterialTheme.typography.headlineSmall,
                     textAlign = TextAlign.Start
                 )
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Text(
+                            text = "What Lock Modes do",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Lock Modes protect your app-limit settings from changes.",
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = buildAnnotatedString {
+                                append("• ")
+                                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                                append("Password Mode")
+                                pop()
+                                append(": requires your password to add/edit limits or open this page.")
+                            },
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = buildAnnotatedString {
+                                append("• ")
+                                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                                append("Security Key Mode")
+                                pop()
+                                append(": requires your security key for the same actions.")
+                            },
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = buildAnnotatedString {
+                                append("• ")
+                                pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                                append("Lockdown Mode")
+                                pop()
+                                append(": blocks editing until your allowed date/time window.")
+                            },
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = "Optional Device Admin uninstall hardening is available.",
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 // Helper to render mode button or disabled state
@@ -154,14 +212,12 @@ fun PremiumModeScreen(
                     onClick = { context.startActivity(android.content.Intent(context, LockdownModeActivity::class.java)) }
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                
                 LockModeButton(
                     modeName = "Password Mode",
                     targetMode = LockMode.PASSWORD,
                     onClick = { context.startActivity(android.content.Intent(context, SetPassword::class.java)) }
                 )
                 Spacer(modifier = Modifier.height(16.dp))
-                
                 LockModeButton(
                     modeName = "Security Key Mode",
                     targetMode = LockMode.SECURITY_KEY,

@@ -34,6 +34,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.juliacai.apptick.AppTickLogo
 import com.juliacai.apptick.R
+import com.juliacai.apptick.verticalScrollWithIndicator
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 @Composable
@@ -49,6 +53,7 @@ fun BlockWindowScreen(
     useTimeRange: Boolean,
     blockOutsideTimeRange: Boolean,
     blockedForOutsideRange: Boolean,
+    nextResetTime: Long,
     isPremium: Boolean,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
     backgroundColor: Color = MaterialTheme.colorScheme.background
@@ -63,7 +68,7 @@ fun BlockWindowScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(backgroundColor)
-            .verticalScroll(rememberScrollState())
+            .verticalScrollWithIndicator()
             .padding(horizontal = 24.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -102,6 +107,15 @@ fun BlockWindowScreen(
             text = groupName,
             style = MaterialTheme.typography.titleMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "Next Reset: ${formatNextResetTime(nextResetTime)}",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
             textAlign = TextAlign.Center
         )
 
@@ -245,7 +259,7 @@ fun BlockWindowScreen(
             AppTickLogo(
                 containerSize = 24.dp,
                 iconSize = 14.dp,
-                backgroundColorOverride = Color(0xFF3949AB)
+                backgroundColorOverride = Color(0xFF6F34AD)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
@@ -276,6 +290,11 @@ private fun InfoRow(label: String, value: String, primaryColor: Color) {
             color = primaryColor
         )
     }
+}
+
+private fun formatNextResetTime(nextResetMillis: Long): String {
+    if (nextResetMillis <= 0L) return "Not scheduled"
+    return SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(nextResetMillis))
 }
 
 private fun formatTime(millis: Long): String {

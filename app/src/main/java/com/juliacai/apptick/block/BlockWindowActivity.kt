@@ -47,6 +47,7 @@ class BlockWindowActivity : AppCompatActivity() {
         val useTimeRange = intent.getBooleanExtra("use_time_range", false)
         val blockOutsideTimeRange = intent.getBooleanExtra("block_outside_time_range", false)
         val blockedForOutsideRange = intent.getBooleanExtra("blocked_for_outside_range", false)
+        val nextResetTime = intent.getLongExtra("next_reset_time", 0L)
         val resolvedBlockReason = blockReason?.takeIf { it.isNotBlank() } ?: when {
             blockedForOutsideRange -> "Outside configured time range"
             timeLimitMinutes <= 0 -> "Used up time limit"
@@ -128,6 +129,7 @@ class BlockWindowActivity : AppCompatActivity() {
                     useTimeRange = useTimeRange,
                     blockOutsideTimeRange = blockOutsideTimeRange,
                     blockedForOutsideRange = blockedForOutsideRange,
+                    nextResetTime = nextResetTime,
                     isPremium = isPremium,
                     primaryColor = composePrimary,
                     backgroundColor = composeBackground

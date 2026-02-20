@@ -100,13 +100,14 @@ Running on Darwin 25.3.0 (arm64)
     - `AppTheme.kt`: Manages the app's theme via an `object AppTheme` (SharedPreferences-backed color helpers used by Activities) and a `@Composable fun AppTheme` (MaterialTheme wrapper for Compose UI), consolidated from the former `AppTickTheme.kt`.
     - `BaseActivity.kt`: A base class for activities that handles shared functionality like theme and color changes.
     - `CustomViewPager.kt`: A custom ViewPager that allows for disabling swipe gestures.
+    - `Changelog.kt`: Reusable changelog dialog content/UI and SharedPreferences helpers that track whether the current app version changelog has been seen.
     - `DateTimePickerDialog.kt`: A dialog for picking a date and time.
     - `LockPolicy.kt`: Pure lock-evaluation rules for password/security-key/lockdown logic, including weekly one-time unlock windows.
-    - `MainActivity.kt`: The main activity of the application, responsible for checking permissions, setting up billing, displaying the main UI, and handling edit-group deep links into SetTimeLimitsScreen.
+    - `MainActivity.kt`: The main activity of the application, responsible for checking permissions, setting up billing, displaying the main UI, preserving saved group-card order during startup data loads, handling edit-group deep links into SetTimeLimitsScreen, and auto-showing the changelog on first launch after install/update.
     - `MainScreen.kt`: The main UI of the app, built with Jetpack Compose. It displays the top app bar, floating action button, battery-reliability warning banner when optimization is restrictive, and the list of app limit groups.
     - `MainViewModel.kt`: The ViewModel for the MainActivity, responsible for managing app-limit data, premium state, and pause/resume service lifecycle behavior.
     - `Receiver.kt`: A BroadcastReceiver that handles boot/unlock/screen/package-update events plus a watchdog alarm broadcast to keep `BackgroundChecker` running whenever limits or settings-protection require enforcement.
-    - `SettingsScreen.kt`: A composable that displays app settings (theme, notifications, premium controls), includes a `Battery Reliability` button that opens a dialog with quick links to battery settings/status refresh, and includes Backup/Restore actions for app-limit settings via JSON file export/import.
+    - `SettingsScreen.kt`: A composable that displays app settings (theme, notifications, premium controls), includes a `Battery Reliability` button that opens a dialog with quick links to battery settings/status refresh, includes Backup/Restore actions for app-limit settings via JSON file export/import, and provides a `Changelog` button that opens the changelog dialog.
     - `TimeFormatting.kt`: Shared clock-time formatting utilities that render times using the device locale and 12/24-hour preference.
     - `TimeManager.kt`: Manages time-related calculations and formatting.
 - **appLimit**
@@ -116,7 +117,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppUsageItem.kt`: A data class that represents an item of app usage.
     - `AppUsageRow.kt`: A composable that displays a row of app usage information.
 - **backgroundProcesses**
-    - `BackgroundChecker.kt`: A foreground service that monitors app usage with elapsed-time accounting, enforces time limits, and blocks Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability). Includes watchdog alarm scheduling/cancellation APIs so service state stays aligned with active limits/settings-protection across OEM process kills. Supports time-range outside-window behavior per group (either block apps fully outside the range or allow no limits outside range). Notification/floating-bubble selection only considers currently enforceable profiles (active schedule + positive time limit), picks the lowest effective time remaining, and notes when multiple active profiles cover the same app. Also manages the floating bubble overlay lifecycle.
+    - `BackgroundChecker.kt`: A foreground service that monitors app usage with elapsed-time accounting, enforces time limits, and blocks Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability). Includes watchdog alarm scheduling/cancellation APIs so service state stays aligned with active limits/settings-protection across OEM process kills, plus fast self-recovery scheduling from `onDestroy()` when the service is unexpectedly stopped. Foreground-app detection uses usage events first with a usage-stats fallback so enforcement/bubble updates resume immediately after restarts even when the user remains in the same app. Supports time-range outside-window behavior per group (either block apps fully outside the range or allow no limits outside range). Notification/floating-bubble selection only considers currently enforceable profiles (active schedule + positive time limit), picks the lowest effective time remaining, and notes when multiple active profiles cover the same app. Also manages the floating bubble overlay lifecycle.
     - `FloatingBubbleService.kt`: An overlay service that shows a small, semi-transparent draggable bubble with time remaining when the user is in a time-limited app. Drag-to-bottom dismiss target pattern. Controlled by the "floatingBubbleEnabled" preference and re-shown via the AppTick notification action.
 - **block**
     - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable.
@@ -149,14 +150,14 @@ Running on Darwin 25.3.0 (arm64)
     - `EnterPasswordActivity.kt`: An activity that hosts the EnterPasswordScreen composable.
     - `EnterPasswordScreen.kt`: A composable that provides the UI for entering a password, with options to use biometric or USB key authentication, and to reset the password.
     - `EnterSecurityKeyActivity.kt`: An activity that handles authentication with a security key.
-    - `PasswordResetActivity.kt`: An activity that hosts the PasswordResetScreen composable.
+    - `PasswordResetActivity.kt`: Handles Firebase email-link verification for both recovery resets and lock-mode setup email verification, then shows success UI.
     - `PasswordResetScreen.kt`: A composable for resetting the password.
     - `RecoveryEmailSetupActivity.kt`: An activity that hosts the RecoveryEmailSetupScreen composable.
     - `RecoveryEmailSetupScreen.kt`: A composable for setting up a recovery email.
     - `SecurityKeySettings.kt`: A data class for the security key settings.
-    - `SecurityKeySettingsScreen.kt`: A composable that provides the UI for setting a security key, including optional Device Admin-backed uninstall protection.
-    - `SetPassword.kt`: An activity that hosts the SetPasswordScreen composable, allowing users to set a password to lock the app's settings.
-    - `SetPasswordScreen.kt`: A composable that provides the UI for setting a password, including input fields for the password and confirmation, a recovery email, and optional Device Admin-backed uninstall protection.
+    - `SecurityKeySettingsScreen.kt`: A composable that provides the UI for setting a security key, requiring Firebase-verified recovery email and offering optional settings-app lock plus optional Device Admin uninstall hardening.
+    - `SetPassword.kt`: An activity that hosts the SetPasswordScreen composable, requiring password confirmation and Firebase-verified recovery email before Password mode can start.
+    - `SetPasswordScreen.kt`: A composable that provides the UI for password setup with confirmation, recovery-email verification, optional settings-app lock, and optional Device Admin uninstall hardening.
 - **newAppLimit**
     - `AppLimitViewModel.kt`: ViewModel used by app-selection and time-limit setup flows to persist groups and ensure service state matches active groups.
     - `AppSearchScreen.kt`: A composable that provides a search bar for filtering a list of applications.

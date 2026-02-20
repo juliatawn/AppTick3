@@ -16,13 +16,16 @@ import androidx.activity.viewModels
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.core.content.edit
+import androidx.core.content.pm.PackageInfoCompat
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.compose.ui.unit.dp
 import com.android.billingclient.api.AcknowledgePurchaseParams
 import com.android.billingclient.api.BillingClient
 import com.android.billingclient.api.BillingClientStateListener
@@ -38,12 +41,15 @@ import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.data.LegacyDataMigrator
+import com.juliacai.apptick.data.LegacyLockPrefsMigrator
 import com.juliacai.apptick.deviceApps.GroupActionsDialog
 import com.juliacai.apptick.deviceApps.GroupPage
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppLimitGroupsList
 import com.juliacai.apptick.lockModes.EnterPasswordActivity
+import com.juliacai.apptick.lockModes.RecoveryEmailSetupActivity
 import com.juliacai.apptick.lockModes.EnterSecurityKeyActivity
+import com.juliacai.apptick.lockModes.RecoveryEmailEnforcer
 import com.juliacai.apptick.lockModes.SecurityKeySettingsScreen
 import com.juliacai.apptick.newAppLimit.AppLimitViewModel
 import com.juliacai.apptick.newAppLimit.AppSelectScreen
@@ -52,6 +58,7 @@ import com.juliacai.apptick.permissions.BatteryOptimizationHelper
 import com.juliacai.apptick.permissions.BatteryOptimizationStatus
 import com.juliacai.apptick.permissions.PermissionOnboardingScreen
 import com.juliacai.apptick.premiumMode.LockModesBlockedScreen
+import com.juliacai.apptick.premiumMode.LockdownModeActivity
 import com.juliacai.apptick.premiumMode.PremiumModeInfoScreen
 import com.juliacai.apptick.premiumMode.PremiumModeScreen
 import kotlinx.coroutines.Dispatchers
@@ -69,8 +76,38 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     private lateinit var prefs: SharedPreferences
     private val productDetailsState = androidx.compose.runtime.mutableStateOf<ProductDetails?>(null)
     private var appInitialized = false
+    private var recoveryEmailPromptShown = false
+    private var appVersionCode: Long = -1L
     private var launchEditGroupId: Long? = null
     private var launchOpenLockModes = false
+    private var lockEvaluationNow by androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis())
+    private var lockStateUi by androidx.compose.runtime.mutableStateOf(
+        LockState(
+            activeLockMode = LockMode.NONE,
+            passwordUnlocked = false,
+            securityKeyUnlocked = false,
+            lockdownType = LockdownType.ONE_TIME,
+            lockdownEndTimeMillis = 0L,
+            lockdownRecurringDays = emptyList(),
+            lockdownRecurringUsedKey = null
+        )
+    )
+    private val lockPrefKeys = setOf(
+        "active_lock_mode",
+        "passUnlocked",
+        "securityKeyUnlocked",
+        "lockdown_type",
+        "lockdown_end_time",
+        "lockdown_recurring_days",
+        "lockdown_weekly_used_key",
+        "lockdown_prompt_after_unlock"
+    )
+    private val lockPrefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key != null && key in lockPrefKeys) {
+            refreshLockUiState()
+            lockEvaluationNow = System.currentTimeMillis()
+        }
+    }
 
     private var mService: BackgroundChecker? = null
     private var mBound = false
@@ -104,10 +141,21 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         createNotificationChannel()
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+        appVersionCode = readAppVersionCode()
+        LegacyLockPrefsMigrator.migrate(prefs)
+        maybeAutoUnlockExpiredLockdown()
+        refreshLockUiState()
+        lockEvaluationNow = System.currentTimeMillis()
+        prefs.registerOnSharedPreferenceChangeListener(lockPrefsListener)
+        maybeForceLegacyRecoveryEmailSetup()
         batteryOptimizationStatusState.value = BatteryOptimizationHelper.getStatus(applicationContext)
         val hasSeenLoading = prefs.getBoolean("has_seen_launch_loading", false)
         if (!hasSeenLoading) {
-            setContent { AppLaunchLoadingScreen() }
+            setContent {
+                AppTheme {
+                    AppLaunchLoadingScreen()
+                }
+            }
             lifecycleScope.launch {
                 delay(900L)
                 prefs.edit { putBoolean("has_seen_launch_loading", true) }
@@ -135,14 +183,35 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val premiumEnabled = isPremium || isPremiumEnabledNow()
             val batteryStatus =
                 batteryOptimizationStatusState.value ?: BatteryOptimizationHelper.getStatus(applicationContext)
-            val lockState = readLockState()
-            val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
+            val oemOnlyBatteryRisk = batteryStatus.ignoringBatteryOptimizations &&
+                !batteryStatus.backgroundRestricted &&
+                batteryStatus.hasAdditionalOemRestrictions
+            var oemBatteryWarningDismissed by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(
+                    prefs.getBoolean(PREF_BATTERY_OEM_WARNING_DISMISSED, false)
+                )
+            }
+            var showGroupDetailsHint by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(
+                    prefs.getLong(PREF_GROUP_DETAILS_HINT_SEEN_VERSION, -1L) != appVersionCode
+                )
+            }
+            val lockState = lockStateUi
+            val nowMillis = lockEvaluationNow
+            val lockDecision = LockPolicy.evaluateEditingLock(lockState, nowMillis)
             val isLockModesLocked = lockDecision.isLocked
+            val canAddWhileLocked = isLockModesLocked && lockState.activeLockMode == LockMode.LOCKDOWN
             var pendingEditGroupId by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(launchEditGroupId)
             }
             var pendingOpenLockModes by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(launchOpenLockModes)
+            }
+            var shouldPromptRelock by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
+            var startedFromExistingGroupEdit by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(false)
             }
             var selectedGroupForActions by androidx.compose.runtime.remember {
                 androidx.compose.runtime.mutableStateOf<AppLimitGroup?>(null)
@@ -150,12 +219,41 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             var savedGroupOrder by androidx.compose.runtime.remember {
                 androidx.compose.runtime.mutableStateOf(GroupCardOrderStore.readOrder(prefs))
             }
+            var pendingScrollToBottomTargetSize by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf<Int?>(null)
+            }
+            var hasSeenNonEmptyGroups by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
             val orderedGroups = androidx.compose.runtime.remember(groups, savedGroupOrder) {
                 GroupCardOrderStore.applyOrder(groups, savedGroupOrder) { it.id }
             }
+            var pendingLaunchChangelog by rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(
+                    shouldShowChangelogOnLaunch(prefs, appVersionCode)
+                )
+            }
+            var showChangelogDialog by rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
 
             AppTheme {
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    while (true) {
+                        delay(30_000L)
+                        lockEvaluationNow = System.currentTimeMillis()
+                    }
+                }
+
                 androidx.compose.runtime.LaunchedEffect(groups) {
+                    if (groups.isNotEmpty()) {
+                        hasSeenNonEmptyGroups = true
+                    } else if (!hasSeenNonEmptyGroups) {
+                        // Room can briefly emit an empty list before initial data arrives.
+                        // Avoid wiping a valid saved order during that transient state.
+                        return@LaunchedEffect
+                    }
+
                     val sanitizedOrder = GroupCardOrderStore.sanitizeOrder(
                         savedGroupOrder,
                         groups.map { it.id }
@@ -168,6 +266,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
                 androidx.compose.runtime.LaunchedEffect(pendingEditGroupId) {
                     val groupId = pendingEditGroupId ?: return@LaunchedEffect
+                    startedFromExistingGroupEdit = true
                     appLimitViewModel.loadGroupForEditing(groupId)
                     navController.navigate("setTimeLimit")
                     pendingEditGroupId = null
@@ -199,6 +298,13 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     }
 
                     composable("main") {
+                        androidx.compose.runtime.LaunchedEffect(Unit) {
+                            if (pendingLaunchChangelog) {
+                                showChangelogDialog = true
+                                pendingLaunchChangelog = false
+                            }
+                        }
+
                         val persistGroupOrder: (List<Long>) -> Unit = { newOrder ->
                             savedGroupOrder = newOrder
                             GroupCardOrderStore.writeOrder(prefs, newOrder)
@@ -207,20 +313,29 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         MainScreen(
                             appLimitGroupCount = orderedGroups.size,
                             showLockedIcon = isLockModesLocked,
-                            showBatteryWarning = !batteryStatus.unrestricted,
+                            showGroupDetailsHint = showGroupDetailsHint && orderedGroups.isNotEmpty(),
+                            showBatteryWarning = !batteryStatus.unrestricted && !(oemOnlyBatteryRisk && oemBatteryWarningDismissed),
+                            batteryWarningDismissable = oemOnlyBatteryRisk,
                             batteryWarningText = buildString {
                                 append("AppTick may not block reliably until battery mode is set to Unrestricted.")
-                                append(" Ignore battery optimizations: ")
-                                append(if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
-                                append(". Background restricted: ")
-                                append(if (batteryStatus.backgroundRestricted) "Yes" else "No")
-                                append(".")
+                                if (batteryStatus.hasAdditionalOemRestrictions) {
+                                    append(" ")
+                                    append(batteryStatus.oemGuidance ?: "Enable AppTick auto-start in system manager.")
+                                    append(" Some manufacturers aggressively kill apps in the background; if reliability issues continue, check dontkillmyapp.com suggestions.")
+                                }
+                            },
+                            batteryWarningDetails = buildList {
+                                add("Ignore battery optimizations:" to if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
+                                add("Background restricted:" to if (batteryStatus.backgroundRestricted) "Yes" else "No")
+                                if (batteryStatus.hasAdditionalOemRestrictions) {
+                                    add("OEM startup controls:" to "Detected")
+                                }
                             },
                             onFabClick = {
-                                if (isLimitEditingLocked()) {
+                                if (isLimitEditingLocked() && !canAddWhileLocked) {
                                     launchUnlockFlow()
                                 } else {
-                                    markWeeklyLockdownWindowUsedIfNeeded()
+                                    startedFromExistingGroupEdit = false
                                     appLimitViewModel.clearState()
                                     navController.navigate("selectApps")
                                 }
@@ -286,9 +401,22 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     ).show()
                                 }
                             },
+                            onOpenDontKillMyApp = {
+                                if (!BatteryOptimizationHelper.openDontKillMyApp(this@MainActivity)) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Unable to open dontkillmyapp.com",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
                             onRefreshBatteryStatus = {
                                 batteryOptimizationStatusState.value =
                                     BatteryOptimizationHelper.getStatus(applicationContext)
+                            },
+                            onDismissBatteryWarning = {
+                                oemBatteryWarningDismissed = true
+                                prefs.edit { putBoolean(PREF_BATTERY_OEM_WARNING_DISMISSED, true) }
                             },
                             listContent = {
                                 AppLimitGroupsList(
@@ -317,6 +445,12 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                         )
                                     },
                                     onCardClick = { group ->
+                                        if (showGroupDetailsHint) {
+                                            showGroupDetailsHint = false
+                                            prefs.edit {
+                                                putLong(PREF_GROUP_DETAILS_HINT_SEEN_VERSION, appVersionCode)
+                                            }
+                                        }
                                         startActivity(GroupPage.newIntent(this@MainActivity, group))
                                     },
                                     onEditClick = { group ->
@@ -324,11 +458,18 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     },
                                     onLockClick = { launchUnlockFlow() },
                                     isEditingLocked = isLockModesLocked,
-                                    onPauseToggle = { group -> viewModel.togglePause(group) },
+                                    onPauseToggle = { group ->
+                                        viewModel.togglePause(group)
+                                        if (shouldShowLockdownRelockPrompt()) {
+                                            shouldPromptRelock = true
+                                        }
+                                    },
                                     onDelete = { group -> viewModel.deleteGroup(group) },
                                     onReorder = { reorderedIds ->
                                         persistGroupOrder(reorderedIds)
-                                    }
+                                    },
+                                    autoScrollTargetSize = pendingScrollToBottomTargetSize,
+                                    onAutoScrollHandled = { pendingScrollToBottomTargetSize = null }
                                 )
                             }
                         )
@@ -339,12 +480,136 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 onDismiss = { selectedGroupForActions = null },
                                 onEdit = {
                                     selectedGroupForActions = null
+                                    startedFromExistingGroupEdit = true
                                     appLimitViewModel.startEditingGroup(currentGroup)
                                     navController.navigate("setTimeLimit")
                                 },
                                 onDelete = {
                                     selectedGroupForActions = null
                                     viewModel.deleteGroup(currentGroup)
+                                }
+                            )
+                        }
+
+                        if (shouldPromptRelock) {
+                            val currentState = readLockState()
+                            val isRecurringUnlockWindow =
+                                currentState.activeLockMode == LockMode.LOCKDOWN &&
+                                    currentState.lockdownType == LockdownType.RECURRING &&
+                                    !LockPolicy.evaluateEditingLock(
+                                        currentState,
+                                        System.currentTimeMillis()
+                                    ).isLocked
+                            androidx.compose.material3.AlertDialog(
+                                onDismissRequest = { shouldPromptRelock = false },
+                                title = { androidx.compose.material3.Text("Lockdown this again?") },
+                                text = {
+                                    if (isRecurringUnlockWindow) {
+                                        val unlockDaysText =
+                                            formatRecurringUnlockDays(currentState.lockdownRecurringDays)
+                                        androidx.compose.material3.Text(
+                                            text = androidx.compose.ui.text.buildAnnotatedString {
+                                                append("Do you want to lockdown ALL app limits from being changed? ")
+                                                append("The current unlock day(s) are ")
+                                                pushStyle(
+                                                    androidx.compose.ui.text.SpanStyle(
+                                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                                    )
+                                                )
+                                                append(unlockDaysText)
+                                                pop()
+                                                append(".")
+                                            }
+                                        )
+                                    } else {
+                                        androidx.compose.material3.Text(
+                                            "Do you want to lockdown this app limit from being changed? " +
+                                                "You can choose a specific date or weekday schedule, or turn Lockdown off."
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    if (isRecurringUnlockWindow) {
+                                        androidx.compose.material3.Button(
+                                            onClick = {
+                                                shouldPromptRelock = false
+                                                val decision = LockPolicy.evaluateEditingLock(
+                                                    currentState,
+                                                    System.currentTimeMillis()
+                                                )
+                                                if (decision.consumeKey != null) {
+                                                    prefs.edit {
+                                                        putString("lockdown_weekly_used_key", decision.consumeKey)
+                                                        putBoolean("lockdown_prompt_after_unlock", false)
+                                                    }
+                                                    refreshLockUiState()
+                                                    lockEvaluationNow = System.currentTimeMillis()
+                                                }
+                                            }
+                                        ) {
+                                            androidx.compose.material3.Text("YES")
+                                        }
+                                    } else {
+                                        androidx.compose.material3.Button(
+                                            onClick = {
+                                                shouldPromptRelock = false
+                                                startActivity(Intent(this@MainActivity, LockdownModeActivity::class.java))
+                                            }
+                                        ) {
+                                            androidx.compose.material3.Text("Yes")
+                                        }
+                                    }
+                                },
+                                dismissButton = {
+                                    if (isRecurringUnlockWindow) {
+                                        androidx.compose.foundation.layout.Row(
+                                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(
+                                                8.dp
+                                            )
+                                        ) {
+                                            androidx.compose.material3.OutlinedButton(
+                                                onClick = { shouldPromptRelock = false }
+                                            ) {
+                                                androidx.compose.material3.Text("NO")
+                                            }
+                                            androidx.compose.material3.OutlinedButton(
+                                                onClick = {
+                                                    shouldPromptRelock = false
+                                                    startActivity(
+                                                        Intent(
+                                                            this@MainActivity,
+                                                            LockdownModeActivity::class.java
+                                                        )
+                                                    )
+                                                }
+                                            ) {
+                                                androidx.compose.material3.Text("CHANGE")
+                                            }
+                                        }
+                                    } else {
+                                        androidx.compose.material3.OutlinedButton(
+                                            onClick = {
+                                                shouldPromptRelock = false
+                                                prefs.edit {
+                                                    putString("active_lock_mode", "NONE")
+                                                    putString("lockdown_type", LockdownType.ONE_TIME.name)
+                                                    remove("lockdown_end_time")
+                                                    remove("lockdown_recurring_days")
+                                                    remove("lockdown_weekly_used_key")
+                                                    putBoolean("lockdown_prompt_after_unlock", false)
+                                                }
+                                                refreshLockUiState()
+                                                lockEvaluationNow = System.currentTimeMillis()
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    "Lockdown mode turned off.",
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+                                        ) {
+                                            androidx.compose.material3.Text("Turn Off Lockdown")
+                                        }
+                                    }
                                 }
                             )
                         }
@@ -356,7 +621,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             onCustomizeColors = { navController.navigate("colorPicker") },
                             onUpgradeToPremium = { navController.navigate("premium") },
                             onOpenPremiumModeInfo = { navController.navigate("premiumModeInfo") },
-                            onOpenAppLimitBackup = { navController.navigate("appLimitBackup") }
+                            onOpenAppLimitBackup = { navController.navigate("appLimitBackup") },
+                            onOpenChangelog = { showChangelogDialog = true }
                         )
                     }
 
@@ -387,6 +653,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 viewModel = viewModel,
                                 onBackClick = { navController.popBackStack() },
                                 onEditClick = { group ->
+                                    startedFromExistingGroupEdit = true
                                     appLimitViewModel.startEditingGroup(group)
                                     navController.navigate("setTimeLimit")
                                 }
@@ -414,10 +681,18 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         SetTimeLimitsScreen(
                             viewModel = appLimitViewModel,
                             onFinish = {
+                                if (it.id == 0L) {
+                                    pendingScrollToBottomTargetSize = orderedGroups.size + 1
+                                }
                                 appLimitViewModel.saveGroup(it)
+                                if (startedFromExistingGroupEdit && shouldShowLockdownRelockPrompt()) {
+                                    shouldPromptRelock = true
+                                }
+                                startedFromExistingGroupEdit = false
                                 navController.popBackStack(route = "main", inclusive = false)
                             },
                             onCancel = {
+                                startedFromExistingGroupEdit = false
                                 navController.popBackStack(route = "main", inclusive = false)
                             },
                             onEditApps = {
@@ -453,8 +728,22 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         )
                     }
                 }
+
+                if (showChangelogDialog) {
+                    ChangelogDialog(
+                        onDismiss = {
+                            showChangelogDialog = false
+                            markChangelogSeen(prefs, appVersionCode)
+                        }
+                    )
+                }
             }
         }
+    }
+
+    private fun readAppVersionCode(): Long {
+        val packageInfo = packageManager.getPackageInfo(packageName, 0)
+        return PackageInfoCompat.getLongVersionCode(packageInfo)
     }
 
     private fun launchUnlockFlow(openLockModesAfterUnlock: Boolean = false) {
@@ -505,16 +794,17 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                 putString("active_lock_mode", "NONE")
                 remove("lockdown_end_time")
                 remove("lockdown_weekly_used_key")
+                putBoolean("lockdown_prompt_after_unlock", true)
             }
+            refreshLockUiState()
+            lockEvaluationNow = System.currentTimeMillis()
         }
         return decision.isLocked
     }
 
-    private fun markWeeklyLockdownWindowUsedIfNeeded() {
-        val decision = LockPolicy.evaluateEditingLock(readLockState(), System.currentTimeMillis())
-        decision.consumeKey?.let { key ->
-            prefs.edit { putString("lockdown_weekly_used_key", key) }
-        }
+    private fun refreshLockUiState() {
+        if (!::prefs.isInitialized) return
+        lockStateUi = readLockState()
     }
 
     private fun readLockState(): LockState {
@@ -578,8 +868,23 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     }
 
     private fun shouldKeepServiceForSettingsProtection(): Boolean {
-        if (!prefs.getBoolean("blockSettings", false)) return false
+        val shouldProtect = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
+        if (!shouldProtect) return false
         return LockPolicy.hasAnyConfiguredLockMode(readLockState())
+    }
+
+    private fun shouldShowLockdownRelockPrompt(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (prefs.getBoolean("lockdown_prompt_after_unlock", false)) return true
+        val state = readLockState()
+        if (state.activeLockMode != LockMode.LOCKDOWN) return false
+        val decision = LockPolicy.evaluateEditingLock(state, nowMillis)
+        return !decision.isLocked
+    }
+
+    private fun formatRecurringUnlockDays(days: List<Int>): String {
+        if (days.isEmpty()) return "none"
+        val dayNames = listOf("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+        return days.sorted().joinToString(", ") { dayNames.getOrElse(it - 1) { "Unknown" } }
     }
 
     private fun isPremiumEnabledNow(): Boolean {
@@ -616,9 +921,55 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         super.onResume()
         batteryOptimizationStatusState.value = BatteryOptimizationHelper.getStatus(applicationContext)
         if (::prefs.isInitialized) {
+            maybeAutoUnlockExpiredLockdown()
+            refreshLockUiState()
+            lockEvaluationNow = System.currentTimeMillis()
+            maybeForceLegacyRecoveryEmailSetup()
             viewModel.updatePremiumStatus(prefs.getBoolean("premium", false))
             syncBackgroundServiceState()
         }
+    }
+
+    private fun maybeAutoUnlockExpiredLockdown(nowMillis: Long = System.currentTimeMillis()) {
+        val state = readLockState()
+        if (state.activeLockMode != LockMode.LOCKDOWN || state.lockdownType != LockdownType.ONE_TIME) return
+        val decision = LockPolicy.evaluateEditingLock(state, nowMillis)
+        if (!decision.shouldClearExpiredLockdown) return
+        prefs.edit {
+            putString("active_lock_mode", "NONE")
+            remove("lockdown_end_time")
+            remove("lockdown_weekly_used_key")
+            putBoolean("lockdown_prompt_after_unlock", true)
+        }
+    }
+
+    override fun onDestroy() {
+        if (::prefs.isInitialized) {
+            prefs.unregisterOnSharedPreferenceChangeListener(lockPrefsListener)
+        }
+        super.onDestroy()
+    }
+
+    private fun maybeForceLegacyRecoveryEmailSetup() {
+        val shouldForce = prefs.getBoolean("force_recovery_email_setup", false)
+        val activeMode = prefs.getString("active_lock_mode", "NONE")
+        val recoveryEmail = prefs.getString("recovery_email", null)
+
+        if (!RecoveryEmailEnforcer.shouldPrompt(shouldForce, activeMode, recoveryEmail)) {
+            if (RecoveryEmailEnforcer.shouldClearForceFlag(shouldForce, recoveryEmail)) {
+                prefs.edit { putBoolean("force_recovery_email_setup", false) }
+            }
+            recoveryEmailPromptShown = false
+            return
+        }
+
+        if (recoveryEmailPromptShown) return
+        recoveryEmailPromptShown = true
+        startActivity(
+            Intent(this, RecoveryEmailSetupActivity::class.java).apply {
+                putExtra(RecoveryEmailSetupActivity.EXTRA_FORCE_SETUP, true)
+            }
+        )
     }
 
     private fun syncBackgroundServiceState() {
@@ -689,8 +1040,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         billingClient.queryPurchasesAsync(params) { billingResult, purchases ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
                 for (purchase in purchases) {
-                    if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED && !purchase.isAcknowledged) {
-                        handlePurchase(purchase)
+                    if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+                        handlePurchase(purchase, showSuccessToast = false)
                     }
                 }
             }
@@ -739,7 +1090,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         }
     }
 
-    private fun handlePurchase(purchase: Purchase) {
+    private fun handlePurchase(purchase: Purchase, showSuccessToast: Boolean = true) {
         if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
             if (!purchase.isAcknowledged) {
                 val acknowledgePurchaseParams = AcknowledgePurchaseParams.newBuilder()
@@ -748,12 +1099,14 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
                 billingClient.acknowledgePurchase(acknowledgePurchaseParams) { billingResult ->
                     if (billingResult.responseCode == BillingClient.BillingResponseCode.OK) {
-                        viewModel.updatePremiumStatus(true)
-                        Toast.makeText(this, "Purchase successful!", Toast.LENGTH_SHORT).show()
+                        grantPremiumEntitlement()
+                        if (showSuccessToast) {
+                            Toast.makeText(this, "Purchase successful!", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             } else {
-                viewModel.updatePremiumStatus(true)
+                grantPremiumEntitlement()
             }
         } else if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
             Toast.makeText(
@@ -764,8 +1117,23 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         }
     }
 
+    private fun grantPremiumEntitlement() {
+        viewModel.updatePremiumStatus(true)
+        // Apply premium defaults once so users can still turn the bubble off later.
+        if (!prefs.getBoolean(PREF_PREMIUM_DEFAULTS_APPLIED, false)) {
+            prefs.edit {
+                putBoolean("floatingBubbleEnabled", true)
+                putBoolean("bubbleDismissed", false)
+                putBoolean(PREF_PREMIUM_DEFAULTS_APPLIED, true)
+            }
+        }
+    }
+
     companion object {
         const val EXTRA_EDIT_GROUP_ID = "extra_edit_group_id"
         const val EXTRA_OPEN_LOCK_MODES = "extra_open_lock_modes"
+        private const val PREF_PREMIUM_DEFAULTS_APPLIED = "premiumDefaultsApplied"
+        private const val PREF_BATTERY_OEM_WARNING_DISMISSED = "batteryOemWarningDismissed"
+        private const val PREF_GROUP_DETAILS_HINT_SEEN_VERSION = "groupDetailsHintSeenVersion"
     }
 }

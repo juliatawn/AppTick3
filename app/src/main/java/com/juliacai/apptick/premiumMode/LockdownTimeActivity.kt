@@ -20,7 +20,9 @@ import java.util.TimeZone
 
 class LockdownTimeActivity : AppCompatActivity() {
 
-    private var selectedDateTime by mutableStateOf(Calendar.getInstance())
+    private var selectedDateTime by mutableStateOf(
+        Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,7 +33,8 @@ class LockdownTimeActivity : AppCompatActivity() {
                 selectedTime = SimpleDateFormat("hh:mm a", Locale.getDefault()).format(selectedDateTime.time),
                 onDateClick = { showDatePicker() },
                 onTimeClick = { showTimePicker() },
-                onConfirmClick = { confirmLockdown() }
+                onConfirmClick = { confirmLockdown() },
+                onBackClick = { finish() }
             )
         }
     }
@@ -39,7 +42,7 @@ class LockdownTimeActivity : AppCompatActivity() {
     private fun showDatePicker() {
         val datePicker = MaterialDatePicker.Builder.datePicker()
             .setTitleText("Select Lockdown End Date")
-            .setSelection(MaterialDatePicker.todayInUtcMilliseconds())
+            .setSelection(selectedDateTime.timeInMillis)
             .build()
 
         datePicker.addOnPositiveButtonClickListener { selection ->

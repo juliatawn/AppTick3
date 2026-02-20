@@ -2,6 +2,7 @@ package com.juliacai.apptick.data
 
 import android.content.Context
 import android.util.Log
+import com.juliacai.apptick.TimeManager
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppUsageStat
 import java.io.File
@@ -22,7 +23,7 @@ class LegacyDataMigrator(
             val lines = legacyFile.readLines()
             for (line in lines) {
                 if (line.isNotBlank()) {
-                    val entity = parseLineToEntity(line)
+                    val entity = LegacyAppLimitLineParser.parseLineToEntity(line)
                     if (entity != null) {
                         appLimitGroupDao.insertAppLimitGroup(entity)
                     }
@@ -35,36 +36,50 @@ class LegacyDataMigrator(
         }
     }
 
-    private fun parseLineToEntity(line: String): AppLimitGroupEntity? {
+}
+
+internal object LegacyAppLimitLineParser {
+    fun parseLineToEntity(line: String, nowMillis: Long = System.currentTimeMillis()): AppLimitGroupEntity? {
         try {
             val parts = line.split(":", limit = 10)
             if (parts.size < 10) return null
 
-            // Legacy value: countGroup (Integer) - The purpose of this value is unknown.
-            // val countGroup = parts[0].toInt()
-
-            // Legacy value: startTime (Long) - The purpose of this value is unknown.
-            // val startTime = parts[1].toLong()
-
-            val timeHrLimit = parts[2].toInt()
-            val timeMinLimit = parts[3].toInt()
-            val limitEach = parts[4].toBoolean()
-
+            val startTimeMillis = parts[1].toLongOrNull() ?: 0L
+            val timeHrLimit = parts[2].toIntOrNull() ?: 0
+            val timeMinLimit = parts[3].toIntOrNull() ?: 0
+            val limitEach = parts[4].toBooleanStrictOrNull() ?: parts[4].equals("true", ignoreCase = true)
             val name = parts[5].ifBlank { "App Limit Group" }
 
-            val resetMinutes = parts[6].toInt()
+            // Legacy field 6 is reset HOURS. Current schema persists reset MINUTES.
+            val resetMinutes = ((parts[6].toIntOrNull() ?: 0).coerceAtLeast(0)) * 60
 
-            val daysString = parts[7].removeSurrounding("[", "]")
-            val weekDays = if (daysString.isBlank()) emptyList() else daysString.split(", ").mapNotNull { it.trim().toIntOrNull() }
+            val legacyWeekDays = parseIntList(parts[7])
+            val weekDays = legacyWeekDays
+                .map(::legacyCalendarDayToMondayOne)
+                .filter { it in 1..7 }
+                .distinct()
+                .sorted()
 
-            val appsString = parts[8].removeSurrounding("[", "]")
-            val apps = if (appsString.isBlank()) {
-                emptyList()
-            } else {
-                appsString.split(", ").map { appPackage -> AppInGroup(appPackage = appPackage.trim(), appName = appPackage.trim(), appIcon = "") }
+            val apps = parseStringList(parts[8])
+                .filter { it.isNotBlank() }
+                .map { appPackage ->
+                    AppInGroup(
+                        appPackage = appPackage.trim(),
+                        appName = appPackage.trim(),
+                        appIcon = ""
+                    )
+                }
+
+            val paused = parts[9].toBooleanStrictOrNull() ?: parts[9].equals("true", ignoreCase = true)
+
+            val limitInMillis = ((timeHrLimit * 60L) + timeMinLimit.toLong()).coerceAtLeast(0L) * 60_000L
+            val nextResetTime = when {
+                resetMinutes > 0 && startTimeMillis > 0L ->
+                    startTimeMillis + (resetMinutes * 60_000L)
+                resetMinutes > 0 ->
+                    nowMillis + (resetMinutes * 60_000L)
+                else -> TimeManager.nextMidnight(nowMillis)
             }
-
-            val paused = parts[9].toBoolean()
 
             return AppLimitGroupEntity(
                 name = name,
@@ -75,21 +90,41 @@ class LegacyDataMigrator(
                 weekDays = weekDays,
                 apps = apps,
                 paused = paused,
-                // The following fields are not present in the legacy data and will be set to default values.
                 useTimeRange = false,
                 startHour = 0,
                 startMinute = 0,
                 endHour = 0,
                 endMinute = 0,
                 cumulativeTime = false,
-                timeRemaining = 0,
-                nextResetTime = com.juliacai.apptick.TimeManager.nextMidnight(),
+                timeRemaining = limitInMillis,
+                nextResetTime = nextResetTime,
                 nextAddTime = 0,
                 perAppUsage = emptyList<AppUsageStat>()
             )
         } catch (e: Exception) {
             Log.e("LegacyDataMigrator", "Error parsing line: $line", e)
             return null
+        }
+    }
+
+    private fun parseIntList(raw: String): List<Int> {
+        val body = raw.removeSurrounding("[", "]").trim()
+        if (body.isBlank()) return emptyList()
+        return body.split(",").mapNotNull { it.trim().toIntOrNull() }
+    }
+
+    private fun parseStringList(raw: String): List<String> {
+        val body = raw.removeSurrounding("[", "]").trim()
+        if (body.isBlank()) return emptyList()
+        return body.split(",").map { it.trim() }
+    }
+
+    // Legacy file stored Calendar.DAY_OF_WEEK values where Sunday=1.
+    private fun legacyCalendarDayToMondayOne(day: Int): Int {
+        return when (day) {
+            1 -> 7
+            in 2..7 -> day - 1
+            else -> day
         }
     }
 }

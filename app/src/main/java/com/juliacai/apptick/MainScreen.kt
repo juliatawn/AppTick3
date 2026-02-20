@@ -1,6 +1,5 @@
 package com.juliacai.apptick
 
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -8,6 +7,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Lock
@@ -22,12 +23,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -37,29 +41,32 @@ import androidx.compose.ui.unit.dp
 fun MainScreen(
     appLimitGroupCount: Int,
     showLockedIcon: Boolean,
+    showGroupDetailsHint: Boolean,
     showBatteryWarning: Boolean,
+    batteryWarningDismissable: Boolean,
     batteryWarningText: String,
+    batteryWarningDetails: List<Pair<String, String>>,
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onPremiumClick: () -> Unit,
     onOpenAppBatterySettings: () -> Unit,
     onOpenGeneralBatterySettings: () -> Unit,
+    onOpenDontKillMyApp: () -> Unit,
     onRefreshBatteryStatus: () -> Unit,
+    onDismissBatteryWarning: () -> Unit,
     listContent: @Composable () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = "AppTick",
-                        modifier = Modifier.pointerInput(Unit) {
-                            detectTapGestures { }
-                        }
-                    )
+                    Text(text = "AppTick")
                 },
                 actions = {
-                    IconButton(onClick = onPremiumClick) {
+                    IconButton(
+                        onClick = onPremiumClick,
+                        modifier = Modifier.size(52.dp)
+                    ) {
                         if (showLockedIcon) {
                             Icon(
                                 imageVector = Icons.Default.Lock,
@@ -72,12 +79,16 @@ fun MainScreen(
                             )
                         }
                     }
-                    IconButton(onClick = onSettingsClick) {
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier.size(52.dp)
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Settings,
                             contentDescription = stringResource(R.string.action_settings)
                         )
                     }
+                    Spacer(modifier = Modifier.width(8.dp))
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -115,6 +126,22 @@ fun MainScreen(
                             batteryWarningText,
                             style = MaterialTheme.typography.bodyMedium
                         )
+                        if (batteryWarningDetails.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            batteryWarningDetails.forEach { (label, value) ->
+                                Text(
+                                    text = buildAnnotatedString {
+                                        pushStyle(SpanStyle(fontWeight = FontWeight.Bold))
+                                        append(label)
+                                        pop()
+                                        append(" ")
+                                        append(value)
+                                    },
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                            }
+                        }
                         Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = onOpenAppBatterySettings,
@@ -131,10 +158,26 @@ fun MainScreen(
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(
+                            onClick = onOpenDontKillMyApp,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Open dontkillmyapp.com")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
                             onClick = onRefreshBatteryStatus,
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text("Refresh")
+                        }
+                        if (batteryWarningDismissable) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            TextButton(
+                                onClick = onDismissBatteryWarning,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Dismiss This Warning")
+                            }
                         }
                     }
                 }
@@ -150,7 +193,27 @@ fun MainScreen(
                         modifier = Modifier.align(Alignment.Center)
                     )
                 } else {
-                    listContent()
+                    Column {
+                        if (showGroupDetailsHint) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                    Text(
+                                        text = "Tap any group card to open its details page",
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = "\u2193 \u2193 \u2193",
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                }
+                            }
+                        }
+                        listContent()
+                    }
                 }
             }
 

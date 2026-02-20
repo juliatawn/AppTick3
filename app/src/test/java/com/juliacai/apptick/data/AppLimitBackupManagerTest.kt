@@ -91,4 +91,46 @@ class AppLimitBackupManagerTest {
         assertThat(parsed.appSettings.customColorModeEnabled).isFalse()
         assertThat(parsed.appSettings.groupCardOrder).isNull()
     }
+
+    @Test
+    fun backupJson_roundTrip_preservesAppOrderInsideGroup() {
+        val appsInOrder = listOf(
+            AppInGroup("Instagram", "com.instagram.android", null),
+            AppInGroup("TikTok", "com.zhiliaoapp.musically", null),
+            AppInGroup("YouTube", "com.google.android.youtube", null)
+        )
+        val group = AppLimitGroupEntity(
+            id = 42L,
+            name = "Social",
+            apps = appsInOrder
+        )
+
+        val backup = AppLimitBackupManager.createBackup(
+            groups = listOf(group),
+            appSettings = BackupAppSettings(
+                showTimeLeft = true,
+                floatingBubbleEnabled = false,
+                darkModeEnabled = false,
+                customColorModeEnabled = false,
+                customPrimaryColor = null,
+                customAccentColor = null,
+                customBackgroundColor = null,
+                customCardColor = null,
+                customIconColor = null,
+                appIconColorMode = null,
+                groupCardOrder = listOf(42L)
+            )
+        )
+
+        val parsed = AppLimitBackupManager.fromJson(AppLimitBackupManager.toJson(backup))
+
+        assertThat(parsed.groups).hasSize(1)
+        assertThat(parsed.groups.first().apps.map { it.appPackage })
+            .containsExactly(
+                "com.instagram.android",
+                "com.zhiliaoapp.musically",
+                "com.google.android.youtube"
+            )
+            .inOrder()
+    }
 }

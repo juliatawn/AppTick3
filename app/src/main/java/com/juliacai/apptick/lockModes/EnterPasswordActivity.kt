@@ -36,7 +36,7 @@ class EnterPasswordActivity : AppCompatActivity() {
                 onForgotPasswordClick = { 
                     startActivity(Intent(this, PasswordResetActivity::class.java))
                 },
-                isBiometricVisible = canUseBiometric(),
+                isBiometricVisible = isBiometricEnabledForPasswordMode() && canUseBiometric(),
                 isUsbKeyVisible = prefs.getBoolean("usb_key_enabled", false)
             )
         }
@@ -89,6 +89,10 @@ class EnterPasswordActivity : AppCompatActivity() {
     private fun canUseBiometric(): Boolean {
         val biometricManager = BiometricManager.from(this)
         return biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    private fun isBiometricEnabledForPasswordMode(): Boolean {
+        return prefs.getBoolean("password_biometric_enabled", true)
     }
 
     private fun authenticateWithSecurityKey() {

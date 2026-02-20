@@ -80,6 +80,21 @@ class LockPolicyTest {
     }
 
     @Test
+    fun oneTimeLockdown_withoutConfiguredEnd_staysLocked() {
+        val decision = LockPolicy.evaluateEditingLock(
+            state = baseState().copy(
+                activeLockMode = LockMode.LOCKDOWN,
+                lockdownType = LockdownType.ONE_TIME,
+                lockdownEndTimeMillis = 0L
+            ),
+            nowMillis = 2_000L
+        )
+
+        assertThat(decision.isLocked).isTrue()
+        assertThat(decision.shouldClearExpiredLockdown).isFalse()
+    }
+
+    @Test
     fun recurringLockdown_unlocksOnAllowedDayAndProvidesConsumeKey() {
         val monday = millisForDay(Calendar.MONDAY)
         val decision = LockPolicy.evaluateEditingLock(
@@ -134,6 +149,22 @@ class LockPolicyTest {
         )
 
         assertThat(decision.isLocked).isTrue()
+    }
+
+    @Test
+    fun recurringLockdown_withNoAllowedDays_staysLocked() {
+        val monday = millisForDay(Calendar.MONDAY)
+        val decision = LockPolicy.evaluateEditingLock(
+            state = baseState().copy(
+                activeLockMode = LockMode.LOCKDOWN,
+                lockdownType = LockdownType.RECURRING,
+                lockdownRecurringDays = emptyList()
+            ),
+            nowMillis = monday
+        )
+
+        assertThat(decision.isLocked).isTrue()
+        assertThat(decision.consumeKey).isNull()
     }
 
     private fun baseState(): LockState {

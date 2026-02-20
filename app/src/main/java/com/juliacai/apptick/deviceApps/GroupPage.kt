@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
@@ -58,29 +59,39 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.BaseActivity
+import com.juliacai.apptick.LockDecision
+import com.juliacai.apptick.LockMode
+import com.juliacai.apptick.LockPolicy
+import com.juliacai.apptick.LockState
+import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.ThemeModeManager
 import com.juliacai.apptick.formatClockTime
+import com.juliacai.apptick.lazyColumnScrollIndicator
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.GroupAppItem
-import kotlinx.coroutines.launch
+import com.juliacai.apptick.rememberScrollbarColor
+import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -181,6 +192,7 @@ class GroupPage : BaseActivity() {
             }
 
             MaterialTheme(colorScheme = colorScheme) {
+                val canEditGroup = !isLimitEditingLocked()
                 Scaffold(
                     topBar = {
                         TopAppBar(
@@ -197,7 +209,7 @@ class GroupPage : BaseActivity() {
                         )
                     },
                     floatingActionButton = {
-                        if (group != null) {
+                        if (group != null && canEditGroup) {
                             FloatingActionButton(onClick = { showActionsDialog = true }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit or delete group")
                             }
@@ -269,6 +281,54 @@ class GroupPage : BaseActivity() {
         refreshGroup()
     }
 
+    private fun isLimitEditingLocked(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+        val decision = LockPolicy.evaluateEditingLock(readLockState(prefs), nowMillis)
+        if (decision.shouldClearExpiredLockdown) {
+            prefs.edit {
+                putString("active_lock_mode", "NONE")
+                remove("lockdown_end_time")
+                remove("lockdown_weekly_used_key")
+                putBoolean("lockdown_prompt_after_unlock", true)
+            }
+        }
+        return decision.isLocked
+    }
+
+    private fun readLockState(prefs: android.content.SharedPreferences): LockState {
+        val activeModeStr = prefs.getString("active_lock_mode", "NONE") ?: "NONE"
+        val activeMode = try {
+            LockMode.valueOf(activeModeStr)
+        } catch (_: Exception) {
+            LockMode.NONE
+        }
+
+        val typeStr = prefs.getString("lockdown_type", "ONE_TIME") ?: "ONE_TIME"
+        val lockdownType = try {
+            LockdownType.valueOf(typeStr)
+        } catch (_: Exception) {
+            LockdownType.ONE_TIME
+        }
+
+        val recurringDays = prefs.getString("lockdown_recurring_days", "")
+            .orEmpty()
+            .split(',')
+            .mapNotNull { it.toIntOrNull() }
+            .filter { it in 1..7 }
+            .distinct()
+            .sorted()
+
+        return LockState(
+            activeLockMode = activeMode,
+            passwordUnlocked = prefs.getBoolean("passUnlocked", false),
+            securityKeyUnlocked = prefs.getBoolean("securityKeyUnlocked", false),
+            lockdownType = lockdownType,
+            lockdownEndTimeMillis = prefs.getLong("lockdown_end_time", 0L),
+            lockdownRecurringDays = recurringDays,
+            lockdownRecurringUsedKey = prefs.getString("lockdown_weekly_used_key", null)
+        )
+    }
+
     companion object {
         private const val EXTRA_GROUP_ID = "extra_group_id"
 
@@ -321,6 +381,11 @@ fun GroupDetails(
     var draggingAppPackage by remember { mutableStateOf<String?>(null) }
     var draggingOffsetY by remember { mutableFloatStateOf(0f) }
     var orderChangedDuringDrag by remember { mutableStateOf(false) }
+    var autoScrollSpeedPxPerFrame by remember { mutableFloatStateOf(0f) }
+    val density = LocalDensity.current
+    val edgeThresholdPx = with(density) { 96.dp.toPx() }
+    val maxAutoScrollPxPerFrame = with(density) { 22.dp.toPx() }
+    val scrollbarColor = rememberScrollbarColor()
     val showCompactHeader by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
@@ -334,11 +399,22 @@ fun GroupDetails(
         draggingAppPackage = null
         draggingOffsetY = 0f
         orderChangedDuringDrag = false
+        autoScrollSpeedPxPerFrame = 0f
+    }
+    LaunchedEffect(draggingAppPackage, autoScrollSpeedPxPerFrame) {
+        if (draggingAppPackage == null || autoScrollSpeedPxPerFrame == 0f) return@LaunchedEffect
+        while (draggingAppPackage != null && autoScrollSpeedPxPerFrame != 0f) {
+            val consumed = listState.scrollBy(autoScrollSpeedPxPerFrame)
+            if (consumed == 0f) break
+            draggingOffsetY += consumed
+            withFrameNanos { }
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
+            modifier = Modifier.lazyColumnScrollIndicator(listState, scrollbarColor),
             contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -493,6 +569,7 @@ fun GroupDetails(
                             draggingAppPackage = app.appPackage
                             draggingOffsetY = 0f
                             orderChangedDuringDrag = false
+                            autoScrollSpeedPxPerFrame = 0f
                         },
                         onDrag = { change, dragAmount ->
                             if (draggingAppPackage != app.appPackage) return@detectDragGesturesAfterLongPress
@@ -503,6 +580,21 @@ fun GroupDetails(
                             val draggedInfo = visibleItems.firstOrNull { it.key == app.appPackage }
                                 ?: return@detectDragGesturesAfterLongPress
                             val draggedCenterY = draggedInfo.offset + (draggedInfo.size / 2f) + draggingOffsetY
+                            val viewportStart = listState.layoutInfo.viewportStartOffset.toFloat()
+                            val viewportEnd = listState.layoutInfo.viewportEndOffset.toFloat()
+                            val topEdge = viewportStart + edgeThresholdPx
+                            val bottomEdge = viewportEnd - edgeThresholdPx
+                            autoScrollSpeedPxPerFrame = when {
+                                draggedCenterY < topEdge -> {
+                                    val intensity = ((topEdge - draggedCenterY) / edgeThresholdPx).coerceIn(0f, 1f)
+                                    -maxAutoScrollPxPerFrame * intensity
+                                }
+                                draggedCenterY > bottomEdge -> {
+                                    val intensity = ((draggedCenterY - bottomEdge) / edgeThresholdPx).coerceIn(0f, 1f)
+                                    maxAutoScrollPxPerFrame * intensity
+                                }
+                                else -> 0f
+                            }
                             val targetInfo = visibleItems.firstOrNull { itemInfo ->
                                 val targetKey = itemInfo.key as? String ?: return@firstOrNull false
                                 targetKey != app.appPackage &&
@@ -529,6 +621,7 @@ fun GroupDetails(
                             draggingAppPackage = null
                             draggingOffsetY = 0f
                             orderChangedDuringDrag = false
+                            autoScrollSpeedPxPerFrame = 0f
                         },
                         onDragCancel = {
                             if (orderChangedDuringDrag) {
@@ -537,6 +630,7 @@ fun GroupDetails(
                             draggingAppPackage = null
                             draggingOffsetY = 0f
                             orderChangedDuringDrag = false
+                            autoScrollSpeedPxPerFrame = 0f
                         }
                     )
                 }

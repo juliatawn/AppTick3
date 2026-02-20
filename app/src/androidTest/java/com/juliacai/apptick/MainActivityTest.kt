@@ -23,9 +23,14 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = false,
+                showBatteryWarning = false,
+                batteryWarningText = "",
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
+                onOpenAppBatterySettings = {},
+                onOpenGeneralBatterySettings = {},
+                onRefreshBatteryStatus = {},
                 listContent = {}
             )
         }
@@ -40,9 +45,14 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 2,
                 showLockedIcon = false,
+                showBatteryWarning = false,
+                batteryWarningText = "",
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
+                onOpenAppBatterySettings = {},
+                onOpenGeneralBatterySettings = {},
+                onRefreshBatteryStatus = {},
                 listContent = { androidx.compose.material3.Text("Group list content") }
             )
         }
@@ -57,9 +67,14 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = false,
+                showBatteryWarning = false,
+                batteryWarningText = "",
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = { clicked = true },
+                onOpenAppBatterySettings = {},
+                onOpenGeneralBatterySettings = {},
+                onRefreshBatteryStatus = {},
                 listContent = {}
             )
         }
@@ -74,9 +89,14 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = true,
+                showBatteryWarning = false,
+                batteryWarningText = "",
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
+                onOpenAppBatterySettings = {},
+                onOpenGeneralBatterySettings = {},
+                onRefreshBatteryStatus = {},
                 listContent = {}
             )
         }

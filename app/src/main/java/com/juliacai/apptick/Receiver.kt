@@ -53,7 +53,8 @@ class Receiver : BroadcastReceiver() {
 
     private fun shouldKeepServiceForSettingsProtection(context: Context): Boolean {
         val prefs = context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
-        if (!prefs.getBoolean("blockSettings", false)) return false
+        val shouldProtect = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
+        if (!shouldProtect) return false
         val now = System.currentTimeMillis()
         val decision = LockPolicy.evaluateEditingLock(readLockState(prefs), now)
         if (decision.shouldClearExpiredLockdown) {
@@ -61,6 +62,7 @@ class Receiver : BroadcastReceiver() {
                 putString("active_lock_mode", "NONE")
                 remove("lockdown_end_time")
                 remove("lockdown_weekly_used_key")
+                putBoolean("lockdown_prompt_after_unlock", true)
             }
         }
         return decision.isLocked

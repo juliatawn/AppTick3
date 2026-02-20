@@ -16,7 +16,11 @@ import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import kotlinx.coroutines.launch
 
-class MainViewModel(application: Application, private val appLimitGroupDao: AppLimitGroupDao) : AndroidViewModel(application) {
+class MainViewModel(
+    application: Application,
+    private val appLimitGroupDao: AppLimitGroupDao,
+    private val applyServiceState: (android.content.Context, Boolean) -> Unit = BackgroundChecker::applyDesiredServiceState
+) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(application, AppTickDatabase.getDatabase(application).appLimitGroupDao())
 
@@ -51,7 +55,7 @@ class MainViewModel(application: Application, private val appLimitGroupDao: AppL
             val updatedGroup = group.copy(paused = !group.paused)
             appLimitGroupDao.updateAppLimitGroup(updatedGroup.toEntity())
             val appContext = getApplication<Application>()
-            BackgroundChecker.applyDesiredServiceState(
+            applyServiceState(
                 appContext,
                 appLimitGroupDao.getActiveGroupCount() > 0
             )

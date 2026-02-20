@@ -19,13 +19,14 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name"
+        android:label="AppTick"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppTick">
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:label="AppTick"
             android:theme="@style/Theme.AppTick">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -55,7 +56,12 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:host="apptick.page.link"
+                    android:host="apptick-f16dc.firebaseapp.com"
+                    android:pathPrefix="/__/auth/links"
+                    android:scheme="https" />
+                <data
+                    android:host="apptick-f16dc.web.app"
+                    android:pathPrefix="/__/auth/links"
                     android:scheme="https" />
             </intent-filter>
         </activity>

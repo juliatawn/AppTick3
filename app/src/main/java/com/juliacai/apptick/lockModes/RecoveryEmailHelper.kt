@@ -2,7 +2,6 @@ package com.juliacai.apptick.lockModes
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.util.Log
 import com.google.firebase.auth.ActionCodeSettings
 import com.google.firebase.auth.FirebaseAuth
@@ -20,13 +19,22 @@ object RecoveryEmailHelper {
 
     private const val TAG = "RecoveryEmail"
     private const val PREF_PENDING_EMAIL = "recovery_pending_email"
+    private const val PREF_PENDING_PURPOSE = "recovery_pending_purpose"
+    private const val RECOVERY_CONTINUE_URL = "https://apptick-f16dc.web.app/recovery"
+    private const val RECOVERY_LINK_DOMAIN = "apptick-f16dc.web.app"
+
+    const val PURPOSE_SETUP_PASSWORD = "setup_password"
+    const val PURPOSE_SETUP_SECURITY_KEY = "setup_security_key"
+    const val PURPOSE_RESET_PASSWORD = "reset_password"
+    const val PURPOSE_RESET_SECURITY_KEY = "reset_security_key"
 
     private val auth: FirebaseAuth get() = FirebaseAuth.getInstance()
 
     /** Settings that tell Firebase how to build the email link. */
     private fun actionCodeSettings(packageName: String): ActionCodeSettings =
         ActionCodeSettings.newBuilder()
-            .setUrl("https://apptick.page.link/recovery") // fallback URL (can be any HTTPS URL)
+            .setUrl(RECOVERY_CONTINUE_URL)
+            .setLinkDomain(RECOVERY_LINK_DOMAIN)
             .setHandleCodeInApp(true)
             .setAndroidPackageName(packageName, true, null)
             .build()
@@ -40,6 +48,7 @@ object RecoveryEmailHelper {
     fun sendRecoveryLink(
         context: Context,
         email: String,
+        purpose: String,
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
@@ -51,6 +60,7 @@ object RecoveryEmailHelper {
                 context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
                     .edit()
                     .putString(PREF_PENDING_EMAIL, email)
+                    .putString(PREF_PENDING_PURPOSE, purpose)
                     .apply()
                 Log.i(TAG, "Recovery link sent to $email")
                 onSuccess()
@@ -76,7 +86,7 @@ object RecoveryEmailHelper {
     fun verifyRecoveryLink(
         context: Context,
         intent: Intent?,
-        onSuccess: (verifiedEmail: String) -> Unit,
+        onSuccess: (verifiedEmail: String, purpose: String?) -> Unit,
         onError: (String) -> Unit
     ) {
         val link = intent?.data?.toString()
@@ -87,6 +97,7 @@ object RecoveryEmailHelper {
 
         val prefs = context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
         val pendingEmail = prefs.getString(PREF_PENDING_EMAIL, null)
+        val pendingPurpose = prefs.getString(PREF_PENDING_PURPOSE, null)
 
         if (pendingEmail == null) {
             onError("No pending recovery request. Please request a new link.")
@@ -96,11 +107,14 @@ object RecoveryEmailHelper {
         auth.signInWithEmailLink(pendingEmail, link)
             .addOnSuccessListener {
                 // Clean up
-                prefs.edit().remove(PREF_PENDING_EMAIL).apply()
+                prefs.edit()
+                    .remove(PREF_PENDING_EMAIL)
+                    .remove(PREF_PENDING_PURPOSE)
+                    .apply()
                 // Sign out immediately — we only used Auth for link verification
                 auth.signOut()
                 Log.i(TAG, "Recovery link verified for $pendingEmail")
-                onSuccess(pendingEmail)
+                onSuccess(pendingEmail, pendingPurpose)
             }
             .addOnFailureListener { e ->
                 Log.e(TAG, "Recovery link verification failed", e)

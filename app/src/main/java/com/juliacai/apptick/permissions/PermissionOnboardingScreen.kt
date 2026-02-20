@@ -52,6 +52,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import com.juliacai.apptick.R
+import com.juliacai.apptick.verticalScrollWithIndicator
 import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
@@ -176,7 +177,7 @@ fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
+                .verticalScrollWithIndicator()
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {

@@ -105,6 +105,21 @@ class MainActivityLockModesIntentTest {
         composeRule.onNodeWithText("Settings changes are locked").assertIsDisplayed()
     }
 
+    @Test
+    fun fabClick_passwordLocked_opensEnterPassword() {
+        updatePrefsAndRecreate {
+            putString("active_lock_mode", "PASSWORD")
+            putString("password", "1234")
+            putBoolean("passUnlocked", false)
+            putBoolean("securityKeyUnlocked", false)
+        }
+
+        composeRule.onNodeWithContentDescription(composeRule.activity.getString(R.string.add_app_limit))
+            .performClick()
+
+        intended(hasComponent(EnterPasswordActivity::class.java.name))
+    }
+
     private fun updatePrefsAndRecreate(mutator: android.content.SharedPreferences.Editor.() -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val prefs = context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
