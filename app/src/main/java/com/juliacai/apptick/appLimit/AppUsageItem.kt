@@ -16,7 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 import coil.compose.rememberAsyncImagePainter
 import com.juliacai.apptick.AppInfo
 
@@ -54,5 +56,20 @@ fun AppUsageItem(appInfo: AppInfo, timeLimit: Int) {
                 LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AppUsageItemPreview() {
+    AppTheme {
+        AppUsageItem(
+            appInfo = AppInfo(
+                appName = "YouTube",
+                appPackage = "com.google.android.youtube",
+                appTimeUse = 42 * 60_000L
+            ),
+            timeLimit = 90
+        )
     }
 }

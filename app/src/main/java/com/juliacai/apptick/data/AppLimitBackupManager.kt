@@ -7,6 +7,7 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
+import com.juliacai.apptick.groups.TimeRange
 import java.io.IOException
 
 data class BackupAppSettings(
@@ -31,7 +32,7 @@ data class AppLimitBackup(
 )
 
 object AppLimitBackupManager {
-    private const val CURRENT_SCHEMA_VERSION = 2
+    private const val CURRENT_SCHEMA_VERSION = 3
     private val gson = Gson()
     private const val KEY_SHOW_TIME_LEFT = "showTimeLeft"
     private const val KEY_FLOATING_BUBBLE_ENABLED = "floatingBubbleEnabled"
@@ -78,7 +79,28 @@ object AppLimitBackupManager {
         val groups = gson.fromJson<List<AppLimitGroupEntity>>(
             root.get("groups"),
             groupsType
-        ) ?: emptyList()
+        )?.map { group ->
+            val parsedRanges = runCatching { group.timeRanges }.getOrDefault(emptyList())
+            val normalizedRanges = if (parsedRanges.isNotEmpty()) {
+                parsedRanges
+            } else if (group.useTimeRange) {
+                listOf(
+                    TimeRange(
+                        startHour = group.startHour,
+                        startMinute = group.startMinute,
+                        endHour = group.endHour,
+                        endMinute = group.endMinute
+                    )
+                )
+            } else {
+                emptyList()
+            }
+            if (schemaVersion < 3) {
+                group.copy(isExpanded = true, timeRanges = normalizedRanges)
+            } else {
+                group.copy(timeRanges = normalizedRanges)
+            }
+        } ?: emptyList()
 
         val appSettingsObject = root.getAsJsonObject("appSettings")
         val legacyPreferencesObject = root.getAsJsonObject("preferences")

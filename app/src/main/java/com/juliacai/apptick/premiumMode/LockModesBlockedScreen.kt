@@ -20,7 +20,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -31,7 +33,13 @@ fun LockModesBlockedScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Lock Modes Locked") },
+                title = {
+                    Text(
+                        text = "Lock Modes Locked",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -76,5 +84,16 @@ fun LockModesBlockedScreen(
                 Text("Back")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun LockModesBlockedScreenPreview() {
+    AppTheme {
+        LockModesBlockedScreen(
+            message = "Editing is only allowed on Tuesday at 7:00 PM.",
+            onBackClick = {}
+        )
     }
 }

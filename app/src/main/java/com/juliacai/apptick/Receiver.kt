@@ -6,8 +6,20 @@ import android.content.Intent
 import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.LegacyDataMigrator
+import kotlinx.coroutines.runBlocking
 
 class Receiver : BroadcastReceiver() {
+
+    internal fun handleStartupSignal(context: Context) {
+        val database = AppTickDatabase.getDatabase(context)
+        runBlocking {
+            LegacyDataMigrator(context, database.appLimitGroupDao()).migrate()
+        }
+        val activeGroupCount = database.appLimitGroupDao().getActiveGroupCountSync()
+        val shouldRun = activeGroupCount > 0 || shouldKeepServiceForSettingsProtection(context)
+        BackgroundChecker.applyDesiredServiceState(context, shouldRun)
+    }
 
     override fun onReceive(context: Context?, intent: Intent?) {
         if (context == null || intent?.action == null) return
@@ -20,11 +32,7 @@ class Receiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 Thread {
                     try {
-                        val activeGroupCount =
-                            AppTickDatabase.getDatabase(context).appLimitGroupDao().getActiveGroupCountSync()
-                        val shouldRun =
-                            activeGroupCount > 0 || shouldKeepServiceForSettingsProtection(context)
-                        BackgroundChecker.applyDesiredServiceState(context, shouldRun)
+                        handleStartupSignal(context)
                     } finally {
                         pendingResult.finish()
                     }
@@ -34,11 +42,7 @@ class Receiver : BroadcastReceiver() {
                 val pendingResult = goAsync()
                 Thread {
                     try {
-                        val activeGroupCount =
-                            AppTickDatabase.getDatabase(context).appLimitGroupDao().getActiveGroupCountSync()
-                        val shouldRun =
-                            activeGroupCount > 0 || shouldKeepServiceForSettingsProtection(context)
-                        BackgroundChecker.applyDesiredServiceState(context, shouldRun)
+                        handleStartupSignal(context)
                     } finally {
                         pendingResult.finish()
                     }

@@ -37,6 +37,9 @@ import com.juliacai.apptick.block.BlockWindowActivity
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.AppLimitGroupEntity
 import com.juliacai.apptick.data.toDomainModel
+import com.juliacai.apptick.lockModes.EnterPasswordActivity
+import com.juliacai.apptick.lockModes.EnterSecurityKeyActivity
+import com.juliacai.apptick.lockModes.SettingsUnlockSession
 import com.juliacai.apptick.TimeManager
 import com.juliacai.apptick.groups.AppUsageStat
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +80,9 @@ class BackgroundChecker : Service() {
     private var lastCheckElapsed: Long = 0L
     private var isScreenOn = true
     private var bubbleShowReceiver: BroadcastReceiver? = null
+    private var settingsSessionUnlockReceiver: BroadcastReceiver? = null
+    private var settingsSessionUnlockedMode: LockMode? = null
+    private var lastSettingsUnlockPromptElapsed: Long = 0L
     @Volatile
     private var fixedElapsedForTestingMs: Long? = null
 
@@ -132,6 +138,12 @@ class BackgroundChecker : Service() {
             IntentFilter(ACTION_SHOW_BUBBLE),
             Context.RECEIVER_NOT_EXPORTED
         )
+        settingsSessionUnlockReceiver = SettingsSessionUnlockReceiver()
+        registerReceiver(
+            settingsSessionUnlockReceiver,
+            IntentFilter(SettingsUnlockSession.ACTION_SETTINGS_SESSION_UNLOCKED),
+            Context.RECEIVER_NOT_EXPORTED
+        )
 
         isRunning = true
         if (!disableBackgroundLoopForTesting) {
@@ -158,6 +170,7 @@ class BackgroundChecker : Service() {
             lastCheckElapsed = SystemClock.elapsedRealtime()
 
             while (isActive) {
+                var loopDelayMs = CHECK_INTERVAL
                 val shouldTrackUsage = shouldTrackUsageNow()
                 isScreenOn = shouldTrackUsage
 
@@ -171,6 +184,7 @@ class BackgroundChecker : Service() {
                         lastForegroundApp = foregroundApp
                     }
                     val appToCheck = foregroundApp ?: lastForegroundApp
+                    loopDelayMs = currentCheckIntervalMs(appToCheck)
                     
                     try {
                         checkAppLimits(appToCheck)
@@ -185,12 +199,14 @@ class BackgroundChecker : Service() {
                     }
 
                     try {
-                        updateFloatingBubble(appToCheck)
+                        // Bubble visibility should follow real foreground state and avoid stale
+                        // fallback packages lingering during app/home transitions.
+                        updateFloatingBubble(foregroundApp)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
                 }
-                delay(CHECK_INTERVAL)
+                delay(loopDelayMs)
             }
         }
     }
@@ -201,21 +217,32 @@ class BackgroundChecker : Service() {
         // Never block AppTick itself — the user must always be able to manage their limits
         if (foregroundApp == packageName) return
 
-        if (shouldBlockSettingsAccess(foregroundApp)) {
-            blockIntent.putExtra("app_name", "Settings")
-            blockIntent.putExtra("app_package", foregroundApp)
-            blockIntent.putExtra("group_name", "Uninstall Protection")
-            blockIntent.putExtra("app_time_spent", 0L)
-            blockIntent.putExtra("group_time_spent", 0L)
-            blockIntent.putExtra("time_limit_minutes", 0)
-            blockIntent.putExtra("limit_each", false)
-            blockIntent.putExtra("use_time_range", false)
-            blockIntent.putExtra("block_outside_time_range", false)
-            blockIntent.putExtra("blocked_for_outside_range", false)
-            blockIntent.putExtra("next_reset_time", 0L)
-            blockIntent.putExtra("block_reason", "Used up time limit")
-            startActivity(blockIntent)
-            return
+        when (evaluateSettingsProtectionAction(foregroundApp)) {
+            SettingsProtectionAction.ALLOW -> Unit
+            SettingsProtectionAction.SHOW_BLOCK -> {
+                blockIntent.putExtra("app_name", "Settings")
+                blockIntent.putExtra("app_package", foregroundApp)
+                blockIntent.putExtra("group_name", "Uninstall Protection")
+                blockIntent.putExtra("app_time_spent", 0L)
+                blockIntent.putExtra("group_time_spent", 0L)
+                blockIntent.putExtra("time_limit_minutes", 0)
+                blockIntent.putExtra("limit_each", false)
+                blockIntent.putExtra("use_time_range", false)
+                blockIntent.putExtra("block_outside_time_range", false)
+                blockIntent.putExtra("blocked_for_outside_range", false)
+                blockIntent.putExtra("next_reset_time", 0L)
+                blockIntent.putExtra("block_reason", "Used up time limit")
+                startActivity(blockIntent)
+                return
+            }
+            SettingsProtectionAction.REQUEST_PASSWORD -> {
+                maybeLaunchSettingsUnlockActivity(LockMode.PASSWORD)
+                return
+            }
+            SettingsProtectionAction.REQUEST_SECURITY_KEY -> {
+                maybeLaunchSettingsUnlockActivity(LockMode.SECURITY_KEY)
+                return
+            }
         }
 
         val allGroups = if (fixedElapsedForTestingMs != null) {
@@ -286,9 +313,7 @@ class BackgroundChecker : Service() {
             // Optional strict mode: block listed apps completely outside the configured time range.
             if (
                 appInGroup != null &&
-                group.useTimeRange &&
-                group.blockOutsideTimeRange &&
-                !AppLimitEvaluator.isWithinTimeRange(group, now)
+                AppLimitEvaluator.shouldBlockOutsideTimeRange(group, now)
             ) {
                 val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }
                 blockIntent.putExtra("app_name", appInGroup.appName)
@@ -486,12 +511,15 @@ class BackgroundChecker : Service() {
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
-        // If currentApp is null (transient UsageStats gap), leave bubble as-is
-        if (currentApp == null || currentApp == packageName) return
+        if (shouldHideFloatingBubbleForForegroundApp(currentApp, packageName)) {
+            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+            return
+        }
+        val foregroundApp = currentApp ?: return
 
         // Read fresh data from DB to avoid stale cachedGroups lag
         val freshGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
-        val info = pickNotificationGroup(freshGroups, currentApp)
+        val info = pickNotificationGroup(freshGroups, foregroundApp)
         if (info == null) {
             // User is in an app with no active limit — hide bubble
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
@@ -503,7 +531,7 @@ class BackgroundChecker : Service() {
             (group.timeHrLimit * 60 + group.timeMinLimit).toLong()
         )
         val appUsed = group.perAppUsage
-            .firstOrNull { it.appPackage == currentApp }?.usedMillis ?: 0L
+            .firstOrNull { it.appPackage == foregroundApp }?.usedMillis ?: 0L
         val timeRemaining = if (group.limitEach) {
             (limitMillis - appUsed).coerceAtLeast(0L)
         } else {
@@ -514,14 +542,22 @@ class BackgroundChecker : Service() {
 
         try {
             startService(
-                FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, currentApp)
+                FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, foregroundApp)
             )
         } catch (_: Exception) {}
     }
 
 
     companion object {
+        @VisibleForTesting
+        internal fun shouldHideFloatingBubbleForForegroundApp(
+            currentApp: String?,
+            appTickPackage: String
+        ): Boolean = currentApp == null || currentApp == appTickPackage
+
         private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
+        private const val SETTINGS_PROTECTION_BURST_CHECK_INTERVAL = 100L // rapid checks while Settings/uninstall flow stays open
+        private const val SETTINGS_UNLOCK_PROMPT_MIN_INTERVAL_MS = 800L
         private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
         private const val FOREGROUND_EVENT_LOOKBACK_MS = 15_000L
         private const val FOREGROUND_USAGE_LOOKBACK_MS = 2 * 60_000L
@@ -726,7 +762,14 @@ class BackgroundChecker : Service() {
     @VisibleForTesting
     fun formatBubbleCountdown(timeRemainingMillis: Long): String {
         val safeMillis = timeRemainingMillis.coerceAtLeast(0L)
-        val totalMinutes = if (safeMillis <= 0L) 0L else maxOf(1L, safeMillis / 60_000L)
+        if (safeMillis <= 60_000L) {
+            val totalSeconds = (safeMillis + 999L) / 1_000L
+            val minutes = totalSeconds / 60L
+            val seconds = totalSeconds % 60L
+            return String.format("%02d:%02d", minutes, seconds)
+        }
+
+        val totalMinutes = safeMillis / 60_000L
         val hours = totalMinutes / 60L
         val minutes = totalMinutes % 60L
         return String.format("%02d:%02d", hours, minutes)
@@ -785,6 +828,7 @@ class BackgroundChecker : Service() {
         serviceJob.cancel()
         unregisterReceiver(mReceiver)
         try { unregisterReceiver(bubbleShowReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(settingsSessionUnlockReceiver) } catch (_: Exception) {}
         // Hide the floating bubble when the service stops
         try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
         // Recover quickly if OEM/user UI stops the foreground service while limits remain active.
@@ -865,14 +909,21 @@ class BackgroundChecker : Service() {
 
     // ── Settings/uninstall protection ─────────────────────────────────────────
 
-    private fun shouldBlockSettingsAccess(foregroundApp: String?): Boolean {
-        val packageName = foregroundApp ?: return false
+    private suspend fun evaluateSettingsProtectionAction(
+        foregroundApp: String?
+    ): SettingsProtectionAction {
+        val packageName = foregroundApp ?: return SettingsProtectionAction.ALLOW
+        val isSettingsPackage = packageName == "com.android.settings"
+        val isUninstallFlow = isUninstallFlowPackage(packageName)
+        if (!isSettingsPackage && !isUninstallFlow) return SettingsProtectionAction.ALLOW
+
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
         val shouldProtectUninstall = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
-        if (!shouldProtectUninstall) return false
+        if (!shouldProtectUninstall) return SettingsProtectionAction.ALLOW
 
+        val nowMillis = System.currentTimeMillis()
         val lockState = readLockState(prefs)
-        val lockDecision = LockPolicy.evaluateEditingLock(lockState, System.currentTimeMillis())
+        val lockDecision = LockPolicy.evaluateEditingLock(lockState, nowMillis)
         if (lockDecision.shouldClearExpiredLockdown) {
             prefs.edit {
                 putString("active_lock_mode", "NONE")
@@ -882,20 +933,59 @@ class BackgroundChecker : Service() {
             }
         }
 
-        // Uninstall confirmation often switches to package-installer/permission-controller apps.
-        // Keep these blocked whenever uninstall protection is enabled and a lock mode is configured.
-        if (shouldProtectUninstall && isUninstallFlowPackage(packageName) && LockPolicy.hasAnyConfiguredLockMode(lockState)) {
-            return true
+        return when (lockState.activeLockMode) {
+            LockMode.PASSWORD -> {
+                if (settingsSessionUnlockedMode == LockMode.PASSWORD) {
+                    SettingsProtectionAction.ALLOW
+                } else {
+                    SettingsProtectionAction.REQUEST_PASSWORD
+                }
+            }
+            LockMode.SECURITY_KEY -> {
+                if (settingsSessionUnlockedMode == LockMode.SECURITY_KEY) {
+                    SettingsProtectionAction.ALLOW
+                } else {
+                    SettingsProtectionAction.REQUEST_SECURITY_KEY
+                }
+            }
+            LockMode.LOCKDOWN -> {
+                if (hasAnyExhaustedEnforceableLimit(nowMillis)) {
+                    SettingsProtectionAction.SHOW_BLOCK
+                } else {
+                    SettingsProtectionAction.ALLOW
+                }
+            }
+            LockMode.NONE -> SettingsProtectionAction.ALLOW
         }
-
-        return false
     }
 
-    private fun shouldKeepServiceForSettingsProtection(): Boolean {
+    private suspend fun shouldKeepServiceForSettingsProtection(): Boolean {
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
         val shouldProtect = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
         if (!shouldProtect) return false
-        return LockPolicy.hasAnyConfiguredLockMode(readLockState(prefs))
+        return when (readLockState(prefs).activeLockMode) {
+            LockMode.PASSWORD, LockMode.SECURITY_KEY -> true
+            LockMode.LOCKDOWN -> hasAnyExhaustedEnforceableLimit()
+            LockMode.NONE -> false
+        }
+    }
+
+    private suspend fun hasAnyExhaustedEnforceableLimit(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        val groups = if (cachedGroups.isNotEmpty()) {
+            cachedGroups
+        } else {
+            runCatching { appLimitGroupDao.getAllAppLimitGroupsImmediate() }.getOrDefault(emptyList())
+        }
+
+        return groups
+            .asSequence()
+            .filterNot { it.paused }
+            .map { it.toDomainModel() }
+            .filter { AppLimitEvaluator.shouldCheckLimit(it, nowMillis) }
+            .any { group ->
+                val limitMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+                limitMinutes <= 0 || group.timeRemaining <= 0L
+            }
     }
 
     private fun readLockState(prefs: android.content.SharedPreferences): LockState {
@@ -936,5 +1026,52 @@ class BackgroundChecker : Service() {
         if (packageName == "com.android.permissioncontroller") return true
         if (packageName == "com.google.android.permissioncontroller") return true
         return packageName.contains("packageinstaller") || packageName.contains("permissioncontroller")
+    }
+
+    private fun currentCheckIntervalMs(foregroundApp: String?): Long {
+        val packageName = foregroundApp ?: return CHECK_INTERVAL
+        val isSettingsProtectionContext =
+            packageName == "com.android.settings" || isUninstallFlowPackage(packageName)
+        if (!isSettingsProtectionContext) {
+            settingsSessionUnlockedMode = null
+            return CHECK_INTERVAL
+        }
+        return SETTINGS_PROTECTION_BURST_CHECK_INTERVAL
+    }
+
+    private fun maybeLaunchSettingsUnlockActivity(mode: LockMode) {
+        val nowElapsed = SystemClock.elapsedRealtime()
+        if (nowElapsed - lastSettingsUnlockPromptElapsed < SETTINGS_UNLOCK_PROMPT_MIN_INTERVAL_MS) {
+            return
+        }
+        lastSettingsUnlockPromptElapsed = nowElapsed
+        val activityClass = when (mode) {
+            LockMode.PASSWORD -> EnterPasswordActivity::class.java
+            LockMode.SECURITY_KEY -> EnterSecurityKeyActivity::class.java
+            else -> return
+        }
+        val unlockIntent = Intent(this, activityClass).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            putExtra(SettingsUnlockSession.EXTRA_SETTINGS_SESSION_UNLOCK, true)
+        }
+        runCatching { startActivity(unlockIntent) }
+    }
+
+    private inner class SettingsSessionUnlockReceiver : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val mode = intent?.getStringExtra(SettingsUnlockSession.EXTRA_UNLOCK_MODE) ?: return
+            settingsSessionUnlockedMode = when (mode) {
+                SettingsUnlockSession.MODE_PASSWORD -> LockMode.PASSWORD
+                SettingsUnlockSession.MODE_SECURITY_KEY -> LockMode.SECURITY_KEY
+                else -> null
+            }
+        }
+    }
+
+    private enum class SettingsProtectionAction {
+        ALLOW,
+        SHOW_BLOCK,
+        REQUEST_PASSWORD,
+        REQUEST_SECURITY_KEY
     }
 }

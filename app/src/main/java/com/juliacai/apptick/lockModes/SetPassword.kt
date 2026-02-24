@@ -1,105 +1,127 @@
 package com.juliacai.apptick.lockModes
 
 import android.app.Activity
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.os.Bundle
-import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.core.content.ContextCompat
 import androidx.core.content.edit
-import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.LockMode
-import com.juliacai.apptick.premiumMode.DeviceAdmin
 
 class SetPassword : AppCompatActivity() {
 
-    private lateinit var devicePolicyManager: DevicePolicyManager
-    private lateinit var adminComponentName: ComponentName
-    private lateinit var prefs: SharedPreferences
-    private var passwordRecoveryVerified by mutableStateOf(false)
-
-    private val deviceAdminLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK) {
-            Toast.makeText(this, "Device admin enabled", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Device admin not enabled", Toast.LENGTH_SHORT).show()
-        }
+    companion object {
+        private const val PREF_PASSWORD_MODE_CONFIGURED = "password_mode_configured"
     }
+
+    private lateinit var prefs: SharedPreferences
+    private lateinit var biometricPrompt: BiometricPrompt
+    private var biometricEnabled by mutableStateOf(false)
+    private var usbSecurityKeyEnabled by mutableStateOf(false)
+    private var isConfigurationEnabled by mutableStateOf(false)
+    private var hasSavedConfiguration by mutableStateOf(false)
+
+    private val usbSecurityKeySetupLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val hasRegisteredKey = UsbSecurityKey.readRegisteredKey(prefs) != null
+            usbSecurityKeyEnabled = result.resultCode == Activity.RESULT_OK && hasRegisteredKey
+            if (!usbSecurityKeyEnabled) {
+                Toast.makeText(this, "USB security key setup not completed", Toast.LENGTH_SHORT).show()
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        adminComponentName = ComponentName(this, DeviceAdmin::class.java)
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
 
         AppTheme.applyTheme(this)
+        setupBiometricAuth()
 
         val isPasswordEnabled = prefs.getString("active_lock_mode", "NONE") == "PASSWORD"
-        passwordRecoveryVerified = isPasswordRecoveryVerified()
+        hasSavedConfiguration = isPasswordModeConfiguredNow()
+        isConfigurationEnabled = isPasswordEnabled && hasSavedConfiguration
+        biometricEnabled = if (isPasswordEnabled) {
+            prefs.getBoolean("password_biometric_enabled", false)
+        } else {
+            false
+        }
+        usbSecurityKeyEnabled =
+            prefs.getBoolean("usb_key_enabled", false) && UsbSecurityKey.readRegisteredKey(prefs) != null
+
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                handleExitRequest()
+            }
+        })
 
         setContent {
             AppTheme {
                 SetPasswordScreen(
-                    onSaveClick = { password, confirmPassword, recoveryEmail, enableAdminProtection, enableBiometric ->
+                    onSaveClick = { password, confirmPassword, enableBiometric, enableUsbKey ->
                         savePasswordAndFinish(
                             passFirst = password,
                             passSecond = confirmPassword,
-                            recoveryEmail = recoveryEmail,
-                            enableAdminProtection = enableAdminProtection,
-                            enableBiometric = enableBiometric
+                            enableBiometric = enableBiometric,
+                            enableUsbKey = enableUsbKey
                         )
                     },
-                    onVerifyRecoveryEmailClick = { email ->
-                        sendRecoveryVerificationEmail(email)
+                    onCancelClick = { handleExitRequest() },
+                    onOpenFamilyLinkClick = { openFamilyLinkSetup() },
+                    onBiometricToggleRequest = { requestedEnabled ->
+                        if (!canUseBiometric()) return@SetPasswordScreen
+                        if (!requestedEnabled) {
+                            biometricEnabled = false
+                            return@SetPasswordScreen
+                        }
+                        showBiometricVerificationPrompt()
                     },
-                    onCancelClick = { finish() },
-                    onBackClick = { finish() },
-                    onEnableDeviceAdminClick = {
-                        if (isAdminGranted) {
-                            showInfoDialog("Device Admin", "Device admin permissions are already enabled.")
+                    onUsbSecurityKeyToggleRequest = { requestedEnabled ->
+                        if (!requestedEnabled) {
+                            usbSecurityKeyEnabled = false
+                            return@SetPasswordScreen
+                        }
+                        usbSecurityKeySetupLauncher.launch(
+                            Intent(this, UsbSecurityKeySetupActivity::class.java)
+                        )
+                    },
+                    onDisabledInteraction = { showEnablePasswordToggleDialog() },
+                    isConfigurationEnabled = isConfigurationEnabled,
+                    onConfigurationEnabledChange = { requestedEnabled ->
+                        if (!requestedEnabled && activeLockMode() == LockMode.PASSWORD) {
+                            disablePasswordMode()
                         } else {
-                            requestDeviceAdmin()
+                            isConfigurationEnabled = requestedEnabled
                         }
                     },
-                    onDisableClick = {
-                        disablePasswordMode()
-                    },
-                    isAdminGranted = isAdminGranted,
                     isPasswordEnabled = isPasswordEnabled,
                     activeLockMode = activeLockMode(),
-                    isRecoveryEmailVerified = passwordRecoveryVerified,
-                    initialRecoveryEmail = prefs.getString("recovery_email", "").orEmpty(),
-                    initialAdminProtection = prefs.getBoolean("useDeviceAdminUninstallProtection", false),
-                    initialBiometricEnabled = prefs.getBoolean("password_biometric_enabled", true),
-                    isBiometricSupported = canUseBiometric()
+                    biometricEnabled = biometricEnabled,
+                    isBiometricSupported = canUseBiometric(),
+                    usbSecurityKeyEnabled = usbSecurityKeyEnabled
                 )
             }
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        passwordRecoveryVerified = isPasswordRecoveryVerified()
-    }
-
     private fun savePasswordAndFinish(
         passFirst: String,
         passSecond: String,
-        recoveryEmail: String,
-        enableAdminProtection: Boolean,
-        enableBiometric: Boolean
+        enableBiometric: Boolean,
+        enableUsbKey: Boolean
     ) {
         val activeMode = activeLockMode()
         if (activeMode != LockMode.NONE && activeMode != LockMode.PASSWORD) {
@@ -120,43 +142,29 @@ class SetPassword : AppCompatActivity() {
             return
         }
 
-        if (!Patterns.EMAIL_ADDRESS.matcher(recoveryEmail).matches()) {
-            showInfoDialog("Recovery Email", "Enter a valid recovery email.")
-            return
-        }
-
-        if (!isPasswordRecoveryVerifiedForEmail(recoveryEmail)) {
+        if (enableUsbKey && UsbSecurityKey.readRegisteredKey(prefs) == null) {
             showInfoDialog(
-                "Recovery Email",
-                "Verify the recovery email first using the verification link."
+                "USB Security Key",
+                "Set up your USB security key first."
             )
-            return
-        }
-
-        if (enableAdminProtection && !isAdminGranted) {
-            showInfoDialog(
-                "Device Admin Required",
-                "Enable Device Admin first to turn on uninstall protection."
-            )
+            usbSecurityKeyEnabled = false
             return
         }
 
         prefs.edit {
             putString("password", passFirst)
-            putString("recovery_email", recoveryEmail)
-            putBoolean("recovery_email_password_verified", true)
             putString("active_lock_mode", "PASSWORD")
-            putBoolean("useDeviceAdminUninstallProtection", enableAdminProtection)
+            putBoolean("security_key_enabled", false)
+            putBoolean("useDeviceAdminUninstallProtection", false)
             putBoolean("password_biometric_enabled", enableBiometric)
+            putBoolean("usb_key_enabled", enableUsbKey)
             putBoolean("blockMain", true)
             putBoolean("locked", true)
             putBoolean("passUnlocked", false)
             putBoolean("securityKeyUnlocked", false)
+            putBoolean(PREF_PASSWORD_MODE_CONFIGURED, true)
         }
-
-        if (enableAdminProtection) {
-            BackgroundChecker.startServiceIfNotRunning(applicationContext)
-        }
+        hasSavedConfiguration = true
 
         Toast.makeText(this, "Password lock enabled", Toast.LENGTH_SHORT).show()
         finish()
@@ -169,64 +177,78 @@ class SetPassword : AppCompatActivity() {
         }
         prefs.edit {
             putString("active_lock_mode", "NONE")
+            remove("password")
             putBoolean("locked", false)
             putBoolean("passUnlocked", true)
+            putBoolean("password_biometric_enabled", false)
+            putBoolean("usb_key_enabled", false)
+            putBoolean("useDeviceAdminUninstallProtection", false)
+            putBoolean(PREF_PASSWORD_MODE_CONFIGURED, false)
         }
+        hasSavedConfiguration = false
+        isConfigurationEnabled = false
         Toast.makeText(this, "Password lock disabled", Toast.LENGTH_SHORT).show()
         finish()
     }
 
-    private fun sendRecoveryVerificationEmail(email: String) {
-        if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
-            showInfoDialog("Recovery Email", "Enter a valid recovery email before verification.")
+    private fun handleExitRequest() {
+        if (shouldWarnUnconfiguredExit()) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Password Mode")
+                .setMessage("Password Mode Not Configured, Disabling")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("OK") { _, _ ->
+                    prefs.edit { putString("active_lock_mode", LockMode.NONE.name) }
+                    finish()
+                }
+                .show()
             return
         }
+        finish()
+    }
 
-        prefs.edit {
-            putString("recovery_email", email)
-            putBoolean("recovery_email_password_verified", false)
+    private fun isPasswordModeConfiguredNow(): Boolean {
+        val storedPassword = prefs.getString("password", null)?.trim().orEmpty()
+        val isPasswordModeActive = activeLockMode() == LockMode.PASSWORD
+        return storedPassword.isNotEmpty() && isPasswordModeActive
+    }
+
+    private fun shouldWarnUnconfiguredExit(): Boolean {
+        // Warn only when user intentionally enabled this page's configuration flow
+        // but Password mode is not currently configured/saved.
+        return isConfigurationEnabled && !isPasswordModeConfiguredNow()
+    }
+
+    private fun openFamilyLinkSetup() {
+        val familySettingsIntent = Intent("android.settings.FAMILY_SETTINGS")
+        if (familySettingsIntent.resolveActivity(packageManager) != null) {
+            startActivity(familySettingsIntent)
+            return
         }
-        passwordRecoveryVerified = false
-
-        RecoveryEmailHelper.sendRecoveryLink(
-            context = this,
-            email = email,
-            purpose = RecoveryEmailHelper.PURPOSE_SETUP_PASSWORD,
-            onSuccess = {
-                showInfoDialog(
-                    "Verification Email Sent",
-                    "Check $email and open the verification link, then return here to save Password mode."
-                )
-            },
-            onError = { message ->
-                showInfoDialog("Verification Failed", message)
-            }
+        val familyLinkPackage = "com.google.android.apps.kids.familylink"
+        val appIntent = packageManager.getLaunchIntentForPackage(familyLinkPackage)
+        if (appIntent != null) {
+            startActivity(appIntent)
+            return
+        }
+        val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$familyLinkPackage"))
+        if (marketIntent.resolveActivity(packageManager) != null) {
+            startActivity(marketIntent)
+            return
+        }
+        startActivity(
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://play.google.com/store/apps/details?id=$familyLinkPackage")
+            )
         )
     }
 
-    private fun requestDeviceAdmin() {
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Granting this permission lets AppTick block Settings uninstall pages while lock mode is active."
-            )
-        }
-        deviceAdminLauncher.launch(intent)
-    }
-
-    private val isAdminGranted: Boolean
-        get() = devicePolicyManager.isAdminActive(adminComponentName)
-
-    private fun isPasswordRecoveryVerified(): Boolean {
-        val stored = prefs.getString("recovery_email", null)
-        return !stored.isNullOrBlank() && isPasswordRecoveryVerifiedForEmail(stored)
-    }
-
-    private fun isPasswordRecoveryVerifiedForEmail(email: String): Boolean {
-        val stored = prefs.getString("recovery_email", null)
-        val verified = prefs.getBoolean("recovery_email_password_verified", false)
-        return verified && !stored.isNullOrBlank() && stored.equals(email, ignoreCase = true)
+    private fun showEnablePasswordToggleDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setMessage("Enable Password Mode Toggle to On")
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
     }
 
     private fun activeLockMode(): LockMode {
@@ -250,5 +272,50 @@ class SetPassword : AppCompatActivity() {
         val biometricManager = BiometricManager.from(this)
         return biometricManager.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
+    }
+
+    private fun setupBiometricAuth() {
+        val executor = ContextCompat.getMainExecutor(this)
+        biometricPrompt = BiometricPrompt(this, executor,
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    super.onAuthenticationSucceeded(result)
+                    biometricEnabled = true
+                    Toast.makeText(
+                        applicationContext,
+                        "Biometric unlock enabled",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+
+                override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                    super.onAuthenticationError(errorCode, errString)
+                    biometricEnabled = false
+                    if (errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                        errorCode != BiometricPrompt.ERROR_USER_CANCELED &&
+                        errorCode != BiometricPrompt.ERROR_CANCELED
+                    ) {
+                        Toast.makeText(
+                            applicationContext,
+                            "Biometric verification failed: $errString",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+                override fun onAuthenticationFailed() {
+                    super.onAuthenticationFailed()
+                    biometricEnabled = false
+                }
+            })
+    }
+
+    private fun showBiometricVerificationPrompt() {
+        val promptInfo = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Enable biometric unlock")
+            .setSubtitle("Verify your biometric to enable biometric unlock for Password mode")
+            .setNegativeButtonText("Cancel")
+            .build()
+        biometricPrompt.authenticate(promptInfo)
     }
 }

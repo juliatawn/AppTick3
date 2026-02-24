@@ -1,6 +1,7 @@
 package com.juliacai.apptick.data
 
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.TimeRange
 
 fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
     return AppLimitGroup(
@@ -15,6 +16,7 @@ fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
         paused = this.paused,
         useTimeRange = this.useTimeRange,
         blockOutsideTimeRange = this.blockOutsideTimeRange,
+        timeRanges = this.effectiveTimeRanges(),
         startHour = this.startHour,
         startMinute = this.startMinute,
         endHour = this.endHour,
@@ -23,11 +25,13 @@ fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
         timeRemaining = this.timeRemaining,
         nextResetTime = this.nextResetTime,
         nextAddTime = this.nextAddTime,
-        perAppUsage = this.perAppUsage
+        perAppUsage = this.perAppUsage,
+        isExpanded = this.isExpanded
     )
 }
 
 fun AppLimitGroup.toEntity(): AppLimitGroupEntity {
+    val firstRange = timeRanges.firstOrNull()
     return AppLimitGroupEntity(
         id = this.id,
         name = this.name,
@@ -40,14 +44,29 @@ fun AppLimitGroup.toEntity(): AppLimitGroupEntity {
         paused = this.paused,
         useTimeRange = this.useTimeRange,
         blockOutsideTimeRange = this.blockOutsideTimeRange,
-        startHour = this.startHour,
-        startMinute = this.startMinute,
-        endHour = this.endHour,
-        endMinute = this.endMinute,
+        timeRanges = this.timeRanges,
+        startHour = firstRange?.startHour ?: this.startHour,
+        startMinute = firstRange?.startMinute ?: this.startMinute,
+        endHour = firstRange?.endHour ?: this.endHour,
+        endMinute = firstRange?.endMinute ?: this.endMinute,
         cumulativeTime = this.cumulativeTime,
         timeRemaining = this.timeRemaining,
         nextResetTime = this.nextResetTime,
         nextAddTime = this.nextAddTime,
-        perAppUsage = this.perAppUsage
+        perAppUsage = this.perAppUsage,
+        isExpanded = this.isExpanded
+    )
+}
+
+private fun AppLimitGroupEntity.effectiveTimeRanges(): List<TimeRange> {
+    if (timeRanges.isNotEmpty()) return timeRanges
+    if (!useTimeRange) return emptyList()
+    return listOf(
+        TimeRange(
+            startHour = startHour,
+            startMinute = startMinute,
+            endHour = endHour,
+            endMinute = endMinute
+        )
     )
 }

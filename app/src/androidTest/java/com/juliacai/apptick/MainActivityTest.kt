@@ -23,14 +23,20 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = false,
+                showGroupDetailsHint = false,
                 showBatteryWarning = false,
+                batteryWarningDismissable = false,
                 batteryWarningText = "",
+                batteryWarningDetails = emptyList(),
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
+                onOpenDontKillMyApp = {},
                 onRefreshBatteryStatus = {},
+                onDismissBatteryWarning = {},
+                onDismissGroupDetailsHint = {},
                 listContent = {}
             )
         }
@@ -45,14 +51,20 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 2,
                 showLockedIcon = false,
+                showGroupDetailsHint = false,
                 showBatteryWarning = false,
+                batteryWarningDismissable = false,
                 batteryWarningText = "",
+                batteryWarningDetails = emptyList(),
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
+                onOpenDontKillMyApp = {},
                 onRefreshBatteryStatus = {},
+                onDismissBatteryWarning = {},
+                onDismissGroupDetailsHint = {},
                 listContent = { androidx.compose.material3.Text("Group list content") }
             )
         }
@@ -67,14 +79,20 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = false,
+                showGroupDetailsHint = false,
                 showBatteryWarning = false,
+                batteryWarningDismissable = false,
                 batteryWarningText = "",
+                batteryWarningDetails = emptyList(),
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = { clicked = true },
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
+                onOpenDontKillMyApp = {},
                 onRefreshBatteryStatus = {},
+                onDismissBatteryWarning = {},
+                onDismissGroupDetailsHint = {},
                 listContent = {}
             )
         }
@@ -89,14 +107,20 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = true,
+                showGroupDetailsHint = false,
                 showBatteryWarning = false,
+                batteryWarningDismissable = false,
                 batteryWarningText = "",
+                batteryWarningDetails = emptyList(),
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
+                onOpenDontKillMyApp = {},
                 onRefreshBatteryStatus = {},
+                onDismissBatteryWarning = {},
+                onDismissGroupDetailsHint = {},
                 listContent = {}
             )
         }

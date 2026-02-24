@@ -97,7 +97,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AGENTS.md`: Contains instructions and guidelines for the AI agent.
     - `AppInfo.kt`: Data class representing an application, including its name, package, icon, and usage statistics.
     - `AppLaunchLoadingScreen.kt`: Compose loading screen that shows the AppTick logo on first launch before permission onboarding.
-    - `AppTheme.kt`: Manages the app's theme via an `object AppTheme` (SharedPreferences-backed color helpers used by Activities) and a `@Composable fun AppTheme` (MaterialTheme wrapper for Compose UI), consolidated from the former `AppTickTheme.kt`.
+    - `AppTheme.kt`: Manages the app's theme via an `object AppTheme` (SharedPreferences-backed color helpers used by Activities, including shared palette/color-scheme builders) and a `@Composable fun AppTheme` (MaterialTheme wrapper for Compose UI) so custom colors and default purple use the same palette pipeline.
     - `BaseActivity.kt`: A base class for activities that handles shared functionality like theme and color changes.
     - `CustomViewPager.kt`: A custom ViewPager that allows for disabling swipe gestures.
     - `Changelog.kt`: Reusable changelog dialog content/UI and SharedPreferences helpers that track whether the current app version changelog has been seen.
@@ -120,13 +120,13 @@ Running on Darwin 25.3.0 (arm64)
     - `BackgroundChecker.kt`: A foreground service that monitors app usage with elapsed-time accounting, enforces time limits, and blocks Settings uninstall access when lock-mode uninstall protection is enabled (with deterministic test hooks for instrumentation reliability). Includes watchdog alarm scheduling/cancellation APIs so service state stays aligned with active limits/settings-protection across OEM process kills, plus fast self-recovery scheduling from `onDestroy()` when the service is unexpectedly stopped. Foreground-app detection uses usage events first with a usage-stats fallback so enforcement/bubble updates resume immediately after restarts even when the user remains in the same app. Supports time-range outside-window behavior per group (either block apps fully outside the range or allow no limits outside range). Notification/floating-bubble selection only considers currently enforceable profiles (active schedule + positive time limit), picks the lowest effective time remaining, and notes when multiple active profiles cover the same app. Also manages the floating bubble overlay lifecycle.
     - `FloatingBubbleService.kt`: An overlay service that shows a small, semi-transparent draggable bubble with time remaining when the user is in a time-limited app. Drag-to-bottom dismiss target pattern. Controlled by the "floatingBubbleEnabled" preference and re-shown via the AppTick notification action.
 - **block**
-    - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable.
+    - `BlockWindowActivity.kt`: An activity that hosts the BlockWindowScreen composable and applies the same shared theme palette logic as the rest of the app.
     - `BlockWindowScreen.kt`: A composable that displays the screen that blocks the user from using an app when the time limit is reached.
 - **data**
     - `AppLimitGroupDao.kt`: The DAO for the AppLimitGroupEntity, providing methods for accessing the database.
     - `AppLimitGroupEntity.kt`: The Room entity for the AppLimitGroup.
-    - `AppTickDatabase.kt`: The main Room database class for the application, defining the database configuration, entities, and providing access to the DAOs.
-    - `AppLimitBackupManager.kt`: Serializes/deserializes backup JSON for app-limit configurations plus AppTick UI settings (theme/colors/notification-bubble options) and handles reading/writing backup files through SAF Uris.
+    - `AppTickDatabase.kt`: The main Room database class for the application, defining the database configuration, entities, migrations, and providing access to the DAOs.
+    - `AppLimitBackupManager.kt`: Serializes/deserializes backup JSON for app-limit configurations (including persisted group card expansion state) plus AppTick UI settings (theme/colors/notification-bubble options) and handles reading/writing backup files through SAF Uris.
     - `Converters.kt`: A Room type converter class that handles the conversion of complex data types, such as lists of integers and AppInGroup objects, into a format that can be stored in the database.
     - `LegacyDataMigrator.kt`: Handles the migration of data from a legacy database schema.
     - `Mapper.kt`: Contains extension functions that handle the mapping between the AppLimitGroup domain model and the AppLimitGroupEntity database entity.
@@ -135,29 +135,31 @@ Running on Darwin 25.3.0 (arm64)
     - `AppManager.kt`: Provides the installed app list used for selection while filtering safety-critical phone and messaging apps from being limited.
     - `AppSearchActivity.kt`: An activity that hosts the AppSearchScreen composable, which allows users to search for and select apps.
     - `AppUsageStats.kt`: An object that provides functions for querying app usage statistics.
-    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout, a scroll-triggered compact sticky summary header (group name + time left/used), a consistent device-preference time-range display, and a FAB options dialog (Edit/Delete) that routes to the existing edit flow.
+    - `GroupPage.kt`: Activity and composable that show group details with a card-focused layout, a scroll-triggered compact sticky summary header (group name + time left/used), a consistent device-preference time-range display, a FAB options dialog (Edit/Delete) that routes to the existing edit flow, and shared app-palette theming.
 - **groups**
     - `AppLimitGroups.kt`: A composable that displays a list of app limit groups and switches action behavior between edit/pause and lock-unlock callbacks when lock mode is active.
     - `AppInGroup.kt`: A data class that represents an app within an app limit group.
     - `AppLimitGroupDao.kt`: The DAO for the AppLimitGroupEntity, providing methods for accessing the database.
-    - `AppLimitGroupEntity.kt`: The Room entity for the AppLimitGroup.
-    - `AppLimitGroupItem.kt`: A composable that displays an app limit group, replacing pause/edit actions with lock actions when group editing is locked, and showing time ranges using the device 12/24-hour preference.
+    - `AppLimitGroupEntity.kt`: The Room entity for the AppLimitGroup, including persisted card expanded/collapsed state.
+    - `AppLimitGroupItem.kt`: A composable that displays an app limit group, replacing pause/edit actions with lock actions when group editing is locked, always showing group name + app icons + time limit, conditionally showing time left only when the group is currently enforceable, and using an expand/collapse control to reveal the rest of the card details.
     - `GroupAppItem.kt`: A composable that displays a single app within an app limit group, showing its icon, name, and a progress bar representing the time used.
     - `AppLimitGroupItem.kt`: A composable that displays an app limit group.
     - `AppLimitGroupAdapter.kt`: A RecyclerView adapter for displaying app limit groups.
-    - `AppLimitGroup.kt`: A data class that represents an app limit group, containing all the settings for the group.
+    - `AppLimitGroup.kt`: A data class that represents an app limit group, containing all the settings for the group including per-card expanded/collapsed UI state.
 - **lockModes**
     - `EnterPasswordActivity.kt`: An activity that hosts the EnterPasswordScreen composable.
-    - `EnterPasswordScreen.kt`: A composable that provides the UI for entering a password, with options to use biometric or USB key authentication, and to reset the password.
+    - `EnterPasswordScreen.kt`: A composable that provides the UI for entering a password, with options to use biometric or USB key authentication.
     - `EnterSecurityKeyActivity.kt`: An activity that handles authentication with a security key.
-    - `PasswordResetActivity.kt`: Handles Firebase email-link verification for both recovery resets and lock-mode setup email verification, then shows success UI.
-    - `PasswordResetScreen.kt`: A composable for resetting the password.
-    - `RecoveryEmailSetupActivity.kt`: An activity that hosts the RecoveryEmailSetupScreen composable.
-    - `RecoveryEmailSetupScreen.kt`: A composable for setting up a recovery email.
+    - `PasswordResetActivity.kt`: Legacy email-recovery flow screen retained in source but no longer wired in the active app flow.
+    - `PasswordResetScreen.kt`: Legacy composable for email recovery/reset, retained but no longer linked from lock-entry screens.
+    - `RecoveryResetPolicy.kt`: Legacy reset-eligibility helper retained for the old email-recovery flow.
+    - `RecoveryEmailSetupActivity.kt`: Legacy recovery-email setup activity retained in source.
+    - `RecoveryEmailSetupScreen.kt`: Legacy recovery-email setup composable retained in source.
+    - `RecoveryEmailHelper.kt`: Legacy Firebase email-link helper retained in source for deprecated recovery flow.
     - `SecurityKeySettings.kt`: A data class for the security key settings.
-    - `SecurityKeySettingsScreen.kt`: A composable that provides the UI for setting a security key, requiring Firebase-verified recovery email and offering optional settings-app lock plus optional Device Admin uninstall hardening.
-    - `SetPassword.kt`: An activity that hosts the SetPasswordScreen composable, requiring password confirmation and Firebase-verified recovery email before Password mode can start.
-    - `SetPasswordScreen.kt`: A composable that provides the UI for password setup with confirmation, recovery-email verification, optional settings-app lock, and optional Device Admin uninstall hardening.
+    - `SecurityKeySettingsScreen.kt`: A composable that provides the UI for setting a security key with optional settings-app lock plus optional Device Admin uninstall hardening (no email recovery requirement).
+    - `SetPassword.kt`: An activity that hosts the SetPasswordScreen composable, requiring password confirmation before Password mode can start.
+    - `SetPasswordScreen.kt`: A composable that provides the UI for password setup with confirmation, optional settings-app lock, and optional Device Admin uninstall hardening.
 - **newAppLimit**
     - `AppLimitViewModel.kt`: ViewModel used by app-selection and time-limit setup flows to persist groups and ensure service state matches active groups.
     - `AppSearchScreen.kt`: A composable that provides a search bar for filtering a list of applications.
@@ -168,17 +170,29 @@ Running on Darwin 25.3.0 (arm64)
     - `BatteryOptimizationHelper.kt`: Helper for checking battery/background restriction status and opening app/general battery optimization settings with fallbacks across Android devices/OEM skins.
 - **premiumMode**
     - `LockdownModeActivity.kt`: An activity that hosts the LockdownModeScreen composable.
-    - `LockdownModeScreen.kt`: A composable that allows the user to configure the "Lockdown Mode" premium feature, including optional Device Admin-backed uninstall protection.
+    - `LockdownModeScreen.kt`: A composable that allows the user to configure the "Lockdown Mode" premium feature, including an optional checkbox to lock the Settings app (requires Device Admin).
     - `LockModesBlockedScreen.kt`: A composable block page shown when lockdown prevents changing lock settings, with guidance on when settings can be changed.
     - `LockdownSettings.kt`: A data class that defines the settings for the "Lockdown Mode" premium feature.
     - `LockdownTimeActivity.kt`: An activity that hosts the LockdownTimeScreen composable.
     - `LockdownTimeScreen.kt`: A composable that allows the user to set a lockdown time.
     - `PremiumModeScreen.kt`: A composable that displays premium purchase for free users and the Lock Modes configuration page for premium users.
+- **res/drawable**
+    - `ic_premium_mode_emblem.xml`: Vector emblem (gold coin + star badge) used on the premium purchase/details page to visually convey Premium Mode.
 - **settings**
     - `ColorPickerScreen.kt`: A composable color customization screen that mirrors the current app theme mode (default dark/light or custom), keeps an icon "Match System Theme" toggle, and provides quick-pick swatches plus a spectrum wheel and brightness control for text/background/icon colors.
 - **androidTest/settings**
     - `ColorPickerScreenTest.kt`: Instrumentation tests that verify color wheel updates are isolated to the active tab target (text/background/icon), and that text-color edits do not mutate icon preview color in custom icon mode.
 - **androidTest**
+    - `AndroidManifest.xml`: Test APK manifest overrides that grant network access and enable cleartext for emulator-backed Firebase/Auth integration tests.
     - `MainActivityLockModesIntentTest.kt`: Activity-level instrumentation tests that verify locked top-bar lock-mode icon behavior routes to password/security-key unlock activities or the lockdown blocked screen.
+    - `lockModes/PasswordResetScreenTest.kt`: Compose instrumentation tests that verify reset UI blocks link sending until the mode-specific recovery email is verified.
+    - `lockModes/RecoveryEmailHelperIntegrationTest.kt`: Firebase Auth Emulator integration test that sends and verifies a recovery email-link round trip via `RecoveryEmailHelper`.
+    - `lockModes/PasswordResetActivityNavigationTest.kt`: Activity-level instrumentation tests that verify post-success routing goes to the correct password/security-key destination.
+- **debug**
+    - `AndroidManifest.xml`: Debug-only manifest override that enables cleartext traffic so Firebase/Auth emulator integration tests can connect to host emulator endpoints.
+- **test/lockModes**
+    - `RecoveryEmailEnforcerTest.kt`: Unit tests for lock-mode recovery-email enforcement prompt/flag-clear behavior.
+    - `RecoveryResetPolicyTest.kt`: Unit tests for password/security-key reset eligibility and email-match checks.
+    - `PasswordResetDestinationResolverTest.kt`: Unit tests for post-link success destination resolution (setup/reset/fallback paths).
 - **test/backgroundProcesses**
     - `NotificationGroupSelectionTest.kt`: Unit tests for `pickNotificationGroup()` active profile selection logic and `formatGroupNotificationText()` formatting, covering single/multiple/paused profiles and limitEach ranking.

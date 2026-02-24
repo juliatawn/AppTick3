@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.DialogFragment
 import java.text.SimpleDateFormat
@@ -111,5 +112,13 @@ fun DateTimePickerDialog(onConfirm: (Calendar) -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun DateTimePickerDialogPreview() {
+    AppTheme {
+        DateTimePickerDialog(onConfirm = {})
     }
 }

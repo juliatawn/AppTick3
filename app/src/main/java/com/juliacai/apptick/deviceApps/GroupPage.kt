@@ -2,7 +2,7 @@ package com.juliacai.apptick.deviceApps
 
 import android.content.Context
 import android.content.Intent
-import android.os.Build
+import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
@@ -35,21 +36,22 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DividerDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -64,14 +66,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import androidx.compose.foundation.layout.widthIn
 import com.juliacai.apptick.AppInfo
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.BaseActivity
 import com.juliacai.apptick.LockDecision
 import com.juliacai.apptick.LockMode
@@ -79,14 +87,14 @@ import com.juliacai.apptick.LockPolicy
 import com.juliacai.apptick.LockState
 import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
-import com.juliacai.apptick.ThemeModeManager
-import com.juliacai.apptick.formatClockTime
+import com.juliacai.apptick.formatTimeRanges
 import com.juliacai.apptick.lazyColumnScrollIndicator
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.AppUsageStat
 import com.juliacai.apptick.groups.GroupAppItem
 import com.juliacai.apptick.rememberScrollbarColor
 import androidx.core.content.edit
@@ -120,83 +128,26 @@ class GroupPage : BaseActivity() {
         setContent {
             val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
             val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
-            val customColorModeEnabled = ThemeModeManager.isCustomColorModeEnabled(this)
-            val isPremium = prefs.getBoolean("premium", false)
 
-            val savedPrimaryColor = prefs.getInt("custom_primary_color", 0)
-            val savedBackgroundColor = prefs.getInt("custom_background_color", 0)
-            val savedCardColor = prefs.getInt("custom_card_color", 0)
-            val savedIconColor = prefs.getInt("custom_icon_color", 0)
-            val appIconColorMode = prefs.getString("app_icon_color_mode", "system") ?: "system"
-
-            val composePrimary = if (savedPrimaryColor != 0) Color(savedPrimaryColor) else Color(0xFF3949AB)
-            val defaultBackground = if (isSystemDark) Color.Black else Color.White
-            val composeBackground = if (savedBackgroundColor != 0) Color(savedBackgroundColor) else defaultBackground
-            val composeCard = if (savedCardColor != 0) Color(savedCardColor) else composeBackground
-
-            val systemThemeIconColor =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    if (isSystemDark) dynamicDarkColorScheme(this).primary else dynamicLightColorScheme(this).primary
-                } else {
-                    null
-                }
-            val fallbackIconColor =
-                if (androidx.core.graphics.ColorUtils.calculateLuminance(composeBackground.toArgb()) > 0.5) Color.Black else Color.White
-            val composeIconColor =
-                if (isPremium && appIconColorMode == "custom" && savedIconColor != 0) Color(savedIconColor)
-                else systemThemeIconColor?.takeIf { customColorModeEnabled } ?: fallbackIconColor
-
-            val colorScheme = if (customColorModeEnabled) {
-                val useDarkScheme = composeBackground.luminance() < 0.4f
-                if (useDarkScheme) {
-                    darkColorScheme(
-                        primary = composePrimary,
-                        background = composeBackground,
-                        surface = composeCard,
-                        primaryContainer = composePrimary.copy(alpha = 0.24f),
-                        onPrimary = composeIconColor,
-                        onBackground = composeIconColor,
-                        onSurface = composeIconColor,
-                        onPrimaryContainer = composeIconColor
-                    ).copy(
-                        surfaceVariant = composeCard,
-                        surfaceContainerLowest = composeCard,
-                        surfaceContainerLow = composeCard,
-                        surfaceContainer = composeCard,
-                        surfaceContainerHigh = composeCard,
-                        surfaceContainerHighest = composeCard
-                    )
-                } else {
-                    lightColorScheme(
-                        primary = composePrimary,
-                        background = composeBackground,
-                        surface = composeCard,
-                        primaryContainer = composePrimary.copy(alpha = 0.16f),
-                        onPrimary = composeIconColor,
-                        onBackground = composeIconColor,
-                        onSurface = composeIconColor,
-                        onPrimaryContainer = composeIconColor
-                    ).copy(
-                        surfaceVariant = composeCard,
-                        surfaceContainerLowest = composeCard,
-                        surfaceContainerLow = composeCard,
-                        surfaceContainer = composeCard,
-                        surfaceContainerHigh = composeCard,
-                        surfaceContainerHighest = composeCard
-                    )
-                }
-            } else if (isSystemDark) {
-                darkColorScheme()
-            } else {
-                lightColorScheme()
+            var hasReorderedApps by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(prefs.getBoolean(PREF_APPS_REORDERED, false))
             }
+
+            val palette = AppTheme.currentPalette(this, isSystemDark)
+            val colorScheme = AppTheme.colorSchemeFromPalette(palette)
 
             MaterialTheme(colorScheme = colorScheme) {
                 val canEditGroup = !isLimitEditingLocked()
                 Scaffold(
                     topBar = {
                         TopAppBar(
-                            title = { Text("AppTick") },
+                            title = {
+                                Text(
+                                    text = "AppTick",
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            },
                             navigationIcon = {
                                 IconButton(onClick = { onBackPressedDispatcher.onBackPressed() }) {
                                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -225,9 +176,20 @@ class GroupPage : BaseActivity() {
                         group?.let {
                             GroupDetails(
                                 group = it,
+                                showReorderHint = !hasReorderedApps,
+                                onDismissReorderHint = {
+                                    if (!hasReorderedApps) {
+                                        hasReorderedApps = true
+                                        prefs.edit { putBoolean(PREF_APPS_REORDERED, true) }
+                                    }
+                                },
                                 onAppsReordered = { reorderedApps ->
                                     val current = group ?: return@GroupDetails
                                     if (current.apps == reorderedApps) return@GroupDetails
+                                    if (!hasReorderedApps) {
+                                        hasReorderedApps = true
+                                        prefs.edit { putBoolean(PREF_APPS_REORDERED, true) }
+                                    }
                                     val updatedGroup = current.copy(apps = reorderedApps)
                                     group = updatedGroup
                                     lifecycleScope.launch {
@@ -251,6 +213,14 @@ class GroupPage : BaseActivity() {
                                 putExtra(MainActivity.EXTRA_EDIT_GROUP_ID, currentGroup.id)
                             }
                             startActivity(editIntent)
+                            finish()
+                        },
+                        onDuplicate = {
+                            showActionsDialog = false
+                            val duplicateIntent = Intent(this@GroupPage, MainActivity::class.java).apply {
+                                putExtra(MainActivity.EXTRA_DUPLICATE_GROUP_ID, currentGroup.id)
+                            }
+                            startActivity(duplicateIntent)
                             finish()
                         },
                         onDelete = {
@@ -331,6 +301,7 @@ class GroupPage : BaseActivity() {
 
     companion object {
         private const val EXTRA_GROUP_ID = "extra_group_id"
+        private const val PREF_APPS_REORDERED = "appsReorderedHintDismissed"
 
         fun newIntent(context: Context, group: AppLimitGroup): Intent {
             return Intent(context, GroupPage::class.java).apply {
@@ -340,37 +311,64 @@ class GroupPage : BaseActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupActionsDialog(
     onDismiss: () -> Unit,
     onEdit: () -> Unit,
+    onDuplicate: () -> Unit = {},
     onDelete: () -> Unit
 ) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Group Options") },
-        text = { Text("Choose what you want to do with this app limit group.") },
-        confirmButton = {
-            Button(onClick = onEdit) {
-                Text("Edit")
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDelete) {
+    BasicAlertDialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .widthIn(min = 280.dp, max = 560.dp)
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("Group Options", style = MaterialTheme.typography.headlineSmall)
+                Text("Choose what you want to do with this app limit group.")
+                Spacer(modifier = Modifier.height(6.dp))
+                Button(
+                    onClick = onEdit,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Edit")
+                }
+                OutlinedButton(
+                    onClick = onDuplicate,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Duplicate")
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Delete")
                 }
-                OutlinedButton(onClick = onDismiss) {
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
                     Text("Cancel")
                 }
             }
         }
-    )
+    }
 }
 
 @Composable
 fun GroupDetails(
     group: AppLimitGroup,
+    showReorderHint: Boolean,
+    onDismissReorderHint: () -> Unit = {},
     onAppsReordered: (List<com.juliacai.apptick.appLimit.AppInGroup>) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -411,7 +409,7 @@ fun GroupDetails(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize() ) {
         LazyColumn(
             state = listState,
             modifier = Modifier.lazyColumnScrollIndicator(listState, scrollbarColor),
@@ -440,13 +438,21 @@ fun GroupDetails(
                         )
                         Text(
                             text = "Time Left",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Text(
-                            text = "Time Used: ${formatTimeRemaining(groupUsedMillis)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        LabelValueText(
+                            label = "Time Used:",
+                            value = formatTimeRemaining(groupUsedMillis),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        LabelValueText(
+                            label = "Next Reset:",
+                            value = formatNextReset(group.nextResetTime),
+                            style = MaterialTheme.typography.bodySmall
                         )
 
                         if (group.cumulativeTime) {
@@ -461,99 +467,126 @@ fun GroupDetails(
                             }
                         }
 
-                        Divider()
+                        HorizontalDivider(
+                            Modifier,
+                            DividerDefaults.Thickness,
+                            DividerDefaults.color
+                        )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
                         ) {
-                            AssistChip(
-                                onClick = {},
-                                enabled = false,
-                                label = { Text("${group.timeHrLimit}h ${group.timeMinLimit}m Limit") },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                AssistChip(
+                                    onClick = {},
+                                    enabled = false,
+                                    label = { Text("${group.timeHrLimit}h ${group.timeMinLimit}m Limit") },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 )
-                            )
-                            AssistChip(
-                                onClick = {},
-                                enabled = false,
-                                label = { Text(if (group.limitEach) "Limit for EACH" else "Limit for ALL") },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                    disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                AssistChip(
+                                    onClick = {},
+                                    enabled = false,
+                                    label = { Text(if (group.limitEach) "Limit for EACH" else "Limit for ALL") },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                        disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
                                 )
-                            )
-                        }
+                            }
 
-                        if (group.cumulativeTime) {
-                            AssistChip(
-                                onClick = {},
-                                enabled = false,
-                                label = { Text("Cumulative Time Enabled") },
-                                colors = AssistChipDefaults.assistChipColors(
-                                    disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
-                                    disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                            if (group.cumulativeTime) {
+                                AssistChip(
+                                    onClick = {},
+                                    enabled = false,
+                                    label = { Text("Cumulative Time Enabled") },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        disabledContainerColor = MaterialTheme.colorScheme.tertiaryContainer,
+                                        disabledLabelColor = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
                                 )
-                            )
+                            }
                         }
 
                         if (group.useTimeRange) {
-                            Text(
-                                text = "Active Hours: ${formatTime(context, group.startHour, group.startMinute)} - ${
-                                    formatTime(
-                                        context,
-                                        group.endHour,
-                                        group.endMinute
-                                    )
-                                }",
-                                style = MaterialTheme.typography.bodyMedium
+                            LabelValueText(
+                                label = "Active Hours:",
+                                value = formatTimeRanges(context, group),
+                                style = MaterialTheme.typography.bodySmall
                             )
-                            Text(
-                                text = if (group.blockOutsideTimeRange) {
-                                    "Outside Range: Block Apps"
+                            LabelValueText(
+                                label = "Outside Range:",
+                                value = if (group.blockOutsideTimeRange) {
+                                    "Block Apps"
                                 } else {
-                                    "Outside Range: Allow No Limits"
+                                    "Allow No Limits"
                                 },
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodySmall
                             )
                         }
 
-                        Text(
-                            text = "Active Days: ${formatDays(group.weekDays)}",
-                            style = MaterialTheme.typography.bodyMedium
+                        LabelValueText(
+                            label = "Active Days:",
+                            value = formatDays(group.weekDays),
+                            style = MaterialTheme.typography.bodySmall
                         )
 
-                        val resetText = if (group.resetMinutes > 0) {
+                        val resetLabelAndValue = if (group.resetMinutes > 0) {
                             val interval = "${group.resetMinutes / 60}h ${group.resetMinutes % 60}m"
                             if (group.cumulativeTime) {
-                                "Cumulative: Daily + every $interval"
+                                "Cumulative:" to "Daily + every $interval"
                             } else {
-                                "Resets: Daily every $interval"
+                                "Resets:" to "Daily every $interval"
                             }
                         } else {
-                            "Resets: Daily"
+                            "Resets:" to "Daily"
                         }
-                        Text(
-                            text = resetText,
-                            style = MaterialTheme.typography.bodyMedium
+                        LabelValueText(
+                            label = resetLabelAndValue.first,
+                            value = resetLabelAndValue.second,
+                            style = MaterialTheme.typography.bodySmall
                         )
 
-                        Text(
-                            text = "Next Reset: ${formatNextReset(group.nextResetTime)}",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+
                     }
                 }
             }
 
-            item {
-                Text(
-                    text = "Tip: Long-press and drag app cards to reorder.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            if (showReorderHint) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(
+                                text = "Long-press and drag app cards to reorder.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                            ) {
+                                TextButton(
+                                    onClick = onDismissReorderHint,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                ) {
+                                    Text("DISMISS")
+                                }
+                            }
+
+                        }
+                    }
+                }
             }
 
             items(orderedApps, key = { it.appPackage }) { app ->
@@ -676,13 +709,15 @@ fun GroupDetails(
                         style = MaterialTheme.typography.titleMedium
                     )
                     Column(horizontalAlignment = Alignment.End) {
-                        Text(
-                            text = "Left: ${formatTimeRemaining(group.timeRemaining)}",
+                        LabelValueText(
+                            label = "Left:",
+                            value = formatTimeRemaining(group.timeRemaining),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
-                        Text(
-                            text = "Used: ${formatTimeRemaining(groupUsedMillis)}",
+                        LabelValueText(
+                            label = "Used:",
+                            value = formatTimeRemaining(groupUsedMillis),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -704,8 +739,25 @@ private fun formatNextReset(nextResetMillis: Long): String {
     return SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(nextResetMillis))
 }
 
-private fun formatTime(context: Context, hour: Int, minute: Int): String {
-    return formatClockTime(context, hour, minute)
+@Composable
+private fun LabelValueText(
+    label: String,
+    value: String,
+    style: TextStyle,
+    color: Color = MaterialTheme.colorScheme.onSurface,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text = buildAnnotatedString {
+            withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                append("$label ")
+            }
+            append(value)
+        },
+        style = style,
+        color = color,
+        modifier = modifier
+    )
 }
 
 private fun formatDays(days: List<Int>?): String {
@@ -713,5 +765,88 @@ private fun formatDays(days: List<Int>?): String {
     val names = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     return days.sorted().joinToString(", ") { dayIndex ->
         if (dayIndex in 1..7) names[dayIndex - 1] else "?"
+    }
+}
+
+private fun previewGroup(): AppLimitGroup {
+    return AppLimitGroup(
+        id = 1L,
+        name = "Social Media",
+        timeHrLimit = 1,
+        timeMinLimit = 30,
+        timeRemaining = 5_400_000L,
+        limitEach = false,
+        cumulativeTime = true,
+        useTimeRange = true,
+        startHour = 9,
+        startMinute = 0,
+        endHour = 17,
+        endMinute = 0,
+        blockOutsideTimeRange = true,
+        weekDays = listOf(1, 2, 3, 4, 5),
+        nextResetTime = 1_768_507_200_000L, // Jan 1, 2026 12:00 PM UTC
+        apps = listOf(
+            com.juliacai.apptick.appLimit.AppInGroup(
+                appName = "Instagram",
+                appPackage = "com.instagram.android",
+                appIcon = null
+            ),
+            com.juliacai.apptick.appLimit.AppInGroup(
+                appName = "YouTube",
+                appPackage = "com.google.android.youtube",
+                appIcon = null
+            ),
+            com.juliacai.apptick.appLimit.AppInGroup(
+                appName = "TikTok",
+                appPackage = "com.zhiliaoapp.musically",
+                appIcon = null
+            )
+        ),
+        perAppUsage = listOf(
+            AppUsageStat("com.instagram.android", 1_500_000L),
+            AppUsageStat("com.google.android.youtube", 1_050_000L),
+            AppUsageStat("com.zhiliaoapp.musically", 720_000L)
+        )
+    )
+}
+
+@Preview(name = "Group Details Light", showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+fun GroupDetailsLightPreview() {
+    MaterialTheme {
+        GroupDetails(
+            group = previewGroup(),
+            showReorderHint = true
+        )
+    }
+}
+
+@Preview(
+    name = "Group Details Dark",
+    showBackground = true,
+    widthDp = 411,
+    heightDp = 891,
+    uiMode = Configuration.UI_MODE_NIGHT_YES
+)
+@Composable
+fun GroupDetailsDarkPreview() {
+    MaterialTheme {
+        GroupDetails(
+            group = previewGroup(),
+            showReorderHint = true
+        )
+    }
+}
+
+@Preview(name = "Group Actions Dialog")
+@Composable
+fun GroupActionsDialogPreview() {
+    MaterialTheme {
+        GroupActionsDialog(
+            onDismiss = {},
+            onEdit = {},
+            onDuplicate = {},
+            onDelete = {}
+        )
     }
 }

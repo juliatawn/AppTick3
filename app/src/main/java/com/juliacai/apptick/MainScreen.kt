@@ -1,5 +1,6 @@
 package com.juliacai.apptick
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -54,13 +56,18 @@ fun MainScreen(
     onOpenDontKillMyApp: () -> Unit,
     onRefreshBatteryStatus: () -> Unit,
     onDismissBatteryWarning: () -> Unit,
+    onDismissGroupDetailsHint: () -> Unit,
     listContent: @Composable () -> Unit
 ) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(text = "AppTick")
+                    Text(
+                        text = "AppTick",
+                        maxLines = 1,
+                        softWrap = false
+                    )
                 },
                 actions = {
                     IconButton(
@@ -97,7 +104,11 @@ fun MainScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onFabClick) {
+            FloatingActionButton(
+                onClick = onFabClick,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary
+            ) {
                 Icon(
                     imageVector = Icons.Default.Add,
                     contentDescription = stringResource(id = R.string.add_app_limit)
@@ -124,7 +135,8 @@ fun MainScreen(
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
                             batteryWarningText,
-                            style = MaterialTheme.typography.bodyMedium
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         if (batteryWarningDetails.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
@@ -137,7 +149,8 @@ fun MainScreen(
                                         append(" ")
                                         append(value)
                                     },
-                                    style = MaterialTheme.typography.bodyMedium
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
@@ -200,15 +213,29 @@ fun MainScreen(
                                     .fillMaxWidth()
                                     .padding(horizontal = 12.dp, vertical = 6.dp)
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.Center,
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
                                     Text(
-                                        text = "Tap any group card to open its details page",
-                                        style = MaterialTheme.typography.bodyMedium
+                                        text = "Tap any group card to open its details page.\nYou can also hold and drag any group to reorder them",
+                                        style = MaterialTheme.typography.bodyLarge
                                     )
-                                    Text(
-                                        text = "\u2193 \u2193 \u2193",
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                    ) {
+                                        TextButton(
+                                            onClick = onDismissGroupDetailsHint,
+                                            modifier = Modifier
+                                                .align(Alignment.BottomEnd)
+                                        ) {
+                                            Text("DISMISS")
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -218,5 +245,31 @@ fun MainScreen(
             }
 
         }
+    }
+}
+
+@Preview
+@Composable
+fun MainScreenPreview() {
+    AppTheme {
+        MainScreen(
+            appLimitGroupCount = 1,
+            showLockedIcon = true,
+            showGroupDetailsHint = true,
+            showBatteryWarning = true,
+            batteryWarningDismissable = true,
+            batteryWarningText = "Battery warning text",
+            batteryWarningDetails = listOf("Detail 1" to "Value 1", "Detail 2" to "Value 2"),
+            onFabClick = {},
+            onSettingsClick = {},
+            onPremiumClick = {},
+            onOpenAppBatterySettings = {},
+            onOpenGeneralBatterySettings = {},
+            onOpenDontKillMyApp = {},
+            onRefreshBatteryStatus = {},
+            onDismissBatteryWarning = {},
+            onDismissGroupDetailsHint = {},
+            listContent = { Text("List content") }
+        )
     }
 }

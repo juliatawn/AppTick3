@@ -31,8 +31,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.juliacai.apptick.AppTheme
 import coil.compose.rememberAsyncImagePainter
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.deviceApps.AppListViewModel
@@ -56,7 +58,13 @@ fun AppSelectScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Select Apps to Limit") },
+                title = {
+                    Text(
+                        text = "Select Apps to Limit",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(
                         onClick = onCancel,
@@ -134,5 +142,20 @@ fun AppListItem(
         Spacer(modifier = Modifier.width(16.dp))
         Text(text = app.appName ?: "", modifier = Modifier.weight(1f))
         Checkbox(checked = isSelected, onCheckedChange = { onAppSelected() })
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AppListItemPreview() {
+    AppTheme {
+        AppListItem(
+            app = AppInfo(
+                appName = "Spotify",
+                appPackage = "com.spotify.music"
+            ),
+            isSelected = true,
+            onAppSelected = {}
+        )
     }
 }

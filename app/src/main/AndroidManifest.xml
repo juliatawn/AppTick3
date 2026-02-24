@@ -47,30 +47,11 @@
         <activity android:name=".deviceApps.AppSearchActivity" />
         <activity android:name=".lockModes.EnterPasswordActivity" />
         <activity android:name=".lockModes.EnterSecurityKeyActivity" />
-        <activity
-            android:name=".lockModes.PasswordResetActivity"
-            android:exported="true"
-            android:launchMode="singleTop">
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data
-                    android:host="apptick-f16dc.firebaseapp.com"
-                    android:pathPrefix="/__/auth/links"
-                    android:scheme="https" />
-                <data
-                    android:host="apptick-f16dc.web.app"
-                    android:pathPrefix="/__/auth/links"
-                    android:scheme="https" />
-            </intent-filter>
-        </activity>
-        <activity android:name=".lockModes.RecoveryEmailSetupActivity" />
+        <activity android:name=".lockModes.UsbSecurityKeySetupActivity" />
         <activity android:name=".lockModes.SetPassword" />
 
         <activity android:name=".premiumMode.LockdownModeActivity" />
         <activity android:name=".premiumMode.LockdownTimeActivity" />
-        <activity android:name=".premiumMode.ColorCustomizationActivity" />
         <activity android:name=".deviceApps.GroupPage" />
 
 <!--        <service-->

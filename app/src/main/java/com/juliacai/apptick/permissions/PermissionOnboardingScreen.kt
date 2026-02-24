@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -47,10 +48,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.R
 import com.juliacai.apptick.verticalScrollWithIndicator
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -77,7 +80,7 @@ private val steps = listOf(
     PermissionStepData(
         title = "Overlay Permission",
         description = "AppTick needs to display blocking screens over other apps when time limits are reached.",
-        whyNeeded = "• Show blocking screens when time limits are reached\n• Display usage statistics and warnings\n• Prevent access to blocked apps\n• Help you stay focused",
+        whyNeeded = "• Show blocking screens when time limits are reached\n• Display usage statistics\n• Prevent access to blocked apps\n• Help you stay focused",
         howToSteps = listOf(
             "Tap the button below to open Settings",
             "Find 'AppTick' in the list",
@@ -88,7 +91,7 @@ private val steps = listOf(
     PermissionStepData(
         title = "Usage Access Permission",
         description = "AppTick needs to track app usage so it can enforce the time limits you set.",
-        whyNeeded = "• Track time spent in apps\n• Set and enforce time limits\n• Show usage statistics\n• Block apps when limits are reached",
+        whyNeeded = "• Track time spent in apps\n• Set and enforce time limits\n• Show usage for time limit\n• Block apps when limits are reached",
         howToSteps = listOf(
             "Tap the button below to open Settings",
             "Find 'AppTick' in the list",
@@ -99,7 +102,7 @@ private val steps = listOf(
     PermissionStepData(
         title = "Notification Permission",
         description = "AppTick needs notifications to show time limit warnings and keep its background service running.",
-        whyNeeded = "• Show time limit warnings before apps are blocked\n• Display remaining time in the notification bar\n• Keep the usage-tracking service running reliably",
+        whyNeeded = "• Show time limit warnings before apps are blocked\n• Display remaining time in the notification bar\n• Keep the usage tracking service running reliably",
         howToSteps = listOf(
             "Tap the button below to open Settings",
             "Go to Notifications",
@@ -173,38 +176,54 @@ fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
     val stepData = steps[currentStep]
 
     Scaffold { padding ->
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScrollWithIndicator()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Step indicator dots
-            StepIndicator(total = steps.size, current = currentStep)
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                "Step ${currentStep + 1} of ${steps.size}",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // Animated step content
-            AnimatedContent(
-                targetState = currentStep,
-                transitionSpec = {
-                    (slideInHorizontally { it } + fadeIn())
-                        .togetherWith(slideOutHorizontally { -it } + fadeOut())
-                },
-                label = "permissionStep"
-            ) { step ->
-                PermissionStepContent(
-                    data = steps[step],
-                    stepIndex = step,
-                    onOpenSettings = { launchSettingsForStep(step, context) }
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScrollWithIndicator()
+                    .padding(10.dp)
+                    .padding(bottom = 100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Step indicator dots
+                StepIndicator(total = steps.size, current = currentStep)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Step ${currentStep + 1} of ${steps.size}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Animated step content
+                AnimatedContent(
+                    targetState = currentStep,
+                    transitionSpec = {
+                        (slideInHorizontally { it } + fadeIn())
+                            .togetherWith(slideOutHorizontally { -it } + fadeOut())
+                    },
+                    label = "permissionStep"
+                ) { step ->
+                    PermissionStepContent(
+                        data = steps[step],
+                        stepIndex = step
+                    )
+                }
+            }
+
+            Button(
+                onClick = { launchSettingsForStep(currentStep, context) },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 10.dp, vertical = 10.dp)
+            ) {
+                Text(stepData.buttonText)
             }
         }
     }
@@ -215,8 +234,7 @@ fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
 @Composable
 private fun PermissionStepContent(
     data: PermissionStepData,
-    stepIndex: Int,
-    onOpenSettings: () -> Unit
+    stepIndex: Int
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -227,21 +245,21 @@ private fun PermissionStepContent(
             0 -> Image(
                 painter = painterResource(id = R.drawable.ic_overlay),
                 contentDescription = null,
-                modifier = Modifier.height(64.dp)
+                modifier = Modifier.height(30.dp)
             )
             1 -> Image(
                 painter = painterResource(id = R.drawable.ic_usage_stats),
                 contentDescription = null,
-                modifier = Modifier.height(64.dp)
+                modifier = Modifier.height(30.dp)
             )
             2 -> Image(
                 imageVector = Icons.Rounded.Notifications,
                 contentDescription = null,
-                modifier = Modifier.height(64.dp)
+                modifier = Modifier.height(30.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
         Text(
             text = data.title,
             style = MaterialTheme.typography.headlineSmall,
@@ -254,7 +272,7 @@ private fun PermissionStepContent(
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         // How-to card
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -268,7 +286,7 @@ private fun PermissionStepContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         // Why-needed card
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -279,11 +297,6 @@ private fun PermissionStepContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth()) {
-            Text(data.buttonText)
-        }
     }
 }
 
@@ -291,7 +304,7 @@ private fun PermissionStepContent(
 
 @Composable
 private fun StepIndicator(total: Int, current: Int) {
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy( 8.dp)) {
         repeat(total) { index ->
             Box(
                 modifier = Modifier
@@ -329,4 +342,26 @@ private fun rememberResumeTrigger(): Int {
     }
 
     return counter.intValue
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PermissionStepOverlayPreview() {
+    AppTheme {
+        PermissionStepContent(
+            data = steps[0],
+            stepIndex = 0
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PermissionStepNotificationPreview() {
+    AppTheme {
+        PermissionStepContent(
+            data = steps[2],
+            stepIndex = 2
+        )
+    }
 }

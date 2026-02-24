@@ -12,7 +12,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 import coil.compose.rememberAsyncImagePainter
 import com.juliacai.apptick.AppInfo
 
@@ -43,4 +45,18 @@ private fun formatTimeUsed(milliseconds: Long): String {
     val hours = milliseconds / 3_600_000
     val minutes = (milliseconds % 3_600_000) / 60_000
     return "$hours hr $minutes min"
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AppUsageRowPreview() {
+    AppTheme {
+        AppUsageRow(
+            appInfo = AppInfo(
+                appName = "Instagram",
+                appPackage = "com.instagram.android",
+                appTimeUse = 75 * 60_000L
+            )
+        )
+    }
 }

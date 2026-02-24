@@ -2,6 +2,7 @@ package com.juliacai.apptick.groups
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -18,8 +19,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
+import com.juliacai.apptick.AppTheme
+import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.lazyColumnScrollIndicator
 import com.juliacai.apptick.rememberScrollbarColor
@@ -30,6 +34,7 @@ fun AppLimitGroupsList(
     onCardClick: (AppLimitGroup) -> Unit,
     onEditClick: (AppLimitGroup) -> Unit,
     onLockClick: (AppLimitGroup) -> Unit,
+    onExpandToggle: (AppLimitGroup) -> Unit,
     isEditingLocked: Boolean,
     onPauseToggle: (AppLimitGroup) -> Unit = {},
     onDelete: (AppLimitGroup) -> Unit = {},
@@ -80,7 +85,8 @@ fun AppLimitGroupsList(
         state = listState,
         modifier = Modifier
             .padding(8.dp)
-            .lazyColumnScrollIndicator(listState, scrollbarColor)
+            .lazyColumnScrollIndicator(listState, scrollbarColor),
+        contentPadding = PaddingValues(bottom = 104.dp)
     ) {
         items(
             count = orderedGroups.size,
@@ -156,7 +162,9 @@ fun AppLimitGroupsList(
 
             AppLimitGroupItem(
                 group = group,
+                isExpanded = group.isExpanded,
                 isEditingLocked = isEditingLocked,
+                onExpandToggle = onExpandToggle,
                 onLockClick = onLockClick,
                 onPauseToggle = onPauseToggle,
                 onEdit = onEditClick,
@@ -167,5 +175,42 @@ fun AppLimitGroupsList(
                     .graphicsLayer { translationY = if (isDragging) draggingOffsetY else 0f }
             )
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AppLimitGroupsListPreview() {
+    AppTheme {
+        AppLimitGroupsList(
+            groups = listOf(
+                AppLimitGroup(
+                    id = 1L,
+                    name = "Social",
+                    timeHrLimit = 1,
+                    timeMinLimit = 30,
+                    weekDays = listOf(1, 2, 3, 4, 5),
+                    apps = listOf(
+                        AppInGroup("Instagram", "com.instagram.android", null),
+                        AppInGroup("TikTok", "com.zhiliaoapp.musically", null)
+                    )
+                ),
+                AppLimitGroup(
+                    id = 2L,
+                    name = "Streaming",
+                    timeHrLimit = 2,
+                    timeMinLimit = 0,
+                    weekDays = listOf(6, 7),
+                    apps = listOf(
+                        AppInGroup("YouTube", "com.google.android.youtube", null)
+                    )
+                )
+            ),
+            onCardClick = {},
+            onEditClick = {},
+            onLockClick = {},
+            onExpandToggle = {},
+            isEditingLocked = true
+        )
     }
 }

@@ -62,6 +62,24 @@ class LegacyMigrationIntegrationTest {
     }
 
     @Test
+    fun migrate_isIdempotentWhenLegacyFileReappears() = runTest {
+        val line =
+            "0:1700000000000:1:30:true:Focus:2:[1, 2, 7]:[com.instagram.android, com.google.android.youtube]:false"
+        val existing = LegacyAppLimitLineParser.parseLineToEntity(line, nowMillis = 1700000000000L)
+        requireNotNull(existing)
+        dao.insertAppLimitGroup(existing)
+
+        legacyFile.writeText("$line\n")
+
+        LegacyDataMigrator(context, dao).migrate()
+
+        val groups = dao.getAllAppLimitGroupsImmediate()
+        assertThat(groups).hasSize(1)
+        assertThat(groups.first().name).isEqualTo("Focus")
+        assertThat(legacyFile.exists()).isFalse()
+    }
+
+    @Test
     fun migrate_prefersNewLockModeAndSanitizesLegacyPasswordType() {
         val prefs = context.getSharedPreferences("groupPrefs_legacy_migration_test", Context.MODE_PRIVATE)
         prefs.edit()

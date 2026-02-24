@@ -2,6 +2,8 @@ package com.juliacai.apptick.lockModes
 
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.Context
+import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
@@ -29,16 +31,17 @@ class EnterPasswordActivity : AppCompatActivity() {
         setupBiometricAuth()
 
         setContent {
-            EnterPasswordScreen(
-                onPasswordSubmit = { password -> verifyPassword(password) },
-                onBiometricClick = { showBiometricPrompt() },
-                onUsbKeyClick = { authenticateWithSecurityKey() },
-                onForgotPasswordClick = { 
-                    startActivity(Intent(this, PasswordResetActivity::class.java))
-                },
-                isBiometricVisible = isBiometricEnabledForPasswordMode() && canUseBiometric(),
-                isUsbKeyVisible = prefs.getBoolean("usb_key_enabled", false)
-            )
+            AppTheme {
+                EnterPasswordScreen(
+                    onPasswordSubmit = { password -> verifyPassword(password) },
+                    onCancelClick = { finish() },
+                    onBiometricClick = { showBiometricPrompt() },
+                    onUsbKeyClick = { authenticateWithSecurityKey() },
+                    isBiometricVisible = isBiometricEnabledForPasswordMode() && canUseBiometric(),
+                    isUsbKeyVisible = prefs.getBoolean("usb_key_enabled", false) &&
+                        UsbSecurityKey.readRegisteredKey(prefs) != null
+                )
+            }
         }
     }
 
@@ -92,17 +95,40 @@ class EnterPasswordActivity : AppCompatActivity() {
     }
 
     private fun isBiometricEnabledForPasswordMode(): Boolean {
-        return prefs.getBoolean("password_biometric_enabled", true)
+        return prefs.getBoolean("password_biometric_enabled", false)
     }
 
     private fun authenticateWithSecurityKey() {
-        // TODO: Implement USB security key authentication logic
-        Toast.makeText(this, "USB Key authentication not yet implemented", Toast.LENGTH_SHORT).show()
-        // For now, we'll just simulate a successful authentication
+        val registeredKey = UsbSecurityKey.readRegisteredKey(prefs)
+        if (registeredKey == null) {
+            Toast.makeText(this, "No USB security key configured", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        val matching = UsbSecurityKey.findMatchingConnectedDevice(usbManager, registeredKey)
+        if (matching == null) {
+            Toast.makeText(this, "Registered USB key not detected", Toast.LENGTH_SHORT).show()
+            return
+        }
         unlockAndFinish()
     }
 
     private fun unlockAndFinish() {
+        val isSettingsSessionUnlock = intent.getBooleanExtra(
+            SettingsUnlockSession.EXTRA_SETTINGS_SESSION_UNLOCK,
+            false
+        )
+        if (isSettingsSessionUnlock) {
+            sendBroadcast(
+                Intent(SettingsUnlockSession.ACTION_SETTINGS_SESSION_UNLOCKED).apply {
+                    setPackage(packageName)
+                    putExtra(SettingsUnlockSession.EXTRA_UNLOCK_MODE, SettingsUnlockSession.MODE_PASSWORD)
+                }
+            )
+            finish()
+            return
+        }
+
         prefs.edit {
             putBoolean("passUnlocked", true)
             putBoolean("securityKeyUnlocked", false)

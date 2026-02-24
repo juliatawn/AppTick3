@@ -21,8 +21,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.createBitmap
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.AppInfo
 
 @Composable
@@ -91,5 +93,21 @@ fun GroupAppItem(
                 Text("$timeRemaining min remaining", style = MaterialTheme.typography.bodySmall)
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun GroupAppItemPreview() {
+    AppTheme {
+        GroupAppItem(
+            appInfo = AppInfo(
+                appName = "Chrome",
+                appPackage = "com.android.chrome",
+                appTimeUse = 28 * 60_000L
+            ),
+            timeLimit = 60,
+            limitEach = true
+        )
     }
 }

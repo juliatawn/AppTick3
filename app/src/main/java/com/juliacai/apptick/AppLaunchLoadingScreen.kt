@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -35,5 +36,13 @@ fun AppLaunchLoadingScreen() {
             text = "Loading...",
             style = MaterialTheme.typography.bodyMedium
         )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AppLaunchLoadingScreenPreview() {
+    AppTheme {
+        AppLaunchLoadingScreen()
     }
 }

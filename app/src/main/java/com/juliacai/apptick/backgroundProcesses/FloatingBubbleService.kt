@@ -134,7 +134,14 @@ class FloatingBubbleService : Service() {
 
     private fun formatBubbleCountdown(timeRemainingMillis: Long): String {
         val safeMillis = timeRemainingMillis.coerceAtLeast(0L)
-        val totalMinutes = if (safeMillis <= 0L) 0L else maxOf(1L, safeMillis / 60_000L)
+        if (safeMillis <= 60_000L) {
+            val totalSeconds = (safeMillis + 999L) / 1_000L
+            val minutes = totalSeconds / 60L
+            val seconds = totalSeconds % 60L
+            return String.format("%02d:%02d", minutes, seconds)
+        }
+
+        val totalMinutes = safeMillis / 60_000L
         val hours = totalMinutes / 60L
         val minutes = totalMinutes % 60L
         return String.format("%02d:%02d", hours, minutes)

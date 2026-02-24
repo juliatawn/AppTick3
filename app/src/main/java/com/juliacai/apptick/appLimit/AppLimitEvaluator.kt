@@ -1,5 +1,7 @@
 package com.juliacai.apptick.appLimit
 
+import com.juliacai.apptick.getConfiguredTimeRanges
+import com.juliacai.apptick.isNowWithinAnyTimeRange
 import com.juliacai.apptick.groups.AppLimitGroup
 import java.util.Calendar
 
@@ -20,16 +22,16 @@ object AppLimitEvaluator {
 
     fun isWithinTimeRange(group: AppLimitGroup, nowMillis: Long = System.currentTimeMillis()): Boolean {
         if (!group.useTimeRange) return true
-        val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
-        val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-        val startMinutes = group.startHour * 60 + group.startMinute
-        val endMinutes = group.endHour * 60 + group.endMinute
+        return isNowWithinAnyTimeRange(group.getConfiguredTimeRanges(), nowMillis)
+    }
 
-        return if (startMinutes <= endMinutes) {
-            nowMinutes in startMinutes..endMinutes
-        } else {
-            nowMinutes >= startMinutes || nowMinutes <= endMinutes
-        }
+    fun shouldBlockOutsideTimeRange(
+        group: AppLimitGroup,
+        nowMillis: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (!group.useTimeRange) return false
+        if (!group.blockOutsideTimeRange) return false
+        return !isWithinTimeRange(group, nowMillis)
     }
 
     fun isLimitReached(group: AppLimitGroup): Boolean = group.timeRemaining <= 0L

@@ -43,6 +43,9 @@ interface AppLimitGroupDao {
     @Query("UPDATE app_limit_groups SET timeRemaining = :timeRemaining WHERE id = :groupId")
     suspend fun updateTimeRemaining(groupId: Long, timeRemaining: Long)
 
+    @Query("UPDATE app_limit_groups SET isExpanded = :isExpanded WHERE id = :groupId")
+    suspend fun updateGroupExpanded(groupId: Long, isExpanded: Boolean)
+
     @Delete
     suspend fun deleteAppLimitGroup(appLimitGroup: AppLimitGroupEntity)
 

@@ -6,6 +6,8 @@ import com.juliacai.apptick.TimeManager
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppUsageStat
 import java.io.File
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class LegacyDataMigrator(
     private val context: Context,
@@ -13,29 +15,58 @@ class LegacyDataMigrator(
 ) {
 
     suspend fun migrate() {
-        val legacyFile = File(context.filesDir, "appLimitPrefs")
-        if (!legacyFile.exists()) {
-            Log.i("LegacyDataMigrator", "No legacy data file found.")
-            return
-        }
+        MIGRATION_MUTEX.withLock {
+            val legacyFile = File(context.filesDir, "appLimitPrefs")
+            if (!legacyFile.exists()) {
+                Log.i("LegacyDataMigrator", "No legacy data file found.")
+                return
+            }
 
-        try {
-            val lines = legacyFile.readLines()
-            for (line in lines) {
-                if (line.isNotBlank()) {
-                    val entity = LegacyAppLimitLineParser.parseLineToEntity(line)
-                    if (entity != null) {
+            try {
+                val lines = legacyFile.readLines()
+                val existingKeys = appLimitGroupDao
+                    .getAllAppLimitGroupsImmediate()
+                    .mapTo(mutableSetOf(), ::dedupeKey)
+
+                var insertedCount = 0
+                for (line in lines) {
+                    if (line.isBlank()) continue
+                    val entity = LegacyAppLimitLineParser.parseLineToEntity(line) ?: continue
+                    val key = dedupeKey(entity)
+                    if (existingKeys.add(key)) {
                         appLimitGroupDao.insertAppLimitGroup(entity)
+                        insertedCount++
                     }
                 }
+                legacyFile.delete()
+                Log.i(
+                    "LegacyDataMigrator",
+                    "Legacy data migration completed. Inserted $insertedCount new groups."
+                )
+            } catch (e: Exception) {
+                Log.e("LegacyDataMigrator", "Error migrating legacy data", e)
             }
-            legacyFile.delete()
-            Log.i("LegacyDataMigrator", "Legacy data migrated successfully.")
-        } catch (e: Exception) {
-            Log.e("LegacyDataMigrator", "Error migrating legacy data", e)
         }
     }
 
+    private fun dedupeKey(entity: AppLimitGroupEntity): String {
+        val apps = entity.apps.map { it.appPackage.trim() }.sorted().joinToString("|")
+        val days = entity.weekDays.sorted().joinToString(",")
+        return listOf(
+            entity.name.orEmpty().trim(),
+            entity.timeHrLimit.toString(),
+            entity.timeMinLimit.toString(),
+            entity.limitEach.toString(),
+            entity.resetMinutes.toString(),
+            days,
+            apps,
+            entity.paused.toString()
+        ).joinToString("::")
+    }
+
+    companion object {
+        private val MIGRATION_MUTEX = Mutex()
+    }
 }
 
 internal object LegacyAppLimitLineParser {

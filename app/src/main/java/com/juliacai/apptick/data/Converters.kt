@@ -5,6 +5,7 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppUsageStat
+import com.juliacai.apptick.groups.TimeRange
 
 class Converters {
     @TypeConverter
@@ -37,6 +38,17 @@ class Converters {
     @TypeConverter
     fun toAppUsageStatList(value: String): List<AppUsageStat> {
         val listType = object : TypeToken<List<AppUsageStat>>() {}.type
+        return Gson().fromJson(value, listType)
+    }
+
+    @TypeConverter
+    fun fromTimeRangeList(value: List<TimeRange>): String {
+        return Gson().toJson(value)
+    }
+
+    @TypeConverter
+    fun toTimeRangeList(value: String): List<TimeRange> {
+        val listType = object : TypeToken<List<TimeRange>>() {}.type
         return Gson().fromJson(value, listType)
     }
 }

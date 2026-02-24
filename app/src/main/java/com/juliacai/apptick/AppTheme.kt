@@ -5,7 +5,9 @@ import android.graphics.Color
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -15,55 +17,155 @@ import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
 
 internal fun shouldUseCustomColorMode(isPremium: Boolean, customColorModeEnabled: Boolean): Boolean {
     return isPremium && customColorModeEnabled
 }
 
+data class ThemePalette(
+    val primary: Int,
+    val background: Int,
+    val card: Int,
+    val primaryContainer: Int,
+    val onPrimary: Int,
+    val onBackground: Int,
+    val onCard: Int,
+    val onPrimaryContainer: Int
+)
+
 object AppTheme {
     private const val PREFS_NAME = "groupPrefs"
     private const val KEY_PRIMARY_COLOR = "custom_primary_color"
     private const val KEY_ACCENT_COLOR = "custom_accent_color"
-    private const val KEY_BACKGROUND_COLOR = "custom_background_color"
-    private const val KEY_CARD_COLOR = "custom_card_color"
-    private const val KEY_ICON_COLOR = "custom_icon_color"
-    private const val KEY_APP_ICON_COLOR_MODE = "app_icon_color_mode"
-    private const val DEFAULT_PRIMARY_COLOR = "#3949AB" // Keep your purple default.
+    private const val DEFAULT_PRIMARY_COLOR = "#6F34AD" // Match the AppTick logo purple.
+    private const val DARK_BACKGROUND = "#101214"
+    private const val DARK_CARD = "#171A1E"
+    private const val LIGHT_BACKGROUND = "#F7F8FB"
+    private const val LIGHT_CARD = "#FFFFFF"
 
-    fun applyTheme(context: Context) {
+    private fun readableColor(background: Int): Int {
+        return if (ColorUtils.calculateLuminance(background) > 0.45) Color.BLACK else Color.WHITE
+    }
+
+    fun customPalette(seedColor: Int, isDark: Boolean): ThemePalette {
+        val primary = if (isDark) {
+            ColorUtils.blendARGB(seedColor, Color.WHITE, 0.18f)
+        } else {
+            ColorUtils.blendARGB(seedColor, Color.BLACK, 0.08f)
+        }
+        val background = if (isDark) {
+            ColorUtils.blendARGB(seedColor, DARK_BACKGROUND.toColorInt(), 0.88f)
+        } else {
+            ColorUtils.blendARGB(seedColor, LIGHT_BACKGROUND.toColorInt(), 0.90f)
+        }
+        val card = if (isDark) {
+            ColorUtils.blendARGB(seedColor, DARK_CARD.toColorInt(), 0.82f)
+        } else {
+            ColorUtils.blendARGB(seedColor, LIGHT_CARD.toColorInt(), 0.84f)
+        }
+        val primaryContainer = if (isDark) {
+            ColorUtils.blendARGB(seedColor, Color.BLACK, 0.42f)
+        } else {
+            ColorUtils.blendARGB(seedColor, Color.WHITE, 0.72f)
+        }
+
+        return ThemePalette(
+            primary = primary,
+            background = background,
+            card = card,
+            primaryContainer = primaryContainer,
+            onPrimary = readableColor(primary),
+            onBackground = readableColor(background),
+            onCard = readableColor(card),
+            onPrimaryContainer = readableColor(primaryContainer)
+        )
+    }
+
+    private fun resolveSeedColor(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val premiumEnabled = prefs.getBoolean("premium", false)
         val customModeEnabled =
             shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
 
-        val primaryColor = if (customModeEnabled) {
+        return if (customModeEnabled) {
             prefs.getInt(KEY_PRIMARY_COLOR, DEFAULT_PRIMARY_COLOR.toColorInt())
         } else {
             DEFAULT_PRIMARY_COLOR.toColorInt()
         }
+    }
 
-        val backgroundColor = if (customModeEnabled) {
-            prefs.getInt(KEY_BACKGROUND_COLOR, if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE)
+    fun currentPalette(context: Context, isDark: Boolean = isSystemDarkMode(context)): ThemePalette {
+        return customPalette(resolveSeedColor(context), isDark)
+    }
+
+    fun colorSchemeFromPalette(palette: ThemePalette): ColorScheme {
+        val composePrimary = ComposeColor(palette.primary)
+        val composeBackground = ComposeColor(palette.background)
+        val composeCard = ComposeColor(palette.card)
+        val composePrimaryContainer = ComposeColor(palette.primaryContainer)
+        val composeOnPrimary = ComposeColor(palette.onPrimary)
+        val composeOnBackground = ComposeColor(palette.onBackground)
+        val composeOnSurface = ComposeColor(palette.onCard)
+        val composeOnPrimaryContainer = ComposeColor(palette.onPrimaryContainer)
+
+        val useDarkScheme = composeBackground.luminance() < 0.4f
+
+        return if (useDarkScheme) {
+            darkColorScheme(
+                primary = composePrimary,
+                background = composeBackground,
+                surface = composeCard,
+                primaryContainer = composePrimaryContainer,
+                onPrimary = composeOnPrimary,
+                onBackground = composeOnBackground,
+                onSurface = composeOnSurface,
+                onPrimaryContainer = composeOnPrimaryContainer
+            ).copy(
+                surfaceVariant = composeCard,
+                surfaceContainerLowest = composeCard,
+                surfaceContainerLow = composeCard,
+                surfaceContainer = composeCard,
+                surfaceContainerHigh = composeCard,
+                surfaceContainerHighest = composeCard
+            )
         } else {
-            if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
+            lightColorScheme(
+                primary = composePrimary,
+                background = composeBackground,
+                surface = composeCard,
+                primaryContainer = composePrimaryContainer,
+                onPrimary = composeOnPrimary,
+                onBackground = composeOnBackground,
+                onSurface = composeOnSurface,
+                onPrimaryContainer = composeOnPrimaryContainer
+            ).copy(
+                surfaceVariant = composeCard,
+                surfaceContainerLowest = composeCard,
+                surfaceContainerLow = composeCard,
+                surfaceContainer = composeCard,
+                surfaceContainerHigh = composeCard,
+                surfaceContainerHighest = composeCard
+            )
         }
+    }
+
+    fun applyTheme(context: Context) {
+        val palette = currentPalette(context)
 
         if (context is AppCompatActivity) {
-            context.window.decorView.setBackgroundColor(backgroundColor)
-            context.window.statusBarColor = primaryColor
-            context.window.navigationBarColor = primaryColor
+            context.window.decorView.setBackgroundColor(palette.background)
+            context.window.statusBarColor = palette.primary
+            context.window.navigationBarColor = palette.primary
         }
     }
 
     fun getPrimaryColor(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val premiumEnabled = prefs.getBoolean("premium", false)
-        val customModeEnabled =
-            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
-
-        if (!customModeEnabled) return DEFAULT_PRIMARY_COLOR.toColorInt()
-        return prefs.getInt(KEY_PRIMARY_COLOR, DEFAULT_PRIMARY_COLOR.toColorInt())
+        return currentPalette(context).primary
     }
 
     fun getAccentColor(context: Context): Int {
@@ -72,49 +174,25 @@ object AppTheme {
     }
 
     fun getBackgroundColor(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val premiumEnabled = prefs.getBoolean("premium", false)
-        val customModeEnabled =
-            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
-
-        if (!customModeEnabled) {
-            return if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
-        }
-
-        if (prefs.contains(KEY_BACKGROUND_COLOR)) {
-            return prefs.getInt(KEY_BACKGROUND_COLOR, if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE)
-        }
-
-        return if (isSystemDarkMode(context)) Color.BLACK else Color.WHITE
+        return currentPalette(context).background
     }
 
     fun getCardColor(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val premiumEnabled = prefs.getBoolean("premium", false)
-        val customModeEnabled =
-            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
-
-        if (!customModeEnabled) {
-            return getBackgroundColor(context)
-        }
-
-        return prefs.getInt(KEY_CARD_COLOR, getBackgroundColor(context))
+        return currentPalette(context).card
     }
 
     fun getIconColor(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val premiumEnabled = prefs.getBoolean("premium", false)
-        val iconColorMode = prefs.getString(KEY_APP_ICON_COLOR_MODE, "system") ?: "system"
-        val useCustomIconColor =
-            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context)) &&
-                iconColorMode == "custom"
-
-        if (useCustomIconColor) {
-            return prefs.getInt(KEY_ICON_COLOR, Color.BLACK)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val dynamicScheme = if (isSystemDarkMode(context)) {
+                dynamicDarkColorScheme(context)
+            } else {
+                dynamicLightColorScheme(context)
+            }
+            return dynamicScheme.primary.toArgb()
         }
 
         val background = getBackgroundColor(context)
-        return if (androidx.core.graphics.ColorUtils.calculateLuminance(background) > 0.5) {
+        return if (ColorUtils.calculateLuminance(background) > 0.5) {
             Color.BLACK
         } else {
             Color.WHITE
@@ -122,16 +200,6 @@ object AppTheme {
     }
 
     fun getLogoBackgroundColor(context: Context): Int {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val premiumEnabled = prefs.getBoolean("premium", false)
-        val customModeEnabled =
-            shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
-        val iconColorMode = prefs.getString(KEY_APP_ICON_COLOR_MODE, "system") ?: "system"
-
-        if (customModeEnabled && iconColorMode == "custom" && prefs.contains(KEY_ICON_COLOR)) {
-            return prefs.getInt(KEY_ICON_COLOR, DEFAULT_PRIMARY_COLOR.toColorInt())
-        }
-
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val dynamicScheme = if (isSystemDarkMode(context)) {
                 dynamicDarkColorScheme(context)
@@ -154,99 +222,22 @@ object AppTheme {
 @Composable
 fun AppTheme(content: @Composable () -> Unit) {
     val context = LocalContext.current
-    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-
     val isSystemDark = isSystemInDarkTheme()
-    val isPremium = prefs.getBoolean("premium", false)
-    val customColorModeEnabled =
-        shouldUseCustomColorMode(isPremium, ThemeModeManager.isCustomColorModeEnabled(context))
 
-    val savedPrimaryColor = prefs.getInt(KEY_PRIMARY_COLOR, 0)
-    val savedBackgroundColor = prefs.getInt(KEY_BACKGROUND_COLOR, 0)
-    val savedCardColor = prefs.getInt(KEY_CARD_COLOR, 0)
-    val savedIconColor = prefs.getInt(KEY_ICON_COLOR, 0)
-    val appIconColorMode = prefs.getString(KEY_APP_ICON_COLOR_MODE, "system") ?: "system"
+    val palette = AppTheme.currentPalette(context, isSystemDark)
+    val colorScheme = AppTheme.colorSchemeFromPalette(palette)
 
-    val composePrimary =
-        if (savedPrimaryColor != 0) ComposeColor(savedPrimaryColor)
-        else ComposeColor(0xFF3949AB)
+    val typography = Typography().copy(
+        titleMedium = TextStyle(
+            fontWeight = FontWeight.Medium,
+            fontSize = 18.sp,
+            lineHeight = 25.sp
+        )
+    )
 
-    val defaultBackground = if (isSystemDark) ComposeColor.Black else ComposeColor.White
-    val composeBackground = if (savedBackgroundColor != 0) ComposeColor(savedBackgroundColor) else defaultBackground
-    val composeCard = if (savedCardColor != 0) ComposeColor(savedCardColor) else composeBackground
-
-    val systemThemeIconColor =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            if (isSystemDark) dynamicDarkColorScheme(context).primary else dynamicLightColorScheme(context).primary
-        } else {
-            null
-        }
-
-    val fallbackIconColor =
-        if (androidx.core.graphics.ColorUtils.calculateLuminance(composeBackground.toArgb()) > 0.5) {
-            ComposeColor.Black
-        } else {
-            ComposeColor.White
-        }
-
-    val composeIconColor =
-        if (isPremium && appIconColorMode == "custom" && savedIconColor != 0) {
-            ComposeColor(savedIconColor)
-        } else {
-            systemThemeIconColor?.takeIf { customColorModeEnabled } ?: fallbackIconColor
-        }
-
-    val colorScheme = if (customColorModeEnabled) {
-        val useDarkScheme = composeBackground.luminance() < 0.4f
-        if (useDarkScheme) {
-            darkColorScheme(
-                primary = composePrimary,
-                background = composeBackground,
-                surface = composeCard,
-                primaryContainer = composePrimary.copy(alpha = 0.24f),
-                onPrimary = composeIconColor,
-                onBackground = composeIconColor,
-                onSurface = composeIconColor,
-                onPrimaryContainer = composeIconColor
-            ).copy(
-                surfaceVariant = composeCard,
-                surfaceContainerLowest = composeCard,
-                surfaceContainerLow = composeCard,
-                surfaceContainer = composeCard,
-                surfaceContainerHigh = composeCard,
-                surfaceContainerHighest = composeCard
-            )
-        } else {
-            lightColorScheme(
-                primary = composePrimary,
-                background = composeBackground,
-                surface = composeCard,
-                primaryContainer = composePrimary.copy(alpha = 0.16f),
-                onPrimary = composeIconColor,
-                onBackground = composeIconColor,
-                onSurface = composeIconColor,
-                onPrimaryContainer = composeIconColor
-            ).copy(
-                surfaceVariant = composeCard,
-                surfaceContainerLowest = composeCard,
-                surfaceContainerLow = composeCard,
-                surfaceContainer = composeCard,
-                surfaceContainerHigh = composeCard,
-                surfaceContainerHighest = composeCard
-            )
-        }
-    } else if (isSystemDark) {
-        darkColorScheme()
-    } else {
-        lightColorScheme()
-    }
-
-    MaterialTheme(colorScheme = colorScheme, content = content)
+    MaterialTheme(
+        colorScheme = colorScheme,
+        typography = typography,
+        content = content
+    )
 }
-
-private const val PREFS_NAME = "groupPrefs"
-private const val KEY_PRIMARY_COLOR = "custom_primary_color"
-private const val KEY_BACKGROUND_COLOR = "custom_background_color"
-private const val KEY_CARD_COLOR = "custom_card_color"
-private const val KEY_ICON_COLOR = "custom_icon_color"
-private const val KEY_APP_ICON_COLOR_MODE = "app_icon_color_mode"

@@ -67,4 +67,10 @@ class MainViewModel(
             appLimitGroupDao.deleteAppLimitGroup(group.toEntity())
         }
     }
+
+    fun setGroupExpanded(groupId: Long, isExpanded: Boolean) {
+        viewModelScope.launch {
+            appLimitGroupDao.updateGroupExpanded(groupId, isExpanded)
+        }
+    }
 }

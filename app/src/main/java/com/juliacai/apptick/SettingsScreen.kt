@@ -2,13 +2,14 @@ package com.juliacai.apptick
 
 import android.content.Context
 import android.content.Intent
-import android.text.InputType
-import android.widget.EditText
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -45,6 +46,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
@@ -52,7 +55,6 @@ import com.juliacai.apptick.data.AppLimitBackupManager
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.permissions.BatteryOptimizationHelper
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -79,7 +81,6 @@ fun SettingsScreen(
     var isCustomColorMode by remember { mutableStateOf(ThemeModeManager.isCustomColorModeEnabled(context)) }
     var showTimeLeft by remember { mutableStateOf(groupPrefs.getBoolean("showTimeLeft", true)) }
     var floatingBubbleEnabled by remember { mutableStateOf(groupPrefs.getBoolean("floatingBubbleEnabled", false)) }
-    var hasPassword by remember { mutableStateOf(groupPrefs.getString("password", null) != null) }
     var premiumFeatureDialogFor by remember { mutableStateOf<String?>(null) }
     var batteryStatus by remember { mutableStateOf(BatteryOptimizationHelper.getStatus(context)) }
     var showBatteryDialog by remember { mutableStateOf(false) }
@@ -88,48 +89,16 @@ fun SettingsScreen(
         premiumFeatureDialogFor = featureName
     }
 
-    val onRemovePasswordClick: () -> Unit = {
-        val passwordInput = EditText(context).apply {
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            hint = "Enter current password"
-        }
-
-        MaterialAlertDialogBuilder(context)
-            .setTitle("Confirm Password")
-            .setView(passwordInput)
-            .setPositiveButton("Confirm") { _, _ ->
-                val enteredPassword = passwordInput.text.toString()
-                val currentPassword = groupPrefs.getString("password", "")
-                if (enteredPassword == currentPassword) {
-                    MaterialAlertDialogBuilder(context)
-                        .setTitle("Remove Password Protection")
-                        .setMessage("Are you sure you want to remove password protection?")
-                        .setPositiveButton("Yes, Remove Password") { _, _ ->
-                            groupPrefs.edit {
-                                remove("password")
-                                putBoolean("locked", false)
-                                putBoolean("blockMain", false)
-                            }
-                            hasPassword = false
-                        }
-                        .setNegativeButton("Cancel", null)
-                        .show()
-                } else {
-                    MaterialAlertDialogBuilder(context)
-                        .setTitle("Incorrect Password")
-                        .setMessage("The password you entered is incorrect.")
-                        .setPositiveButton("OK", null)
-                        .show()
-                }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings") },
+                title = {
+                    Text(
+                        text = "Settings",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -146,247 +115,234 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(it)
-                .padding(16.dp)
+                .padding(vertical = 16.dp)
                 .verticalScrollWithIndicator()
         ) {
-            if (!isPremium) {
-                Card(
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                if (!isPremium) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Unlock Premium",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Dark mode and custom colors are premium features.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Button(
+                                onClick = onUpgradeToPremium,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Upgrade to Premium")
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer
-                    )
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Unlock Premium",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            "Dark mode and custom colors are premium features.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(
-                            onClick = onUpgradeToPremium,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Upgrade to Premium")
+                    Text("Dark Mode", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = isDarkMode,
+                        onCheckedChange = {
+                            if (!isPremium) {
+                                promptPremium("Dark Mode")
+                                return@Switch
+                            }
+                            isDarkMode = it
+                            ThemeModeManager.persistDarkMode(context, it)
+                            ThemeModeManager.apply(context)
+                            isCustomColorMode = ThemeModeManager.isCustomColorModeEnabled(context)
+                            context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
                         }
-                    }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Dark Mode", modifier = Modifier.weight(1f))
-                Switch(
-                    checked = isDarkMode,
-                    onCheckedChange = {
-                        if (!isPremium) {
-                            promptPremium("Dark Mode")
-                            return@Switch
-                        }
-                        isDarkMode = it
-                        ThemeModeManager.persistDarkMode(context, it)
-                        ThemeModeManager.apply(context)
-                        isCustomColorMode = ThemeModeManager.isCustomColorModeEnabled(context)
-                        context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Custom Color Mode", modifier = Modifier.weight(1f))
-                Switch(
-                    checked = isCustomColorMode,
-                    onCheckedChange = {
-                        if (!isPremium) {
-                            promptPremium("Custom Color Mode")
-                            return@Switch
-                        }
-                        isCustomColorMode = it
-                        ThemeModeManager.persistCustomColorMode(context, it)
-                        ThemeModeManager.apply(context)
-                        isDarkMode = ThemeModeManager.isDarkModeEnabled(context)
-                        context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text("Show Time Left in Notification", modifier = Modifier.weight(1f))
-                Switch(
-                    checked = showTimeLeft,
-                    onCheckedChange = {
-                        showTimeLeft = it
-                        groupPrefs.edit { putBoolean("showTimeLeft", it) }
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Floating Time Left Bubble")
-                    Text(
-                        "Shows a small overlay with time remaining when using limited apps",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                Switch(
-                    checked = floatingBubbleEnabled,
-                    onCheckedChange = {
-                        if (!isPremium) {
-                            promptPremium("Floating Time Left Bubble")
-                            return@Switch
-                        }
-                        floatingBubbleEnabled = it
-                        groupPrefs.edit { putBoolean("floatingBubbleEnabled", it) }
-                        // Clear dismissed flag when toggling on so bubble shows immediately
-                        if (it) {
-                            groupPrefs.edit { putBoolean("bubbleDismissed", false) }
-                        }
-                    }
-                )
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    if (!isPremium) {
-                        promptPremium("App Limit Backup")
-                        return@Button
-                    }
-                    onOpenAppLimitBackup()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("App Limit Backup")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    if (!isPremium) {
-                        promptPremium("Customize Colors")
-                        return@Button
-                    }
-                    if (!isCustomColorMode) {
-                        isCustomColorMode = true
-                        ThemeModeManager.persistCustomColorMode(context, true)
-                        ThemeModeManager.apply(context)
-                        isDarkMode = ThemeModeManager.isDarkModeEnabled(context)
-                        context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
-                    }
-                    onCustomizeColors()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Customize Colors")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = onOpenChangelog,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Changelog")
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(
-                onClick = {
-                    batteryStatus = BatteryOptimizationHelper.getStatus(context)
-                    showBatteryDialog = true
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Battery Reliability")
-            }
-            if (!isPremium) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Tap premium features to see upgrade options.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
-                )
-            }
-            if (hasPassword) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Password Protection")
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Button(
-                            onClick = onRemovePasswordClick,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Remove Password")
-                        }
-                    }
-                }
-            }
-            if (isPremium) {
-                Spacer(modifier = Modifier.height(16.dp))
-                Button(
-                    onClick = onOpenPremiumModeInfo,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Premium Mode Info")
-                }
-            }
-
-            // Debug-only premium toggle
-            val isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-            if (isDebuggable) {
-                Spacer(modifier = Modifier.height(24.dp))
-                Divider()
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Debug Options", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(8.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Premium Mode (Debug)", modifier = Modifier.weight(1f))
+                    Text("Show Time Left in Notification", modifier = Modifier.weight(1f))
                     Switch(
-                        checked = isPremium,
+                        checked = showTimeLeft,
                         onCheckedChange = {
-                            isPremium = it
+                            showTimeLeft = it
+                            groupPrefs.edit { putBoolean("showTimeLeft", it) }
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Floating Time Left Bubble")
+                        Text(
+                            "Shows a small overlay with time remaining when using limited apps",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = floatingBubbleEnabled,
+                        onCheckedChange = {
+                            if (!isPremium) {
+                                promptPremium("Floating Time Left Bubble")
+                                return@Switch
+                            }
+                            floatingBubbleEnabled = it
+                            groupPrefs.edit { putBoolean("floatingBubbleEnabled", it) }
+                            // Clear dismissed flag when toggling on so bubble shows immediately
                             if (it) {
-                                groupPrefs.edit {
-                                    putBoolean("debug_force_free", false)
-                                    putBoolean("premium", true)
-                                }
-                            } else {
-                                // Force free-user behavior even if billing callbacks run.
-                                groupPrefs.edit {
-                                    putBoolean("debug_force_free", true)
-                                    putBoolean("premium", false)
-                                    putBoolean("floatingBubbleEnabled", false)
-                                }
-                                isCustomColorMode = false
-                                isDarkMode = false
-                                floatingBubbleEnabled = false
-                                ThemeModeManager.persistCustomColorMode(context, false)
-                                ThemeModeManager.persistDarkMode(context, false)
-                                ThemeModeManager.apply(context)
-                                context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+                                groupPrefs.edit { putBoolean("bubbleDismissed", false) }
                             }
                         }
                     )
                 }
-                Text("Toggle to simulate premium purchase in emulator", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Custom Color Mode", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = isCustomColorMode,
+                        onCheckedChange = {
+                            if (!isPremium) {
+                                promptPremium("Custom Color Mode")
+                                return@Switch
+                            }
+                            isCustomColorMode = it
+                            ThemeModeManager.persistCustomColorMode(context, it)
+                            ThemeModeManager.apply(context)
+                            isDarkMode = ThemeModeManager.isDarkModeEnabled(context)
+                            context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(
+                    onClick = {
+                        if (!isPremium) {
+                            promptPremium("Customize Colors")
+                            return@Button
+                        }
+                        if (!isCustomColorMode) {
+                            isCustomColorMode = true
+                            ThemeModeManager.persistCustomColorMode(context, true)
+                            ThemeModeManager.apply(context)
+                            isDarkMode = ThemeModeManager.isDarkModeEnabled(context)
+                            context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+                        }
+                        onCustomizeColors()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Customize Colors")
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            Divider()
+            SettingsNavigationItem(
+                title = "App Limit Backup",
+                onClick = {
+                    if (!isPremium) {
+                        promptPremium("App Limit Backup")
+                        return@SettingsNavigationItem
+                    }
+                    onOpenAppLimitBackup()
+                }
+            )
+            SettingsNavigationItem(
+                title = "Changelog",
+                onClick = onOpenChangelog
+            )
+            SettingsNavigationItem(
+                title = "Battery Reliability",
+                onClick = {
+                    batteryStatus = BatteryOptimizationHelper.getStatus(context)
+                    showBatteryDialog = true
+                }
+            )
+            if (isPremium) {
+                SettingsNavigationItem(
+                    title = "Premium Mode Info",
+                    onClick = onOpenPremiumModeInfo
+                )
+            }
+            Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                /*
+                // Debug-only premium toggle
+                val isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+                if (isDebuggable) {
+                    Spacer(modifier = Modifier.height(24.dp))
+                    Divider()
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Debug Options", style = MaterialTheme.typography.titleMedium)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Premium Mode (Debug)", modifier = Modifier.weight(1f))
+                        Switch(
+                            checked = isPremium,
+                            onCheckedChange = {
+                                isPremium = it
+                                if (it) {
+                                    groupPrefs.edit {
+                                        putBoolean("debug_force_free", false)
+                                        putBoolean("premium", true)
+                                    }
+                                } else {
+                                    // Force free-user behavior even if billing callbacks run.
+                                    groupPrefs.edit {
+                                        putBoolean("debug_force_free", true)
+                                        putBoolean("premium", false)
+                                        putBoolean("floatingBubbleEnabled", false)
+                                    }
+                                    isCustomColorMode = false
+                                    isDarkMode = false
+                                    floatingBubbleEnabled = false
+                                    ThemeModeManager.persistCustomColorMode(context, false)
+                                    ThemeModeManager.persistDarkMode(context, false)
+                                    ThemeModeManager.apply(context)
+                                    context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+                                }
+                            }
+                        )
+                    }
+                    Text("Toggle to simulate premium purchase in emulator", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+                */
+
+                Spacer(modifier = Modifier.height(24.dp))
+                Button(
+                    onClick = {
+                        val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://onvarise.com"))
+                        context.startActivity(browserIntent)
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Check Out Upcoming/Current Apps at OnvaRise.com",
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }
@@ -526,6 +482,48 @@ fun SettingsScreen(
                     Text("Close")
                 }
             }
+        )
+    }
+}
+
+@Composable
+private fun SettingsNavigationItem(
+    title: String,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = Icons.Default.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    Divider()
+}
+
+@Preview(showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+private fun SettingsScreenPreview() {
+    AppTheme {
+        SettingsScreen(
+            onBackClick = {},
+            onCustomizeColors = {},
+            onUpgradeToPremium = {},
+            onOpenPremiumModeInfo = {},
+            onOpenAppLimitBackup = {},
+            onOpenChangelog = {}
         )
     }
 }
@@ -697,7 +695,13 @@ fun AppLimitBackupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("App Limit Backup") },
+                title = {
+                    Text(
+                        text = "App Limit Backup",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -728,7 +732,7 @@ fun AppLimitBackupScreen(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                "If an app from the backup is not installed on this phone, its app-limit entry is skipped during import.",
+                "If an app from the backup is not installed on this phone, its app limit entry is skipped during import.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

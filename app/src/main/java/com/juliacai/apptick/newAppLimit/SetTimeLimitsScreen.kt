@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
@@ -31,6 +32,7 @@ import androidx.core.graphics.createBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.TimeRange
 import com.juliacai.apptick.rememberScrollbarColor
 import com.juliacai.apptick.verticalScrollWithIndicator
 import java.util.Calendar
@@ -67,10 +69,20 @@ fun SetTimeLimitsScreen(
     val initialUseTimeRange = draft?.useTimeRange ?: existingGroup?.useTimeRange ?: false
     val initialBlockOutsideTimeRange =
         draft?.blockOutsideTimeRange ?: existingGroup?.blockOutsideTimeRange ?: false
-    val initialStartHour = draft?.startHour ?: existingGroup?.startHour ?: 0
-    val initialStartMinute = draft?.startMinute ?: existingGroup?.startMinute ?: 0
-    val initialEndHour = draft?.endHour ?: existingGroup?.endHour ?: 23
-    val initialEndMinute = draft?.endMinute ?: existingGroup?.endMinute ?: 59
+    val initialTimeRanges = draft?.timeRanges?.takeIf { it.isNotEmpty() }
+        ?: existingGroup?.timeRanges?.takeIf { it.isNotEmpty() }
+        ?: if (initialUseTimeRange) {
+            listOf(
+                TimeRange(
+                    startHour = draft?.startHour ?: existingGroup?.startHour ?: 0,
+                    startMinute = draft?.startMinute ?: existingGroup?.startMinute ?: 0,
+                    endHour = draft?.endHour ?: existingGroup?.endHour ?: 23,
+                    endMinute = draft?.endMinute ?: existingGroup?.endMinute ?: 59
+                )
+            )
+        } else {
+            emptyList()
+        }
     val initialWeekDays = draft?.weekDays ?: existingGroup?.weekDays ?: emptyList()
     val initialCumulativeTime = draft?.cumulativeTime ?: existingGroup?.cumulativeTime ?: false
     val initialUseReset = draft?.useReset ?: ((existingGroup?.resetMinutes ?: 0) > 0)
@@ -87,10 +99,11 @@ fun SetTimeLimitsScreen(
     val blockOutsideTimeRange = remember(initialBlockOutsideTimeRange) {
         mutableStateOf(initialBlockOutsideTimeRange)
     }
-    val startHour = remember(initialStartHour) { mutableStateOf(initialStartHour) }
-    val startMinute = remember(initialStartMinute) { mutableStateOf(initialStartMinute) }
-    val endHour = remember(initialEndHour) { mutableStateOf(initialEndHour) }
-    val endMinute = remember(initialEndMinute) { mutableStateOf(initialEndMinute) }
+    val timeRanges = remember(initialTimeRanges) {
+        mutableStateListOf<TimeRange>().apply {
+            addAll(initialTimeRanges)
+        }
+    }
     val weekDays = remember(initialWeekDays) { mutableStateOf(initialWeekDays) }
     val cumulativeTime = remember(initialCumulativeTime) { mutableStateOf(initialCumulativeTime) }
     val useReset = remember(initialUseReset) { mutableStateOf(initialUseReset) }
@@ -98,11 +111,18 @@ fun SetTimeLimitsScreen(
     val resetMinutes = remember(initialResetMinutes) { mutableStateOf(initialResetMinutes) }
 
     val showNoTimeLimitWarning = remember { mutableStateOf(false) }
-    val showStartTimePicker = remember { mutableStateOf(false) }
-    val showEndTimePicker = remember { mutableStateOf(false) }
+    val timePickerTarget = remember { mutableStateOf<TimePickerTarget?>(null) }
     val isResetHoursError = remember { mutableStateOf(false) }
 
+    LaunchedEffect(useTimeRange.value, timeRanges.size) {
+        if (useTimeRange.value && timeRanges.isEmpty()) {
+            timeRanges.add(TimeRange())
+        }
+    }
+
     fun persistDraft() {
+        val draftRanges = timeRanges.toList()
+        val fallbackRange = draftRanges.firstOrNull() ?: TimeRange()
         viewModel.updateDraft(
             SetTimeLimitDraft(
                 groupName = groupName.value,
@@ -112,10 +132,11 @@ fun SetTimeLimitsScreen(
                 limitEach = limitEach.value,
                 useTimeRange = useTimeRange.value,
                 blockOutsideTimeRange = blockOutsideTimeRange.value,
-                startHour = startHour.value,
-                startMinute = startMinute.value,
-                endHour = endHour.value,
-                endMinute = endMinute.value,
+                timeRanges = draftRanges,
+                startHour = fallbackRange.startHour,
+                startMinute = fallbackRange.startMinute,
+                endHour = fallbackRange.endHour,
+                endMinute = fallbackRange.endMinute,
                 weekDays = weekDays.value,
                 cumulativeTime = cumulativeTime.value,
                 useReset = useReset.value,
@@ -128,7 +149,13 @@ fun SetTimeLimitsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Set Time Limits") },
+                title = {
+                    Text(
+                        text = "Set Time Limits",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onCancel) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -309,6 +336,9 @@ fun SetTimeLimitsScreen(
                             return@Switch
                         }
                         useTimeRange.value = it
+                        if (it && timeRanges.isEmpty()) {
+                            timeRanges.add(TimeRange())
+                        }
                     }
                 )
             }
@@ -316,20 +346,52 @@ fun SetTimeLimitsScreen(
             if (useTimeRange.value) {
                 Column {
                     Spacer(modifier = Modifier.height(16.dp))
-                    Row {
-                        Button(
-                            onClick = { showStartTimePicker.value = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Start: ${formatTime(context, startHour.value, startMinute.value)}")
+                    timeRanges.forEachIndexed { index, range ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(
+                                onClick = {
+                                    timePickerTarget.value = TimePickerTarget(
+                                        rangeIndex = index,
+                                        isStart = true
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("Start: ${formatTime(context, range.startHour, range.startMinute)}")
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    timePickerTarget.value = TimePickerTarget(
+                                        rangeIndex = index,
+                                        isStart = false
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("End: ${formatTime(context, range.endHour, range.endMinute)}")
+                            }
+                            if (timeRanges.size > 1) {
+                                OutlinedButton(
+                                    onClick = { timeRanges.removeAt(index) },
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.size(40.dp)
+                                ) {
+                                    Text("-")
+                                }
+                            }
                         }
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = { showEndTimePicker.value = true },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("End: ${formatTime(context, endHour.value, endMinute.value)}")
+                        if (index < timeRanges.lastIndex) {
+                            Spacer(modifier = Modifier.height(8.dp))
                         }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { timeRanges.add(TimeRange()) }
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Add Time Range")
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -552,6 +614,12 @@ fun SetTimeLimitsScreen(
                     if (!isResetHoursError.value) {
                         val effectiveTimeHrLimit = if (useTimeLimit.value) (timeHrLimit.value.toIntOrNull() ?: 0) else 0
                         val effectiveTimeMinLimit = if (useTimeLimit.value) (timeMinLimit.value.toIntOrNull() ?: 0) else 0
+                        val configuredTimeRanges = if (useTimeRange.value) {
+                            if (timeRanges.isEmpty()) listOf(TimeRange()) else timeRanges.toList()
+                        } else {
+                            emptyList()
+                        }
+                        val firstRange = configuredTimeRanges.firstOrNull() ?: TimeRange()
                         val newGroup = (group ?: AppLimitGroup()).copy(
                             name = if (groupName.value.isNotBlank()) groupName.value else {
                                 if (selectedApps.isNotEmpty()) "${selectedApps[0].appName} Group" else "App Limit Group"
@@ -562,10 +630,11 @@ fun SetTimeLimitsScreen(
                             weekDays = weekDays.value,
                             useTimeRange = useTimeRange.value,
                             blockOutsideTimeRange = useTimeRange.value && blockOutsideTimeRange.value,
-                            startHour = startHour.value,
-                            startMinute = startMinute.value,
-                            endHour = endHour.value,
-                            endMinute = endMinute.value,
+                            timeRanges = configuredTimeRanges,
+                            startHour = firstRange.startHour,
+                            startMinute = firstRange.startMinute,
+                            endHour = firstRange.endHour,
+                            endMinute = firstRange.endMinute,
                             cumulativeTime = useReset.value && cumulativeTime.value,
                             resetMinutes = if (useReset.value) resetTotalMinutes else 0,
                             apps = selectedApps.map {
@@ -583,32 +652,28 @@ fun SetTimeLimitsScreen(
         }
 
         if (showNoTimeLimitWarning.value) { AlertDialog(onDismissRequest = { showNoTimeLimitWarning.value = false }, title = { Text("Always Block App") }, text = { Text("Are you sure you want the app to be blocked with 0 time use?") }, confirmButton = { Button({ showNoTimeLimitWarning.value = false }) { Text("Continue") } }, dismissButton = { Button({ showNoTimeLimitWarning.value = false; useTimeLimit.value = true }) { Text("Cancel") } }) }
-        if (showStartTimePicker.value) {
+        timePickerTarget.value?.let { pickerTarget ->
             val context = androidx.compose.ui.platform.LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(Unit) {
+            val currentRange = timeRanges.getOrNull(pickerTarget.rangeIndex) ?: TimeRange()
+            val initialHour = if (pickerTarget.isStart) currentRange.startHour else currentRange.endHour
+            val initialMinute = if (pickerTarget.isStart) currentRange.startMinute else currentRange.endMinute
+            androidx.compose.runtime.LaunchedEffect(pickerTarget) {
                 android.app.TimePickerDialog(
                     context,
-                    { _, hour, minute -> startHour.value = hour; startMinute.value = minute; showStartTimePicker.value = false },
-                    startHour.value,
-                    startMinute.value,
+                    { _, hour, minute ->
+                        val existing = timeRanges.getOrNull(pickerTarget.rangeIndex) ?: return@TimePickerDialog
+                        timeRanges[pickerTarget.rangeIndex] = if (pickerTarget.isStart) {
+                            existing.copy(startHour = hour, startMinute = minute)
+                        } else {
+                            existing.copy(endHour = hour, endMinute = minute)
+                        }
+                        timePickerTarget.value = null
+                    },
+                    initialHour,
+                    initialMinute,
                     android.text.format.DateFormat.is24HourFormat(context)
                 ).apply {
-                    setOnCancelListener { showStartTimePicker.value = false }
-                    show()
-                }
-            }
-        }
-        if (showEndTimePicker.value) {
-            val context = androidx.compose.ui.platform.LocalContext.current
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                android.app.TimePickerDialog(
-                    context,
-                    { _, hour, minute -> endHour.value = hour; endMinute.value = minute; showEndTimePicker.value = false },
-                    endHour.value,
-                    endMinute.value,
-                    android.text.format.DateFormat.is24HourFormat(context)
-                ).apply {
-                    setOnCancelListener { showEndTimePicker.value = false }
+                    setOnCancelListener { timePickerTarget.value = null }
                     show()
                 }
             }
@@ -648,3 +713,8 @@ private fun formatTime(context: Context, hourOfDay: Int, minute: Int): String {
     }
     return android.text.format.DateFormat.getTimeFormat(context).format(calendar.time)
 }
+
+private data class TimePickerTarget(
+    val rangeIndex: Int,
+    val isStart: Boolean
+)

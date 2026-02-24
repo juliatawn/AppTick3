@@ -20,8 +20,9 @@ object RecoveryEmailHelper {
     private const val TAG = "RecoveryEmail"
     private const val PREF_PENDING_EMAIL = "recovery_pending_email"
     private const val PREF_PENDING_PURPOSE = "recovery_pending_purpose"
-    private const val RECOVERY_CONTINUE_URL = "https://apptick-f16dc.web.app/recovery"
-    private const val RECOVERY_LINK_DOMAIN = "apptick-f16dc.web.app"
+    // Use Firebase-hosted auth domains so email links route through Firebase Auth
+    // without requiring custom website/App Links configuration.
+    private const val RECOVERY_CONTINUE_URL = "https://apptick-f16dc.firebaseapp.com/recovery"
 
     const val PURPOSE_SETUP_PASSWORD = "setup_password"
     const val PURPOSE_SETUP_SECURITY_KEY = "setup_security_key"
@@ -34,7 +35,6 @@ object RecoveryEmailHelper {
     private fun actionCodeSettings(packageName: String): ActionCodeSettings =
         ActionCodeSettings.newBuilder()
             .setUrl(RECOVERY_CONTINUE_URL)
-            .setLinkDomain(RECOVERY_LINK_DOMAIN)
             .setHandleCodeInApp(true)
             .setAndroidPackageName(packageName, true, null)
             .build()

@@ -15,6 +15,7 @@ data class AppLimitGroup(
     var paused: Boolean = false,
     var useTimeRange: Boolean = false,
     var blockOutsideTimeRange: Boolean = false,
+    var timeRanges: List<TimeRange> = emptyList(),
     var startHour: Int = 0,
     var startMinute: Int = 0,
     var endHour: Int = 0,
@@ -23,5 +24,6 @@ data class AppLimitGroup(
     var timeRemaining: Long = 0,
     var nextResetTime: Long = 0,
     var nextAddTime: Long = 0,
-    var perAppUsage: List<AppUsageStat> = emptyList()
+    var perAppUsage: List<AppUsageStat> = emptyList(),
+    var isExpanded: Boolean = true
 ) : Serializable

@@ -37,6 +37,14 @@ object LockPolicy {
         return state.activeLockMode != LockMode.NONE
     }
 
+    fun shouldAutoRelockOnExit(state: LockState): Boolean {
+        return when (state.activeLockMode) {
+            LockMode.PASSWORD -> state.passwordUnlocked
+            LockMode.SECURITY_KEY -> state.securityKeyUnlocked
+            else -> false
+        }
+    }
+
     fun evaluateEditingLock(state: LockState, nowMillis: Long): LockDecision {
         return when (state.activeLockMode) {
             LockMode.NONE -> LockDecision(isLocked = false)

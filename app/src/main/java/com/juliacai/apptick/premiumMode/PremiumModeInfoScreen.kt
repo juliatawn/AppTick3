@@ -22,7 +22,9 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.verticalScrollWithIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,7 +35,13 @@ fun PremiumModeInfoScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Premium Mode Info") },
+                title = {
+                    Text(
+                        text = "Premium Mode Info",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
@@ -61,7 +69,7 @@ fun PremiumModeInfoScreen(
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        text = "Support the developer and gain these handy features:",
+                        text = "Key Features:",
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
@@ -71,8 +79,9 @@ fun PremiumModeInfoScreen(
                     Text("• Floating Time Left Bubble")
                     Text("• Lockdown mode")
                     Text("• Password mode")
-                    Text("• Security key mode")
-                    Text("• Custom AppTick color theming")
+                    Text("• Backup AppTick app limits and settings as a file, and import")
+                    Text("• Fingerprint/Biometrics, and USB security key alternative unlock for Password mode")
+                    Text("• Dark mode and AppTick color theming")
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -82,35 +91,58 @@ fun PremiumModeInfoScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                     Text("Additional Time Limit Options", style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("Time Range: Set app limits for a specific time range. Outside the range, apps can be always blocked or have no time limits.")
+                    FeatureDetailText(
+                        label = "Time Range:",
+                        description = "Set app limits for a specific time range. Outside the range, apps can be always blocked or have no time limits."
+                    )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Reset time limits periodically: Reset app limits on any hour/minute interval you choose.")
+                    FeatureDetailText(
+                        label = "Reset time limits periodically:",
+                        description = "Reset app limits on any hour/minute interval you choose.\nExample - If interval is 2h 30m and limit is 15m, every 2.5 hours you get another 15 minutes."
+                    )
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("Example: If interval is 2h 30m and limit is 15m, every 2.5 hours you get another 15 minutes.")
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("Optional Cumulative Time Mode: Unused time carries into the next interval until 12:00 AM, then resets fresh for the day.")
+                    FeatureDetailText(
+                        label = "Optional Cumulative Time Mode:",
+                        description = "Unused time carries into the next interval until 12:00 AM, then resets fresh for the day."
+                    )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("Floating Time Left Bubble", style = MaterialTheme.typography.titleSmall)
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text("A moveable bubble appears while using apps with available time and counts down remaining time. Position is remembered per app.")
+                    FeatureDetailText(
+                        label = "Floating Time Left Bubble:",
+                        description = "A moveable bubble appears while using apps with available time and counts down remaining time. Position is remembered per app."
+                    )
                     Spacer(modifier = Modifier.height(10.dp))
-                    Text("Three lock mode options", style = MaterialTheme.typography.titleSmall)
+                    Text("Multiple lock mode options", style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("• Lockdown mode")
-                    Text("• Password mode")
-                    Text("• Security key mode")
+                    FeatureDetailText(
+                        label = "Password mode:",
+                        description = "Use a Password and optionally biometrics (fingerprint), optionally a security key to lock your app limit settings from being changed, and allows only those with authorized access to change them."
+                    )
+                    FeatureDetailText(
+                        label = "Lockdown mode:",
+                        description = "Have bad self control? Make it so you can only change your app limits on a chosen date or day(s) of the week, otherwise your app limits are unchangable."
+                    )
                     Spacer(modifier = Modifier.height(10.dp))
                     Text("Theme", style = MaterialTheme.typography.titleSmall)
                     Spacer(modifier = Modifier.height(6.dp))
-                    Text("Customize AppTick background, text, and app colors with recommended palettes or a color picker wheel.")
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text(
-                        "Premium price starts at $4.99 USD and is localized in Google Play based on region/currency.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    FeatureDetailText(
+                        label = "Dark mode:",
+                        description = "Option to have the app in dark mode"
                     )
+                    FeatureDetailText(
+                        label = "Color theme customization:",
+                        description = "Option to change AppTick colors with a pallete of colors, also works with dark mode."
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
                 }
             }
         }
+    }
+}
+
+@Preview(showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+private fun PremiumModeInfoScreenPreview() {
+    AppTheme {
+        PremiumModeInfoScreen(onBackClick = {})
     }
 }

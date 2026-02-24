@@ -5,6 +5,7 @@ import androidx.room.PrimaryKey
 import androidx.room.ColumnInfo
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppUsageStat
+import com.juliacai.apptick.groups.TimeRange
 
 @Entity(tableName = "app_limit_groups")
 data class AppLimitGroupEntity(
@@ -21,6 +22,8 @@ data class AppLimitGroupEntity(
     var paused: Boolean = false,
     var useTimeRange: Boolean = false,
     var blockOutsideTimeRange: Boolean = false,
+    @ColumnInfo(defaultValue = "'[]'")
+    var timeRanges: List<TimeRange> = emptyList(),
     var startHour: Int = 0,
     var startMinute: Int = 0,
     var endHour: Int = 0,
@@ -30,5 +33,7 @@ data class AppLimitGroupEntity(
     var nextResetTime: Long = 0,
     var nextAddTime: Long = 0,
     @ColumnInfo(defaultValue = "'[]'")
-    var perAppUsage: List<AppUsageStat> = emptyList()
+    var perAppUsage: List<AppUsageStat> = emptyList(),
+    @ColumnInfo(defaultValue = "1")
+    var isExpanded: Boolean = true
 )

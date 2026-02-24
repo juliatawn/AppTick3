@@ -23,7 +23,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.verticalScrollWithIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -39,7 +41,13 @@ fun LockdownTimeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Set Lockdown Time") },
+                title = {
+                    Text(
+                        text = "Set Lockdown Time",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -73,5 +81,20 @@ fun LockdownTimeScreen(
                 Text("Confirm")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun LockdownTimeScreenPreview() {
+    AppTheme {
+        LockdownTimeScreen(
+            selectedDate = "Mar 1, 2026",
+            selectedTime = "07:30 PM",
+            onDateClick = {},
+            onTimeClick = {},
+            onConfirmClick = {},
+            onBackClick = {}
+        )
     }
 }

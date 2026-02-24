@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 
@@ -20,20 +21,19 @@ private const val CHANGELOG_TITLE = "CHANGELOG\n2026.3.10v3 - MAJOR UPDATES"
 
 private const val CHANGELOG_BODY = """
 New premium features:
-- Floating Time Left Bubble - it remembers where you placed it per app. Draggable, shows time left in hours and minutes.
-- Time Range - set the time range your app limits are active, then choose when the app limit you specified isn't active to either block the app completely unless during the time range OR to have no app limits so freely use the app.
-- Reset Time Limit Interval - reset time limits at any hour/min interval you set. Ex. Get 10mins of app time every 1.5hrs.
-- Cumulative Time (optional add on to Reset Limit) - carryover unused app time to the next reset interval. Ex. Every 1.5hrs get 10 more minutes to use your app limit, so say I use 5mins in that 1.5hrs then the next 1.5hrs I get 15mins (5 + 10 mins).
-- Backup and restore option - can backup AppTick app limit groups and settings to a file, and can import the file on any of your devices that have AppTick (local save).
-- Lockdown mode (fixed) - lock app limit settings from being changed, set a day to change setting OR set weekday(s) that you can change them.
-- Password mode email recovery.
-- Security key mode (with email recovery).
-- Custom app color selector, choose AppTicks background, text, card, and icon colors.
+- Floating Time Left Bubble -- it remembers where you placed it per app. Draggable, shows time left in hours and minutes.
+- Time Range -- set the time range your app limits are active, then choose when the app limit you specified isn't active to either block the app completely unless during the time range OR to have no app limits so freely use the app.
+- Reset Time Limit Interval -- reset time limits at any hour/min interval you set. Ex. Get 10mins of app time every 1.5hrs.
+- Cumulative Time (optional add on to Reset Limit) -- carryover unused app time to the next reset interval. Ex. Every 1.5hrs get 10 more minutes to use your app limit, so say I use 5mins in that 1.5hrs then the next 1.5hrs I get 15mins (5 + 10 mins).
+- Backup and restore option -- can backup AppTick app limit groups and settings to a file, and can import the file on any of your devices that have AppTick (local save).
+- Lockdown mode (fixed) -- lock app limit settings from being changed, set a day to change setting OR set weekday(s) that you can change them.
+- Fingerprint/biometrics and Security key are optional to add to Password mode.
+- Dark mode & light mode toggle
+- Color palette for AppTick.
 
 New FREE features:
 - Group details page, you can click on the card in the main group to see how much time each app has been used for and how much time is left for the app limit.
 - Groups are now editable.
-- Dark mode and light mode toggle.
 - Ability to turn off time limits so the app is just blocked on the days you select.
 - Drag and drop the Group cards (on the Main Page) and App cards (in the Group Details Page) any order you like.
 - Notification shows time left if the current app in use is in an active app group time limit.
@@ -82,4 +82,12 @@ fun ChangelogDialog(
             }
         }
     )
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ChangelogDialogPreview() {
+    AppTheme {
+        ChangelogDialog(onDismiss = {})
+    }
 }

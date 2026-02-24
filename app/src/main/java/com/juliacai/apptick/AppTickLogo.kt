@@ -12,6 +12,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -37,5 +38,13 @@ fun AppTickLogo(
             contentDescription = "AppTick Logo",
             modifier = Modifier.size(iconSize)
         )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun AppTickLogoPreview() {
+    AppTheme {
+        AppTickLogo()
     }
 }

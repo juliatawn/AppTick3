@@ -1,26 +1,26 @@
 package com.juliacai.apptick.premiumMode
 
-import android.app.Activity
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.StyleSpan
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
+import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.edit
 import com.juliacai.apptick.AppTheme
+import com.juliacai.apptick.LockDecision
 import com.juliacai.apptick.LockMode
+import com.juliacai.apptick.LockPolicy
+import com.juliacai.apptick.LockState
 import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
-import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.datepicker.MaterialDatePicker
 import com.google.android.material.timepicker.MaterialTimePicker
@@ -32,37 +32,28 @@ import java.util.Locale
 import java.util.TimeZone
 
 class LockdownModeActivity : AppCompatActivity() {
-    private lateinit var devicePolicyManager: DevicePolicyManager
-    private lateinit var adminComponentName: ComponentName
-    private var isDeviceAdminGranted by mutableStateOf(false)
-    
     // State variables
     private var lockdownType by mutableStateOf(LockdownType.ONE_TIME)
     private var recurringDays by mutableStateOf(listOf<Int>())
-    private var protectSettingsUninstall by mutableStateOf(false)
     private var statusText by mutableStateOf("")
     private var isLockdownActive by mutableStateOf(false)
+    private var isConfigurationEnabled by mutableStateOf(false)
+    private var canEditCurrentLockdownSettings by mutableStateOf(false)
     private var selectedDateTime by mutableStateOf(
         Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
     )
 
-    private val deviceAdminLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        isDeviceAdminGranted = isAdminGranted
-        if (result.resultCode == Activity.RESULT_OK || isDeviceAdminGranted) {
-            Toast.makeText(this, "Device admin enabled", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Device admin not enabled", Toast.LENGTH_SHORT).show()
-        }
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        devicePolicyManager = getSystemService(DEVICE_POLICY_SERVICE) as DevicePolicyManager
-        adminComponentName = ComponentName(this, DeviceAdmin::class.java)
-        
+
         AppTheme.applyTheme(this)
         
         refreshState() // Load initial state
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                handleExitRequest()
+            }
+        })
 
         setContent {
             AppTheme {
@@ -78,46 +69,33 @@ class LockdownModeActivity : AppCompatActivity() {
                         "hh:mm a",
                         Locale.getDefault()
                     ).format(selectedDateTime.time),
-                    protectSettingsUninstall = protectSettingsUninstall,
-                    isDeviceAdminGranted = isDeviceAdminGranted,
                     isLockdownActive = isLockdownActive,
+                    canEditCurrentLockdownSettings = canEditCurrentLockdownSettings,
+                    isConfigurationEnabled = isConfigurationEnabled,
+                    onConfigurationEnabledChange = { isEnabled ->
+                        if (!isEnabled && isLockdownActive) {
+                            getSharedPreferences("groupPrefs", MODE_PRIVATE).edit {
+                                putString("active_lock_mode", LockMode.NONE.name)
+                                putBoolean("lockdown_prompt_after_unlock", false)
+                                putBoolean("useDeviceAdminUninstallProtection", false)
+                            }
+                            refreshState()
+                            Toast.makeText(this, "Lockdown Disabled.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            isConfigurationEnabled = isEnabled
+                        }
+                    },
+                    onDisabledInteraction = { showEnableLockdownToggleDialog() },
                     
                     onLockdownTypeChanged = { newType ->
                         lockdownType = newType
-                        getSharedPreferences("groupPrefs", MODE_PRIVATE).edit { putString("lockdown_type", newType.name) }
                     },
                     onRecurringDaysChanged = { newDays ->
                         recurringDays = newDays
-                        getSharedPreferences("groupPrefs", MODE_PRIVATE).edit { 
-                            putString("lockdown_recurring_days", newDays.joinToString(",")) 
-                        }
                     },
                     onDateClick = { showDatePicker() },
                     onTimeClick = { showTimePicker() },
-                    onProtectSettingsUninstallToggled = { enabled ->
-                        if (enabled && !isDeviceAdminGranted) {
-                            Toast.makeText(
-                                this,
-                                "Enable Device Admin before turning on uninstall protection",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        } else {
-                            getSharedPreferences("groupPrefs", MODE_PRIVATE).edit {
-                                putBoolean("useDeviceAdminUninstallProtection", enabled)
-                            }
-                            protectSettingsUninstall = enabled
-                            if (enabled && isLockdownActive) {
-                                BackgroundChecker.startServiceIfNotRunning(applicationContext)
-                            }
-                        }
-                    },
-                    onEnableDeviceAdminClick = {
-                        if (isDeviceAdminGranted) {
-                            Toast.makeText(this, "Device admin already enabled", Toast.LENGTH_SHORT).show()
-                        } else {
-                            requestDeviceAdmin()
-                        }
-                    },
+                    onOpenFamilyLinkClick = { openFamilyLinkSetup() },
                     onStartLockdownClick = {
                         val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
                         val activeMode = prefs.getString("active_lock_mode", "NONE") ?: "NONE"
@@ -161,14 +139,16 @@ class LockdownModeActivity : AppCompatActivity() {
                             .setPositiveButton("Confirm") { _, _ ->
                                 prefs.edit {
                                     putString("active_lock_mode", "LOCKDOWN")
+                                    putString("lockdown_type", lockdownType.name)
                                     if (lockdownType == LockdownType.ONE_TIME) {
                                         putLong("lockdown_end_time", selectedDateTime.timeInMillis)
+                                        remove("lockdown_recurring_days")
+                                    } else {
+                                        putString("lockdown_recurring_days", recurringDays.joinToString(","))
+                                        remove("lockdown_end_time")
                                     }
-                                    putBoolean("useDeviceAdminUninstallProtection", protectSettingsUninstall)
+                                    putBoolean("useDeviceAdminUninstallProtection", false)
                                     putBoolean("lockdown_prompt_after_unlock", false)
-                                }
-                                if (protectSettingsUninstall) {
-                                    BackgroundChecker.startServiceIfNotRunning(applicationContext)
                                 }
                                 refreshState()
                                 Toast.makeText(this, "Lockdown saved.", Toast.LENGTH_SHORT).show()
@@ -182,16 +162,7 @@ class LockdownModeActivity : AppCompatActivity() {
                             }
                             .show()
                     },
-                    onDisableLockdownClick = {
-                        getSharedPreferences("groupPrefs", MODE_PRIVATE).edit {
-                            putString("active_lock_mode", "NONE")
-                            putBoolean("lockdown_prompt_after_unlock", false)
-                        }
-                        refreshState()
-                        Toast.makeText(this, "Lockdown Disabled.", Toast.LENGTH_SHORT).show()
-                        finish()
-                    },
-                    onBackClick = { finish() }
+                    onCancelClick = { handleExitRequest() }
                 )
             }
         }
@@ -203,9 +174,8 @@ class LockdownModeActivity : AppCompatActivity() {
     }
     
     private fun refreshState() {
-        isDeviceAdminGranted = isAdminGranted
-        
         val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+        val nowMillis = System.currentTimeMillis()
         
         // Active Mode
         val activeModeStr = prefs.getString("active_lock_mode", "NONE") ?: "NONE"
@@ -218,15 +188,13 @@ class LockdownModeActivity : AppCompatActivity() {
         val daysStr = prefs.getString("lockdown_recurring_days", "") ?: ""
         recurringDays = if (daysStr.isEmpty()) emptyList() 
                         else daysStr.split(",").mapNotNull { it.toIntOrNull() }.sorted()
-                        
-        protectSettingsUninstall = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
         
         val lockdownEnd = prefs.getLong("lockdown_end_time", 0L)
         if (
             activeModeStr == LockMode.LOCKDOWN.name &&
             lockdownType == LockdownType.ONE_TIME &&
             lockdownEnd > 0L &&
-            lockdownEnd <= System.currentTimeMillis()
+            lockdownEnd <= nowMillis
         ) {
             prefs.edit {
                 putString("active_lock_mode", "NONE")
@@ -236,6 +204,24 @@ class LockdownModeActivity : AppCompatActivity() {
             }
             isLockdownActive = false
         }
+        val lockDecision: LockDecision = if (isLockdownActive) {
+            LockPolicy.evaluateEditingLock(
+                state = LockState(
+                    activeLockMode = LockMode.LOCKDOWN,
+                    passwordUnlocked = false,
+                    securityKeyUnlocked = false,
+                    lockdownType = lockdownType,
+                    lockdownEndTimeMillis = lockdownEnd,
+                    lockdownRecurringDays = recurringDays,
+                    lockdownRecurringUsedKey = prefs.getString("lockdown_weekly_used_key", null)
+                ),
+                nowMillis = nowMillis
+            )
+        } else {
+            LockDecision(isLocked = false)
+        }
+        canEditCurrentLockdownSettings = !lockDecision.isLocked
+        isConfigurationEnabled = isLockdownActive
         if (lockdownEnd > 0L) {
             selectedDateTime = Calendar.getInstance().apply { timeInMillis = lockdownEnd }
         }
@@ -243,7 +229,7 @@ class LockdownModeActivity : AppCompatActivity() {
         // Status Text Generation
         statusText = if (isLockdownActive) {
              if (lockdownType == LockdownType.ONE_TIME) {
-                 if (lockdownEnd > System.currentTimeMillis()) {
+                 if (lockdownEnd > nowMillis) {
                      "Lockdown active until ${SimpleDateFormat("MMM dd, h:mm a", Locale.getDefault()).format(Date(lockdownEnd))}"
                  } else {
                      "Lockdown expired/finished (One-Time)."
@@ -258,6 +244,31 @@ class LockdownModeActivity : AppCompatActivity() {
         }
     }
 
+    private fun handleExitRequest() {
+        if (isConfigurationEnabled && !isLockdownActive) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Lockdown Mode")
+                .setMessage("Lockdown Mode Not Configured, Disabling")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("OK") { _, _ ->
+                    getSharedPreferences("groupPrefs", MODE_PRIVATE).edit {
+                        putString("active_lock_mode", LockMode.NONE.name)
+                    }
+                    finish()
+                }
+                .show()
+            return
+        }
+        finish()
+    }
+
+    private fun showEnableLockdownToggleDialog() {
+        MaterialAlertDialogBuilder(this)
+            .setMessage("Enable Lockdown Mode Toggle to On")
+            .setPositiveButton(android.R.string.ok, null)
+            .show()
+    }
+
     private fun buildLockdownTargetText(nowMillis: Long = System.currentTimeMillis()): String {
         return LockdownSummaryFormatter.formatTarget(
             lockdownType = lockdownType,
@@ -267,15 +278,29 @@ class LockdownModeActivity : AppCompatActivity() {
         )
     }
 
-    private fun requestDeviceAdmin() {
-        val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-            putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-            putExtra(
-                DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                "Granting this permission lets AppTick block Settings uninstall pages while lock mode is active."
-            )
+    private fun openFamilyLinkSetup() {
+        val familySettingsIntent = Intent("android.settings.FAMILY_SETTINGS")
+        if (familySettingsIntent.resolveActivity(packageManager) != null) {
+            startActivity(familySettingsIntent)
+            return
         }
-        deviceAdminLauncher.launch(intent)
+        val familyLinkPackage = "com.google.android.apps.kids.familylink"
+        val appIntent = packageManager.getLaunchIntentForPackage(familyLinkPackage)
+        if (appIntent != null) {
+            startActivity(appIntent)
+            return
+        }
+        val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$familyLinkPackage"))
+        if (marketIntent.resolveActivity(packageManager) != null) {
+            startActivity(marketIntent)
+            return
+        }
+        startActivity(
+            Intent(
+                Intent.ACTION_VIEW,
+                Uri.parse("https://play.google.com/store/apps/details?id=$familyLinkPackage")
+            )
+        )
     }
 
     private fun showDatePicker() {
@@ -314,7 +339,4 @@ class LockdownModeActivity : AppCompatActivity() {
 
         timePicker.show(supportFragmentManager, "TIME_PICKER")
     }
-
-    private val isAdminGranted: Boolean
-        get() = devicePolicyManager.isAdminActive(adminComponentName)
 }

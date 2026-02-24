@@ -4,10 +4,13 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Bundle
 import android.widget.Toast
+import androidx.annotation.VisibleForTesting
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import com.juliacai.apptick.AppTheme
+import com.juliacai.apptick.MainActivity
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -35,9 +38,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
 
@@ -79,7 +84,11 @@ class PasswordResetActivity : AppCompatActivity() {
                             putString("recovery_email", verifiedEmail)
                             putBoolean("recovery_email_password_verified", true)
                         }
-                        showSetupVerificationSuccessScreen("Password", verifiedEmail)
+                        showSetupVerificationSuccessScreen(
+                            modeName = "Password",
+                            verifiedEmail = verifiedEmail,
+                            purpose = purpose
+                        )
                     }
 
                     RecoveryEmailHelper.PURPOSE_SETUP_SECURITY_KEY -> {
@@ -87,7 +96,11 @@ class PasswordResetActivity : AppCompatActivity() {
                             putString("recovery_email_security_key", verifiedEmail)
                             putBoolean("recovery_email_security_key_verified", true)
                         }
-                        showSetupVerificationSuccessScreen("Security key", verifiedEmail)
+                        showSetupVerificationSuccessScreen(
+                            modeName = "Security key",
+                            verifiedEmail = verifiedEmail,
+                            purpose = purpose
+                        )
                     }
 
                     else -> {
@@ -96,7 +109,7 @@ class PasswordResetActivity : AppCompatActivity() {
                             AppTheme {
                                 ResetSuccessScreen(
                                     resetMode = resetMode,
-                                    onDone = { finish() }
+                                    onDone = { navigateToPostLinkDestination(purpose) }
                                 )
                             }
                         }
@@ -116,6 +129,7 @@ class PasswordResetActivity : AppCompatActivity() {
         if (isSecurityKeyReset) {
             prefs.edit {
                 remove("security_key_value")
+                remove("security_usb_key_fingerprint")
                 remove("recovery_email_security_key")
                 putBoolean("security_key_enabled", false)
                 putBoolean("securityKeyUnlocked", false)
@@ -141,15 +155,61 @@ class PasswordResetActivity : AppCompatActivity() {
         }
     }
 
-    private fun showSetupVerificationSuccessScreen(modeName: String, verifiedEmail: String) {
+    private fun showSetupVerificationSuccessScreen(
+        modeName: String,
+        verifiedEmail: String,
+        purpose: String?
+    ) {
         setContent {
             AppTheme {
                 SetupVerificationSuccessScreen(
                     modeName = modeName,
                     verifiedEmail = verifiedEmail,
-                    onDone = { finish() }
+                    onDone = { navigateToPostLinkDestination(purpose) }
                 )
             }
+        }
+    }
+
+    @VisibleForTesting
+    internal fun navigateAfterSuccessForTest(purpose: String?) {
+        navigateToPostLinkDestination(purpose)
+    }
+
+    private fun navigateToPostLinkDestination(purpose: String?) {
+        val destination = resolvePostLinkDestination(purpose = purpose, resetMode = resetMode)
+        val destinationIntent = when (destination) {
+            PostLinkDestination.SET_PASSWORD -> Intent(this, SetPassword::class.java)
+            PostLinkDestination.LOCK_MODES -> Intent(this, MainActivity::class.java).apply {
+                putExtra(MainActivity.EXTRA_OPEN_LOCK_MODES, true)
+            }
+            PostLinkDestination.ENTER_SECURITY_KEY -> Intent(this, EnterSecurityKeyActivity::class.java)
+            PostLinkDestination.ENTER_PASSWORD -> Intent(this, EnterPasswordActivity::class.java)
+        }
+
+        destinationIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        startActivity(destinationIntent)
+        finish()
+    }
+}
+
+internal enum class PostLinkDestination {
+    SET_PASSWORD,
+    LOCK_MODES,
+    ENTER_PASSWORD,
+    ENTER_SECURITY_KEY
+}
+
+internal fun resolvePostLinkDestination(purpose: String?, resetMode: String): PostLinkDestination {
+    return when (purpose) {
+        RecoveryEmailHelper.PURPOSE_SETUP_PASSWORD -> PostLinkDestination.SET_PASSWORD
+        RecoveryEmailHelper.PURPOSE_SETUP_SECURITY_KEY -> PostLinkDestination.LOCK_MODES
+        RecoveryEmailHelper.PURPOSE_RESET_SECURITY_KEY -> PostLinkDestination.ENTER_SECURITY_KEY
+        RecoveryEmailHelper.PURPOSE_RESET_PASSWORD -> PostLinkDestination.ENTER_PASSWORD
+        else -> if (resetMode == "security_key") {
+            PostLinkDestination.ENTER_SECURITY_KEY
+        } else {
+            PostLinkDestination.ENTER_PASSWORD
         }
     }
 }
@@ -177,10 +237,16 @@ fun PasswordResetScreen(
     } else {
         prefs.getString("recovery_email", null)
     }
+    val isRecoveryEmailVerified = if (isSecurityKeyReset) {
+        prefs.getBoolean("recovery_email_security_key_verified", false)
+    } else {
+        prefs.getBoolean("recovery_email_password_verified", false)
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -198,9 +264,16 @@ fun PasswordResetScreen(
                         modifier = Modifier.padding(bottom = 16.dp)
                     )
 
-                    if (recoveryEmail == null) {
+                    if (!RecoveryResetPolicy.hasConfiguredRecoveryEmail(recoveryEmail)) {
                         Text(
                             text = "No recovery email has been set up. Please set one in Lock Mode settings first.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            textAlign = TextAlign.Center,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (!RecoveryResetPolicy.canStartResetFlow(recoveryEmail, isRecoveryEmailVerified)) {
+                        Text(
+                            text = "Recovery email is not verified. Verify it in Lock Mode settings before resetting.",
                             style = MaterialTheme.typography.bodyLarge,
                             textAlign = TextAlign.Center,
                             color = MaterialTheme.colorScheme.error
@@ -248,7 +321,7 @@ fun PasswordResetScreen(
                                     return@Button
                                 }
 
-                                if (!email.equals(recoveryEmail, ignoreCase = true)) {
+                                if (!RecoveryResetPolicy.canSendResetLink(email, recoveryEmail, isRecoveryEmailVerified)) {
                                     errorMessage = "This email does not match the recovery email on file."
                                     return@Button
                                 }
@@ -337,6 +410,7 @@ fun SetupVerificationSuccessScreen(modeName: String, verifiedEmail: String, onDo
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -364,7 +438,7 @@ fun SetupVerificationSuccessScreen(modeName: String, verifiedEmail: String, onDo
             onClick = onDone,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Done")
+            Text("OK")
         }
     }
 }
@@ -376,6 +450,7 @@ fun ResetSuccessScreen(resetMode: String, onDone: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
@@ -391,7 +466,8 @@ fun ResetSuccessScreen(resetMode: String, onDone: () -> Unit) {
 
         Text(
             text = "$what Reset Successfully",
-            style = MaterialTheme.typography.headlineMedium
+            style = MaterialTheme.typography.headlineMedium,
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -408,7 +484,46 @@ fun ResetSuccessScreen(resetMode: String, onDone: () -> Unit) {
             onClick = onDone,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Done")
+            Text("OK")
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun SetupVerificationSuccessScreenPreview() {
+    AppTheme {
+        SetupVerificationSuccessScreen(
+            modeName = "Password",
+            verifiedEmail = "julia@example.com",
+            onDone = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun ResetSuccessScreenPreview() {
+    AppTheme {
+        ResetSuccessScreen(
+            resetMode = "password",
+            onDone = {}
+        )
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun PasswordResetScreenPreview() {
+    val context = LocalContext.current
+    val prefs = context.getSharedPreferences("password_reset_preview", android.content.Context.MODE_PRIVATE).apply {
+        edit().putString("recovery_email", "julia@example.com").apply()
+    }
+    AppTheme {
+        PasswordResetScreen(
+            prefs = prefs,
+            resetMode = "password",
+            onPasswordReset = {}
+        )
     }
 }

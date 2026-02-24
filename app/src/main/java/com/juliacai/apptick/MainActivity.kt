@@ -47,9 +47,7 @@ import com.juliacai.apptick.deviceApps.GroupPage
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppLimitGroupsList
 import com.juliacai.apptick.lockModes.EnterPasswordActivity
-import com.juliacai.apptick.lockModes.RecoveryEmailSetupActivity
 import com.juliacai.apptick.lockModes.EnterSecurityKeyActivity
-import com.juliacai.apptick.lockModes.RecoveryEmailEnforcer
 import com.juliacai.apptick.lockModes.SecurityKeySettingsScreen
 import com.juliacai.apptick.newAppLimit.AppLimitViewModel
 import com.juliacai.apptick.newAppLimit.AppSelectScreen
@@ -76,9 +74,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     private lateinit var prefs: SharedPreferences
     private val productDetailsState = androidx.compose.runtime.mutableStateOf<ProductDetails?>(null)
     private var appInitialized = false
-    private var recoveryEmailPromptShown = false
     private var appVersionCode: Long = -1L
     private var launchEditGroupId: Long? = null
+    private var launchDuplicateGroupId: Long? = null
     private var launchOpenLockModes = false
     private var lockEvaluationNow by androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis())
     private var lockStateUi by androidx.compose.runtime.mutableStateOf(
@@ -131,6 +129,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         super.onCreate(savedInstanceState)
 
         launchEditGroupId = intent.getLongExtra(EXTRA_EDIT_GROUP_ID, -1L).takeIf { it != -1L }
+        launchDuplicateGroupId =
+            intent.getLongExtra(EXTRA_DUPLICATE_GROUP_ID, -1L).takeIf { it != -1L }
         launchOpenLockModes = intent.getBooleanExtra(EXTRA_OPEN_LOCK_MODES, false)
 
         lifecycleScope.launch(Dispatchers.IO) {
@@ -147,7 +147,6 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         refreshLockUiState()
         lockEvaluationNow = System.currentTimeMillis()
         prefs.registerOnSharedPreferenceChangeListener(lockPrefsListener)
-        maybeForceLegacyRecoveryEmailSetup()
         batteryOptimizationStatusState.value = BatteryOptimizationHelper.getStatus(applicationContext)
         val hasSeenLoading = prefs.getBoolean("has_seen_launch_loading", false)
         if (!hasSeenLoading) {
@@ -203,6 +202,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val canAddWhileLocked = isLockModesLocked && lockState.activeLockMode == LockMode.LOCKDOWN
             var pendingEditGroupId by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(launchEditGroupId)
+            }
+            var pendingDuplicateGroupId by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(launchDuplicateGroupId)
             }
             var pendingOpenLockModes by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(launchOpenLockModes)
@@ -273,6 +275,15 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     launchEditGroupId = null
                 }
 
+                androidx.compose.runtime.LaunchedEffect(pendingDuplicateGroupId) {
+                    val groupId = pendingDuplicateGroupId ?: return@LaunchedEffect
+                    startedFromExistingGroupEdit = false
+                    appLimitViewModel.loadGroupForDuplication(groupId)
+                    navController.navigate("setTimeLimit")
+                    pendingDuplicateGroupId = null
+                    launchDuplicateGroupId = null
+                }
+
                 androidx.compose.runtime.LaunchedEffect(pendingOpenLockModes, premiumEnabled) {
                     if (!pendingOpenLockModes) return@LaunchedEffect
                     if (isPremiumEnabledNow() && !isLimitEditingLocked()) {
@@ -308,6 +319,14 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         val persistGroupOrder: (List<Long>) -> Unit = { newOrder ->
                             savedGroupOrder = newOrder
                             GroupCardOrderStore.writeOrder(prefs, newOrder)
+                        }
+                        val dismissGroupDetailsHint: () -> Unit = {
+                            if (showGroupDetailsHint) {
+                                showGroupDetailsHint = false
+                                prefs.edit {
+                                    putLong(PREF_GROUP_DETAILS_HINT_SEEN_VERSION, appVersionCode)
+                                }
+                            }
                         }
 
                         MainScreen(
@@ -418,6 +437,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 oemBatteryWarningDismissed = true
                                 prefs.edit { putBoolean(PREF_BATTERY_OEM_WARNING_DISMISSED, true) }
                             },
+                            onDismissGroupDetailsHint = dismissGroupDetailsHint,
                             listContent = {
                                 AppLimitGroupsList(
                                     groups = orderedGroups.map { appLimitGroup ->
@@ -433,6 +453,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                             paused = appLimitGroup.paused,
                                             useTimeRange = appLimitGroup.useTimeRange,
                                             blockOutsideTimeRange = appLimitGroup.blockOutsideTimeRange,
+                                            timeRanges = appLimitGroup.timeRanges,
                                             startHour = appLimitGroup.startHour,
                                             startMinute = appLimitGroup.startMinute,
                                             endHour = appLimitGroup.endHour,
@@ -441,22 +462,21 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                             timeRemaining = appLimitGroup.timeRemaining,
                                             nextResetTime = appLimitGroup.nextResetTime,
                                             nextAddTime = appLimitGroup.nextAddTime,
-                                            perAppUsage = appLimitGroup.perAppUsage
+                                            perAppUsage = appLimitGroup.perAppUsage,
+                                            isExpanded = appLimitGroup.isExpanded
                                         )
                                     },
                                     onCardClick = { group ->
-                                        if (showGroupDetailsHint) {
-                                            showGroupDetailsHint = false
-                                            prefs.edit {
-                                                putLong(PREF_GROUP_DETAILS_HINT_SEEN_VERSION, appVersionCode)
-                                            }
-                                        }
+                                        dismissGroupDetailsHint()
                                         startActivity(GroupPage.newIntent(this@MainActivity, group))
                                     },
                                     onEditClick = { group ->
                                         selectedGroupForActions = group
                                     },
                                     onLockClick = { launchUnlockFlow() },
+                                    onExpandToggle = { group ->
+                                        viewModel.setGroupExpanded(group.id, !group.isExpanded)
+                                    },
                                     isEditingLocked = isLockModesLocked,
                                     onPauseToggle = { group ->
                                         viewModel.togglePause(group)
@@ -467,6 +487,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     onDelete = { group -> viewModel.deleteGroup(group) },
                                     onReorder = { reorderedIds ->
                                         persistGroupOrder(reorderedIds)
+                                        dismissGroupDetailsHint()
                                     },
                                     autoScrollTargetSize = pendingScrollToBottomTargetSize,
                                     onAutoScrollHandled = { pendingScrollToBottomTargetSize = null }
@@ -482,6 +503,12 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     selectedGroupForActions = null
                                     startedFromExistingGroupEdit = true
                                     appLimitViewModel.startEditingGroup(currentGroup)
+                                    navController.navigate("setTimeLimit")
+                                },
+                                onDuplicate = {
+                                    selectedGroupForActions = null
+                                    startedFromExistingGroupEdit = false
+                                    appLimitViewModel.startDuplicatingGroup(currentGroup)
                                     navController.navigate("setTimeLimit")
                                 },
                                 onDelete = {
@@ -617,7 +644,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
                     composable("settings") {
                         SettingsScreen(
-                            onBackClick = { navController.popBackStack() },
+                            onBackClick = { navController.popBackStack(route = "main", inclusive = false) },
                             onCustomizeColors = { navController.navigate("colorPicker") },
                             onUpgradeToPremium = { navController.navigate("premium") },
                             onOpenPremiumModeInfo = { navController.navigate("premiumModeInfo") },
@@ -688,6 +715,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 if (startedFromExistingGroupEdit && shouldShowLockdownRelockPrompt()) {
                                     shouldPromptRelock = true
                                 }
+                                relockCredentialModesIfNeeded()
                                 startedFromExistingGroupEdit = false
                                 navController.popBackStack(route = "main", inclusive = false)
                             },
@@ -711,7 +739,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             activeLockMode = lockState.activeLockMode,
                             onPurchaseClick = { product -> launchPurchaseFlow(product) },
                             navController = navController,
-                            onBackClick = { navController.popBackStack() }
+                            onBackClick = {
+                                relockCredentialModesIfNeeded()
+                                navController.popBackStack()
+                            }
                         )
                     }
 
@@ -911,6 +942,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
     override fun onStop() {
         super.onStop()
+        relockCredentialModesIfNeeded()
         if (mBound) {
             unbindService(serviceConnection)
             mBound = false
@@ -924,7 +956,6 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             maybeAutoUnlockExpiredLockdown()
             refreshLockUiState()
             lockEvaluationNow = System.currentTimeMillis()
-            maybeForceLegacyRecoveryEmailSetup()
             viewModel.updatePremiumStatus(prefs.getBoolean("premium", false))
             syncBackgroundServiceState()
         }
@@ -943,33 +974,21 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         }
     }
 
+    private fun relockCredentialModesIfNeeded() {
+        if (!::prefs.isInitialized) return
+        val state = readLockState()
+        if (!LockPolicy.shouldAutoRelockOnExit(state)) return
+        prefs.edit {
+            putBoolean("passUnlocked", false)
+            putBoolean("securityKeyUnlocked", false)
+        }
+    }
+
     override fun onDestroy() {
         if (::prefs.isInitialized) {
             prefs.unregisterOnSharedPreferenceChangeListener(lockPrefsListener)
         }
         super.onDestroy()
-    }
-
-    private fun maybeForceLegacyRecoveryEmailSetup() {
-        val shouldForce = prefs.getBoolean("force_recovery_email_setup", false)
-        val activeMode = prefs.getString("active_lock_mode", "NONE")
-        val recoveryEmail = prefs.getString("recovery_email", null)
-
-        if (!RecoveryEmailEnforcer.shouldPrompt(shouldForce, activeMode, recoveryEmail)) {
-            if (RecoveryEmailEnforcer.shouldClearForceFlag(shouldForce, recoveryEmail)) {
-                prefs.edit { putBoolean("force_recovery_email_setup", false) }
-            }
-            recoveryEmailPromptShown = false
-            return
-        }
-
-        if (recoveryEmailPromptShown) return
-        recoveryEmailPromptShown = true
-        startActivity(
-            Intent(this, RecoveryEmailSetupActivity::class.java).apply {
-                putExtra(RecoveryEmailSetupActivity.EXTRA_FORCE_SETUP, true)
-            }
-        )
     }
 
     private fun syncBackgroundServiceState() {
@@ -1131,6 +1150,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
     companion object {
         const val EXTRA_EDIT_GROUP_ID = "extra_edit_group_id"
+        const val EXTRA_DUPLICATE_GROUP_ID = "extra_duplicate_group_id"
         const val EXTRA_OPEN_LOCK_MODES = "extra_open_lock_modes"
         private const val PREF_PREMIUM_DEFAULTS_APPLIED = "premiumDefaultsApplied"
         private const val PREF_BATTERY_OEM_WARNING_DISMISSED = "batteryOemWarningDismissed"

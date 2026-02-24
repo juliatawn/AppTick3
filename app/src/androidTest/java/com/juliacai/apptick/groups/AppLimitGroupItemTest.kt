@@ -26,7 +26,9 @@ class AppLimitGroupItemTest {
         composeTestRule.setContent {
             AppLimitGroupItem(
                 group = sampleGroup(),
+                isExpanded = true,
                 isEditingLocked = true,
+                onExpandToggle = {},
                 onLockClick = { lockClicks++ },
                 onPauseToggle = {},
                 onEdit = {},
@@ -48,7 +50,9 @@ class AppLimitGroupItemTest {
         composeTestRule.setContent {
             AppLimitGroupItem(
                 group = sampleGroup(),
+                isExpanded = true,
                 isEditingLocked = false,
+                onExpandToggle = {},
                 onLockClick = {},
                 onPauseToggle = {},
                 onEdit = {},
@@ -67,7 +71,9 @@ class AppLimitGroupItemTest {
         composeTestRule.setContent {
             AppLimitGroupItem(
                 group = sampleGroup(paused = true),
+                isExpanded = true,
                 isEditingLocked = false,
+                onExpandToggle = {},
                 onLockClick = {},
                 onPauseToggle = {},
                 onEdit = {},
@@ -79,12 +85,94 @@ class AppLimitGroupItemTest {
         composeTestRule.onNodeWithText("PAUSED").assertIsDisplayed()
     }
 
-    private fun sampleGroup(paused: Boolean = false): AppLimitGroup {
+    @Test
+    fun showsConfiguredTimeLimitAmount() {
+        composeTestRule.setContent {
+            AppLimitGroupItem(
+                group = sampleGroup(timeMinLimit = 10),
+                isExpanded = true,
+                isEditingLocked = false,
+                onExpandToggle = {},
+                onLockClick = {},
+                onPauseToggle = {},
+                onEdit = {},
+                onDelete = {}
+            )
+        }
+
+        composeTestRule.onNodeWithText("Time limit: 10 min").assertIsDisplayed()
+    }
+
+    @Test
+    fun showsTimeLeftLine() {
+        composeTestRule.setContent {
+            AppLimitGroupItem(
+                group = sampleGroup(timeMinLimit = 30, timeRemaining = 25 * 60_000L),
+                isExpanded = true,
+                isEditingLocked = false,
+                onExpandToggle = {},
+                onLockClick = {},
+                onPauseToggle = {},
+                onEdit = {},
+                onDelete = {}
+            )
+        }
+
+        composeTestRule.onNodeWithText("Time left: 25 min").assertIsDisplayed()
+    }
+
+    @Test
+    fun collapsedState_hidesExpandedDetails_butShowsCoreInfo() {
+        composeTestRule.setContent {
+            AppLimitGroupItem(
+                group = sampleGroup(timeMinLimit = 10, timeRemaining = 25 * 60_000L),
+                isExpanded = false,
+                isEditingLocked = false,
+                onExpandToggle = {},
+                onLockClick = {},
+                onPauseToggle = {},
+                onEdit = {},
+                onDelete = {}
+            )
+        }
+
+        composeTestRule.onNodeWithText("Time limit: 10 min").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Time left: 25 min").assertIsDisplayed()
+        composeTestRule.onAllNodesWithText("Active days: Everyday").assertCountEquals(0)
+    }
+
+    @Test
+    fun pausedGroup_hidesTimeLeftLine() {
+        composeTestRule.setContent {
+            AppLimitGroupItem(
+                group = sampleGroup(paused = true, timeMinLimit = 30, timeRemaining = 25 * 60_000L),
+                isExpanded = true,
+                isEditingLocked = false,
+                onExpandToggle = {},
+                onLockClick = {},
+                onPauseToggle = {},
+                onEdit = {},
+                onDelete = {}
+            )
+        }
+
+        composeTestRule.onAllNodesWithText("Time left: 25 min").assertCountEquals(0)
+    }
+
+    private fun sampleGroup(
+        paused: Boolean = false,
+        timeHrLimit: Int = 0,
+        timeMinLimit: Int = 0,
+        timeRemaining: Long = 0L
+    ): AppLimitGroup {
         return AppLimitGroup(
             id = 1L,
             name = "Focus",
             apps = listOf(AppInGroup("Calculator", "com.android.calculator2", null)),
-            paused = paused
+            paused = paused,
+            timeHrLimit = timeHrLimit,
+            timeMinLimit = timeMinLimit,
+            timeRemaining = timeRemaining
         )
     }
 }

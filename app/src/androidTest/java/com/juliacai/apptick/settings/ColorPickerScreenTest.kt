@@ -1,19 +1,14 @@
 package com.juliacai.apptick.settings
 
 import android.content.Context
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
-import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTouchInput
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.juliacai.apptick.settings.ColorPickerScreen
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -25,145 +20,30 @@ class ColorPickerScreenTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun wheelOnBackgroundTab_onlyUpdatesBackgroundColor() {
+    fun iconTabAndAdvancedColorControls_areRemoved() {
         setPremiumEnabled(enabled = true)
         composeRule.setContent {
             ColorPickerScreen(onBackClick = {})
         }
 
-        // Move to background tab before interacting with the wheel.
-        composeRule.onNodeWithText("Background").performClick()
-
-        val primaryBefore = getTextByTag("primary_hex")
-        val backgroundBefore = getTextByTag("background_hex")
-
-        composeRule.onNodeWithTag("color_wheel").assertIsDisplayed()
-        composeRule.onNodeWithTag("color_wheel").performTouchInput {
-            down(Offset(110f, 12f))
-            up()
-        }
-
-        val primaryAfter = getTextByTag("primary_hex")
-        val backgroundAfter = getTextByTag("background_hex")
-
-        assertEquals("Primary color should not change on Background tab", primaryBefore, primaryAfter)
-        assertNotEquals("Background color should change on Background tab", backgroundBefore, backgroundAfter)
+        composeRule.onAllNodesWithText("Icon").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Spectrum Wheel").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Hex Code").assertCountEquals(0)
+        composeRule.onAllNodesWithTag("color_wheel").assertCountEquals(0)
     }
 
     @Test
-    fun wheelOnTextTab_onlyUpdatesPrimaryTextColor() {
+    fun swatchPicker_hasNoTabs() {
         setPremiumEnabled(enabled = true)
         composeRule.setContent {
             ColorPickerScreen(onBackClick = {})
         }
 
-        composeRule.onNodeWithText("Text").performClick()
-
-        val primaryBefore = getTextByTag("primary_hex")
-        val backgroundBefore = getTextByTag("background_hex")
-
-        composeRule.onNodeWithTag("color_wheel").assertIsDisplayed()
-        composeRule.onNodeWithTag("color_wheel").performTouchInput {
-            down(Offset(208f, 110f))
-            up()
-        }
-
-        val primaryAfter = getTextByTag("primary_hex")
-        val backgroundAfter = getTextByTag("background_hex")
-
-        assertNotEquals("Primary color should change on Text tab", primaryBefore, primaryAfter)
-        assertEquals("Background color should not change on Text tab", backgroundBefore, backgroundAfter)
-    }
-
-    @Test
-    fun wheelOnIconTabCustom_onlyUpdatesIconColor() {
-        setPremiumEnabled(enabled = true)
-        composeRule.setContent {
-            ColorPickerScreen(onBackClick = {})
-        }
-
-        // Move to icon tab and disable system-match so icon color is editable.
-        composeRule.onNodeWithText("Icon").performClick()
-        composeRule.onNodeWithTag("icon_match_system_toggle").performClick()
-
-        val primaryBefore = getTextByTag("primary_hex")
-        val backgroundBefore = getTextByTag("background_hex")
-        val iconBefore = getTextByTag("icon_hex")
-
-        composeRule.onNodeWithTag("color_wheel").assertIsDisplayed()
-        composeRule.onNodeWithTag("color_wheel").performTouchInput {
-            down(Offset(110f, 208f))
-            up()
-        }
-
-        val primaryAfter = getTextByTag("primary_hex")
-        val backgroundAfter = getTextByTag("background_hex")
-        val iconAfter = getTextByTag("icon_hex")
-
-        assertEquals("Primary color should not change on Icon tab", primaryBefore, primaryAfter)
-        assertEquals("Background color should not change on Icon tab", backgroundBefore, backgroundAfter)
-        assertNotEquals("Icon color should change on Icon tab", iconBefore, iconAfter)
-    }
-
-    @Test
-    fun wheelOnCardTab_onlyUpdatesCardColor() {
-        setPremiumEnabled(enabled = true)
-        composeRule.setContent {
-            ColorPickerScreen(onBackClick = {})
-        }
-
-        composeRule.onNodeWithText("Card").performClick()
-
-        val backgroundBefore = getTextByTag("background_hex")
-        val cardBefore = getTextByTag("card_hex")
-
-        composeRule.onNodeWithTag("color_wheel").assertIsDisplayed()
-        composeRule.onNodeWithTag("color_wheel").performTouchInput {
-            down(Offset(84f, 168f))
-            up()
-        }
-
-        val backgroundAfter = getTextByTag("background_hex")
-        val cardAfter = getTextByTag("card_hex")
-
-        assertEquals("Background color should not change on Card tab", backgroundBefore, backgroundAfter)
-        assertNotEquals("Card color should change on Card tab", cardBefore, cardAfter)
-    }
-
-    @Test
-    fun changingTextColor_doesNotChangeEffectiveIconPreview_whenIconSetCustom() {
-        setPremiumEnabled(enabled = true)
-        composeRule.setContent {
-            ColorPickerScreen(onBackClick = {})
-        }
-
-        // First set a custom icon color.
-        composeRule.onNodeWithText("Icon").performClick()
-        composeRule.onNodeWithTag("icon_match_system_toggle").performClick()
-        composeRule.onNodeWithTag("color_wheel").performTouchInput {
-            down(Offset(202f, 60f))
-            up()
-        }
-        val effectiveIconBefore = getTextByTag("effective_icon_hex")
-
-        // Then change text color and assert icon preview stays the same.
-        composeRule.onNodeWithText("Text").performClick()
-        composeRule.onNodeWithTag("color_wheel").performTouchInput {
-            down(Offset(20f, 120f))
-            up()
-        }
-        val effectiveIconAfter = getTextByTag("effective_icon_hex")
-
-        assertEquals(
-            "Text tab color changes should not alter icon preview color",
-            effectiveIconBefore,
-            effectiveIconAfter
-        )
-    }
-
-    private fun getTextByTag(tag: String): String {
-        val node = composeRule.onNodeWithTag(tag).fetchSemanticsNode()
-        return node.config[SemanticsProperties.Text].joinToString(separator = "") { it.text }
+        composeRule.onAllNodesWithText("Text").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Background").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Card").assertCountEquals(0)
+        composeRule.onNodeWithText("Choose Theme Color").assertIsDisplayed()
+        composeRule.onNodeWithText("Save").assertIsDisplayed()
     }
 
     private fun setPremiumEnabled(enabled: Boolean) {
@@ -173,7 +53,6 @@ class ColorPickerScreenTest {
             .clear()
             .putBoolean("premium", enabled)
             .putBoolean("custom_color_mode", true)
-            .putString("app_icon_color_mode", "system")
             .commit()
     }
 }

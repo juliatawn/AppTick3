@@ -54,6 +54,40 @@ class LockPolicyTest {
     }
 
     @Test
+    fun shouldAutoRelockOnExit_trueOnlyForUnlockedCredentialModes() {
+        val password = LockPolicy.shouldAutoRelockOnExit(
+            baseState().copy(activeLockMode = LockMode.PASSWORD, passwordUnlocked = true)
+        )
+        val securityKey = LockPolicy.shouldAutoRelockOnExit(
+            baseState().copy(activeLockMode = LockMode.SECURITY_KEY, securityKeyUnlocked = true)
+        )
+        val none = LockPolicy.shouldAutoRelockOnExit(
+            baseState().copy(activeLockMode = LockMode.NONE)
+        )
+        val lockdown = LockPolicy.shouldAutoRelockOnExit(
+            baseState().copy(activeLockMode = LockMode.LOCKDOWN)
+        )
+
+        assertThat(password).isTrue()
+        assertThat(securityKey).isTrue()
+        assertThat(none).isFalse()
+        assertThat(lockdown).isFalse()
+    }
+
+    @Test
+    fun shouldAutoRelockOnExit_falseWhenCredentialModeAlreadyLocked() {
+        val password = LockPolicy.shouldAutoRelockOnExit(
+            baseState().copy(activeLockMode = LockMode.PASSWORD, passwordUnlocked = false)
+        )
+        val securityKey = LockPolicy.shouldAutoRelockOnExit(
+            baseState().copy(activeLockMode = LockMode.SECURITY_KEY, securityKeyUnlocked = false)
+        )
+
+        assertThat(password).isFalse()
+        assertThat(securityKey).isFalse()
+    }
+
+    @Test
     fun oneTimeLockdown_locksBeforeEndAndClearsAfterEnd() {
         val end = 2_000L
         val before = LockPolicy.evaluateEditingLock(

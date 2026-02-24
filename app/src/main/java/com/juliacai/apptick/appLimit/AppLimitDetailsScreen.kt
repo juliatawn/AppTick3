@@ -40,11 +40,17 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.MainViewModel
+import com.juliacai.apptick.formatTimeRanges
 import com.juliacai.apptick.formatClockTime
+import com.juliacai.apptick.getConfiguredTimeRanges
+import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.AppUsageStat
 import com.juliacai.apptick.groups.GroupAppItem
 import com.juliacai.apptick.lazyColumnScrollIndicator
 import com.juliacai.apptick.rememberScrollbarColor
@@ -68,7 +74,13 @@ fun AppLimitDetailsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("App Limit Details") },
+                title = {
+                    Text(
+                        text = "App Limit Details",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -266,13 +278,18 @@ private fun formatTimeRangeInfo(group: AppLimitGroup, context: Context): String 
         "All Day"
     } else {
         val mode = if (group.blockOutsideTimeRange) "Block outside range" else "Allow outside range"
-        "${formatClockTime(context, group.startHour, group.startMinute)} - ${
-            formatClockTime(
-                context,
-                group.endHour,
-                group.endMinute
-            )
-        } ($mode)"
+        val rangeText = if (group.getConfiguredTimeRanges().isEmpty()) {
+            "${formatClockTime(context, group.startHour, group.startMinute)} - ${
+                formatClockTime(
+                    context,
+                    group.endHour,
+                    group.endMinute
+                )
+            }"
+        } else {
+            formatTimeRanges(context, group)
+        }
+        "$rangeText ($mode)"
     }
 }
 
@@ -290,4 +307,42 @@ private fun formatDays(days: List<Int>): String {
     if (days.isEmpty() || days.size == 7) return "Everyday"
     val dayNames = arrayOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     return days.sorted().mapNotNull { dayNames.getOrNull(it - 1) }.joinToString(", ")
+}
+
+@Preview(showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+private fun AppLimitDetailsCardsPreview() {
+    val now = System.currentTimeMillis()
+    val sampleGroup = AppLimitGroup(
+        id = 99L,
+        name = "Social Apps",
+        timeHrLimit = 2,
+        timeMinLimit = 0,
+        limitEach = false,
+        resetMinutes = 120,
+        weekDays = listOf(1, 2, 3, 4, 5),
+        apps = listOf(
+            AppInGroup("Instagram", "com.instagram.android", null),
+            AppInGroup("YouTube", "com.google.android.youtube", null)
+        ),
+        cumulativeTime = true,
+        timeRemaining = 74 * 60_000L,
+        nextResetTime = now + 2 * 60 * 60_000L,
+        nextAddTime = now + 2 * 60 * 60_000L,
+        perAppUsage = listOf(
+            AppUsageStat("com.instagram.android", 46 * 60_000L),
+            AppUsageStat("com.google.android.youtube", 60 * 60_000L)
+        )
+    )
+
+    AppTheme {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            TimeRemainingCard(group = sampleGroup)
+            SettingsSummaryCard(group = sampleGroup)
+            AppUsageCard(group = sampleGroup)
+        }
+    }
 }

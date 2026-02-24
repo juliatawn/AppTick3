@@ -28,7 +28,9 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,7 +45,13 @@ fun RecoveryEmailSetupScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Set Recovery Email") },
+                title = {
+                    Text(
+                        text = "Set Recovery Email",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -97,5 +105,16 @@ fun RecoveryEmailSetupScreen(
                 Text("Save Recovery Email")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun RecoveryEmailSetupScreenPreview() {
+    AppTheme {
+        RecoveryEmailSetupScreen(
+            initialEmail = "julia@example.com",
+            onSaveClick = {}
+        )
     }
 }

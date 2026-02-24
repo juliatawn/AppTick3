@@ -1,6 +1,7 @@
 package com.juliacai.apptick.appLimit
 
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.TimeRange
 import org.junit.Assert.*
 import org.junit.Test
 import java.util.Calendar
@@ -35,5 +36,68 @@ class AppLimitEvaluatorTest {
         val group = AppLimitGroup(weekDays = listOf(otherDay))
         
         assertFalse(AppLimitEvaluator.shouldCheckLimit(group))
+    }
+
+    @Test
+    fun `isWithinTimeRange returns true when now matches any configured range`() {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 13)
+            set(Calendar.MINUTE, 15)
+        }
+        val group = AppLimitGroup(
+            useTimeRange = true,
+            timeRanges = listOf(
+                TimeRange(startHour = 8, startMinute = 0, endHour = 9, endMinute = 0),
+                TimeRange(startHour = 13, startMinute = 0, endHour = 14, endMinute = 0)
+            )
+        )
+
+        assertTrue(AppLimitEvaluator.isWithinTimeRange(group, calendar.timeInMillis))
+    }
+
+    @Test
+    fun `isWithinTimeRange supports overnight ranges`() {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 1)
+            set(Calendar.MINUTE, 30)
+        }
+        val group = AppLimitGroup(
+            useTimeRange = true,
+            timeRanges = listOf(TimeRange(startHour = 22, startMinute = 0, endHour = 2, endMinute = 0))
+        )
+
+        assertTrue(AppLimitEvaluator.isWithinTimeRange(group, calendar.timeInMillis))
+    }
+
+    @Test
+    fun `outside range with Block Apps enabled returns shouldBlockOutsideTimeRange true`() {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+        val group = AppLimitGroup(
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            timeRanges = listOf(TimeRange(startHour = 20, startMinute = 0, endHour = 22, endMinute = 0))
+        )
+
+        assertTrue(AppLimitEvaluator.shouldBlockOutsideTimeRange(group, calendar.timeInMillis))
+        assertFalse(AppLimitEvaluator.shouldCheckLimit(group, calendar.timeInMillis))
+    }
+
+    @Test
+    fun `outside range with Allow No Limits returns no block and no limit enforcement`() {
+        val calendar = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 10)
+            set(Calendar.MINUTE, 0)
+        }
+        val group = AppLimitGroup(
+            useTimeRange = true,
+            blockOutsideTimeRange = false,
+            timeRanges = listOf(TimeRange(startHour = 20, startMinute = 0, endHour = 22, endMinute = 0))
+        )
+
+        assertFalse(AppLimitEvaluator.shouldBlockOutsideTimeRange(group, calendar.timeInMillis))
+        assertFalse(AppLimitEvaluator.shouldCheckLimit(group, calendar.timeInMillis))
     }
 }

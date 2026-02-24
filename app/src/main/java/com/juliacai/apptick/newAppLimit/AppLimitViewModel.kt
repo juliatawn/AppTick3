@@ -12,6 +12,7 @@ import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppUsageStat
+import com.juliacai.apptick.groups.TimeRange
 import com.juliacai.apptick.TimeManager
 import kotlinx.coroutines.launch
 import java.util.concurrent.TimeUnit
@@ -62,8 +63,26 @@ class AppLimitViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun loadGroupForDuplication(groupId: Long) {
+        viewModelScope.launch {
+            val loadedGroup = appLimitGroupDao.getGroup(groupId)?.toDomainModel() ?: return@launch
+            startDuplicatingGroup(loadedGroup)
+        }
+    }
+
     fun startEditingGroup(group: AppLimitGroup) {
         _group.value = group
+        _draft.value = null
+        _selectedApps.value = group.apps.map {
+            AppInfo(
+                appName = it.appName,
+                appPackage = it.appPackage
+            )
+        }
+    }
+
+    fun startDuplicatingGroup(group: AppLimitGroup) {
+        _group.value = duplicateGroupForCreation(group)
         _draft.value = null
         _selectedApps.value = group.apps.map {
             AppInfo(
@@ -104,6 +123,18 @@ class AppLimitViewModel(application: Application) : AndroidViewModel(application
     }
 }
 
+internal fun duplicateGroupForCreation(group: AppLimitGroup): AppLimitGroup {
+    return group.copy(
+        id = 0L,
+        paused = false,
+        timeRemaining = 0L,
+        nextResetTime = 0L,
+        nextAddTime = 0L,
+        perAppUsage = emptyList(),
+        isExpanded = true
+    )
+}
+
 internal fun normalizeGroupForPersistence(
     group: AppLimitGroup,
     normalizedUsage: List<AppUsageStat> = group.perAppUsage
@@ -120,7 +151,7 @@ internal fun normalizeGroupForPersistence(
         group.limitEach -> if (isNewGroup && persistedRemaining == 0L) limitInMillis else persistedRemaining
         persistedRemaining > 0L -> persistedRemaining
         else -> remainingFromUsage
-    }
+    }.coerceAtMost(limitInMillis)
 
     // Set nextResetTime if unset (0) or already in the past.
     val now = System.currentTimeMillis()
@@ -156,6 +187,7 @@ data class SetTimeLimitDraft(
     val limitEach: Boolean,
     val useTimeRange: Boolean,
     val blockOutsideTimeRange: Boolean,
+    val timeRanges: List<TimeRange>,
     val startHour: Int,
     val startMinute: Int,
     val endHour: Int,

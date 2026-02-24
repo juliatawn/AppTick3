@@ -15,10 +15,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -30,15 +28,17 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.juliacai.apptick.AppTheme
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EnterPasswordScreen(
     onPasswordSubmit: (String) -> Unit,
+    onCancelClick: () -> Unit,
     onBiometricClick: () -> Unit,
     onUsbKeyClick: () -> Unit,
-    onForgotPasswordClick: () -> Unit,
     isBiometricVisible: Boolean,
     isUsbKeyVisible: Boolean,
 ) {
@@ -49,7 +49,13 @@ fun EnterPasswordScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Enter Password") },
+                title = {
+                    Text(
+                        text = "Enter Password",
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -94,6 +100,7 @@ fun EnterPasswordScreen(
             ) {
                 Text("Submit")
             }
+            Spacer(modifier = Modifier.height(12.dp))
             if (isBiometricVisible) {
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(
@@ -112,10 +119,27 @@ fun EnterPasswordScreen(
                     Text("Use USB Key")
                 }
             }
-            Spacer(modifier = Modifier.height(32.dp))
-            TextButton(onClick = onForgotPasswordClick) {
-                Text("Forgot Password?")
+            Button(
+                onClick = onCancelClick,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cancel")
             }
         }
+    }
+}
+
+@Preview(showBackground = true)
+@Composable
+private fun EnterPasswordScreenPreview() {
+    AppTheme {
+        EnterPasswordScreen(
+            onPasswordSubmit = {},
+            onCancelClick = {},
+            onBiometricClick = {},
+            onUsbKeyClick = {},
+            isBiometricVisible = true,
+            isUsbKeyVisible = true
+        )
     }
 }

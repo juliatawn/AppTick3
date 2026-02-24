@@ -8,16 +8,11 @@ import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.toArgb
 import androidx.core.graphics.drawable.toBitmap
 import com.juliacai.apptick.AppTheme
-import com.juliacai.apptick.ThemeModeManager
 
 class BlockWindowActivity : AppCompatActivity() {
 
@@ -54,63 +49,11 @@ class BlockWindowActivity : AppCompatActivity() {
             else -> "Out of Time"
         }
         val isPremium = prefs.getBoolean("premium", false)
-        val primaryColor = AppTheme.getPrimaryColor(this)
-        val backgroundColor = AppTheme.getBackgroundColor(this)
-        val cardColor = AppTheme.getCardColor(this)
-        val iconColor = AppTheme.getIconColor(this)
+        val palette = AppTheme.currentPalette(this)
 
-        val composePrimary = Color(primaryColor)
-        val composeBackground = Color(backgroundColor)
-        val composeCard = Color(cardColor)
-        val composeIconColor = Color(iconColor)
-
-        val customColorModeEnabled = ThemeModeManager.isCustomColorModeEnabled(this)
-        val isSystemDark = AppTheme.isSystemDarkMode(this)
-
-        val colorScheme = if (customColorModeEnabled) {
-            val useDarkScheme = composeBackground.luminance() < 0.4f
-            if (useDarkScheme) {
-                darkColorScheme(
-                    primary = composePrimary,
-                    background = composeBackground,
-                    surface = composeCard,
-                    primaryContainer = composePrimary.copy(alpha = 0.24f),
-                    onPrimary = composeIconColor,
-                    onBackground = composeIconColor,
-                    onSurface = composeIconColor,
-                    onPrimaryContainer = composeIconColor
-                ).copy(
-                    surfaceVariant = composeCard,
-                    surfaceContainerLowest = composeCard,
-                    surfaceContainerLow = composeCard,
-                    surfaceContainer = composeCard,
-                    surfaceContainerHigh = composeCard,
-                    surfaceContainerHighest = composeCard
-                )
-            } else {
-                lightColorScheme(
-                    primary = composePrimary,
-                    background = composeBackground,
-                    surface = composeCard,
-                    primaryContainer = composePrimary.copy(alpha = 0.16f),
-                    onPrimary = composeIconColor,
-                    onBackground = composeIconColor,
-                    onSurface = composeIconColor,
-                    onPrimaryContainer = composeIconColor
-                ).copy(
-                    surfaceVariant = composeCard,
-                    surfaceContainerLowest = composeCard,
-                    surfaceContainerLow = composeCard,
-                    surfaceContainer = composeCard,
-                    surfaceContainerHigh = composeCard,
-                    surfaceContainerHighest = composeCard
-                )
-            }
-        } else if (isSystemDark) {
-            darkColorScheme()
-        } else {
-            lightColorScheme()
-        }
+        val composePrimary = Color(palette.primary)
+        val composeBackground = Color(palette.background)
+        val colorScheme = AppTheme.colorSchemeFromPalette(palette)
 
         val appIcon = getAppIcon(appPackage)
 

@@ -3,6 +3,7 @@ package com.juliacai.apptick.data
 import com.google.common.truth.Truth.assertThat
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppUsageStat
+import com.juliacai.apptick.groups.TimeRange
 import org.junit.Test
 
 class AppLimitBackupManagerTest {
@@ -53,14 +54,15 @@ class AppLimitBackupManagerTest {
 
         val parsed = AppLimitBackupManager.fromJson(json)
 
-        assertThat(parsed.schemaVersion).isEqualTo(2)
+        assertThat(parsed.schemaVersion).isEqualTo(3)
         assertThat(parsed.groups).hasSize(1)
         assertThat(parsed.groups.first()).isEqualTo(
             group.copy(
                 timeRemaining = 0L,
                 nextResetTime = 0L,
                 nextAddTime = 0L,
-                perAppUsage = emptyList()
+                perAppUsage = emptyList(),
+                timeRanges = listOf(TimeRange(8, 0, 16, 30))
             )
         )
         assertThat(parsed.appSettings.showTimeLeft).isFalse()
@@ -132,5 +134,50 @@ class AppLimitBackupManagerTest {
                 "com.google.android.youtube"
             )
             .inOrder()
+    }
+
+    @Test
+    fun fromJson_legacyTimeRange_populatesTimeRangesFromStartEnd() {
+        val json = """
+            {
+              "schemaVersion": 3,
+              "groups": [
+                {
+                  "id": 7,
+                  "name": "Legacy",
+                  "timeHrLimit": 1,
+                  "timeMinLimit": 0,
+                  "limitEach": false,
+                  "resetHours": 0,
+                  "weekDays": [],
+                  "apps": [],
+                  "paused": false,
+                  "useTimeRange": true,
+                  "blockOutsideTimeRange": true,
+                  "startHour": 9,
+                  "startMinute": 15,
+                  "endHour": 17,
+                  "endMinute": 45,
+                  "cumulativeTime": false,
+                  "timeRemaining": 0,
+                  "nextResetTime": 0,
+                  "nextAddTime": 0,
+                  "perAppUsage": [],
+                  "isExpanded": true
+                }
+              ],
+              "appSettings": {
+                "showTimeLeft": true,
+                "floatingBubbleEnabled": false,
+                "darkModeEnabled": false,
+                "customColorModeEnabled": false
+              }
+            }
+        """.trimIndent()
+
+        val parsed = AppLimitBackupManager.fromJson(json)
+
+        assertThat(parsed.groups).hasSize(1)
+        assertThat(parsed.groups.first().timeRanges).containsExactly(TimeRange(9, 15, 17, 45))
     }
 }

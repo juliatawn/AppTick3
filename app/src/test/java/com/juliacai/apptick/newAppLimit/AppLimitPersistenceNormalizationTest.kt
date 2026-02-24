@@ -6,10 +6,34 @@ import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppUsageStat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import java.util.Calendar
 
 class AppLimitPersistenceNormalizationTest {
+
+    @Test
+    fun duplicateGroup_resetsPersistenceFields_forImmediateSaveAsNew() {
+        val original = AppLimitGroup(
+            id = 42L,
+            paused = true,
+            timeHrLimit = 1,
+            timeMinLimit = 30,
+            timeRemaining = 5_000L,
+            nextResetTime = System.currentTimeMillis() + 60_000L,
+            nextAddTime = System.currentTimeMillis() + 60_000L,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 4_000L))
+        )
+
+        val duplicated = duplicateGroupForCreation(original)
+        val normalized = normalizeGroupForPersistence(duplicated)
+
+        assertEquals(0L, duplicated.id)
+        assertFalse(duplicated.paused)
+        assertTrue(duplicated.perAppUsage.isEmpty())
+        assertEquals(0L, duplicated.timeRemaining)
+        assertEquals(5_400_000L, normalized.timeRemaining)
+    }
 
     @Test
     fun newGroupWithTimeLimit_initializesTimeRemainingFromLimit() {
@@ -28,7 +52,7 @@ class AppLimitPersistenceNormalizationTest {
     }
 
     @Test
-    fun existingGroupWithCarryOver_keepsPositiveTimeRemaining() {
+    fun existingGroupWithCarryOver_capsTimeRemainingAtLimit() {
         val group = AppLimitGroup(
             id = 42L,
             timeHrLimit = 0,
@@ -39,7 +63,7 @@ class AppLimitPersistenceNormalizationTest {
 
         val normalized = normalizeGroupForPersistence(group)
 
-        assertEquals(300_000L, normalized.timeRemaining)
+        assertEquals(120_000L, normalized.timeRemaining)
     }
 
     @Test
