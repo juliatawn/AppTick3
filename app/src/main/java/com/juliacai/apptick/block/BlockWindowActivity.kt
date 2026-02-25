@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.core.graphics.drawable.toBitmap
 import com.juliacai.apptick.AppTheme
+import com.juliacai.apptick.backgroundProcesses.FloatingBubbleService
 
 class BlockWindowActivity : AppCompatActivity() {
 
@@ -20,6 +21,7 @@ class BlockWindowActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        hideFloatingBubble()
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         AppTheme.applyTheme(this)
         updateContent(intent)
@@ -27,7 +29,14 @@ class BlockWindowActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        hideFloatingBubble()
         updateContent(intent)
+    }
+
+    private fun hideFloatingBubble() {
+        try {
+            startService(FloatingBubbleService.hideIntent(this))
+        } catch (_: Exception) {}
     }
 
     private fun updateContent(intent: Intent?) {

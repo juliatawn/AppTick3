@@ -124,6 +124,13 @@ class SetPassword : AppCompatActivity() {
         enableUsbKey: Boolean
     ) {
         val activeMode = activeLockMode()
+        if (prefs.getBoolean("lockdown_prompt_after_unlock", false)) {
+            showInfoDialog(
+                "Lockdown Mode Pending",
+                "Finish Lockdown mode first before enabling Password mode."
+            )
+            return
+        }
         if (activeMode != LockMode.NONE && activeMode != LockMode.PASSWORD) {
             showInfoDialog(
                 "Lock Mode Active",

@@ -100,4 +100,22 @@ class AppLimitEvaluatorTest {
         assertFalse(AppLimitEvaluator.shouldBlockOutsideTimeRange(group, calendar.timeInMillis))
         assertFalse(AppLimitEvaluator.shouldCheckLimit(group, calendar.timeInMillis))
     }
+
+    @Test
+    fun `shouldCheckLimit returns false when group is paused`() {
+        val group = AppLimitGroup(paused = true, weekDays = emptyList())
+
+        assertFalse(AppLimitEvaluator.shouldCheckLimit(group))
+    }
+
+    @Test
+    fun `isLimitReached returns true only when remaining is zeroOrLess`() {
+        val reached = AppLimitGroup(timeRemaining = 0L)
+        val overUsed = AppLimitGroup(timeRemaining = -1L)
+        val notReached = AppLimitGroup(timeRemaining = 1L)
+
+        assertTrue(AppLimitEvaluator.isLimitReached(reached))
+        assertTrue(AppLimitEvaluator.isLimitReached(overUsed))
+        assertFalse(AppLimitEvaluator.isLimitReached(notReached))
+    }
 }

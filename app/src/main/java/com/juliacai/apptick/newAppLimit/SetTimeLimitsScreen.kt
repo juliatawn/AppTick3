@@ -26,10 +26,14 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import android.content.Context
+import androidx.compose.material3.HorizontalDivider
 import androidx.core.graphics.createBitmap
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.juliacai.apptick.AppInfo
+import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.TimeRange
@@ -46,15 +50,42 @@ fun SetTimeLimitsScreen(
     onEditApps: () -> Unit = {},
     onUpgradeToPremium: () -> Unit = {}
 ) {
+    val group by viewModel.group.observeAsState()
+    val draft by viewModel.draft.observeAsState()
+    val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
+
+    SetTimeLimitsScreenContent(
+        group = group,
+        draft = draft,
+        selectedApps = selectedApps,
+        onSelectedAppsChange = viewModel::setSelectedApps,
+        onDraftChange = viewModel::updateDraft,
+        onFinish = onFinish,
+        onCancel = onCancel,
+        onEditApps = onEditApps,
+        onUpgradeToPremium = onUpgradeToPremium
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun SetTimeLimitsScreenContent(
+    group: AppLimitGroup?,
+    draft: SetTimeLimitDraft?,
+    selectedApps: List<AppInfo>,
+    onSelectedAppsChange: (List<AppInfo>) -> Unit,
+    onDraftChange: (SetTimeLimitDraft) -> Unit,
+    onFinish: (AppLimitGroup) -> Unit,
+    onCancel: () -> Unit,
+    onEditApps: () -> Unit = {},
+    onUpgradeToPremium: () -> Unit = {}
+) {
     val scrollState = rememberScrollState()
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val keyboardController = LocalSoftwareKeyboardController.current
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
     var premiumFeatureDialogFor by remember { mutableStateOf<String?>(null) }
-    val group by viewModel.group.observeAsState()
-    val draft by viewModel.draft.observeAsState()
-    val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
     val existingGroup = group
 
     val initialGroupName = draft?.groupName ?: existingGroup?.name ?: ""
@@ -123,7 +154,7 @@ fun SetTimeLimitsScreen(
     fun persistDraft() {
         val draftRanges = timeRanges.toList()
         val fallbackRange = draftRanges.firstOrNull() ?: TimeRange()
-        viewModel.updateDraft(
+        onDraftChange(
             SetTimeLimitDraft(
                 groupName = groupName.value,
                 useTimeLimit = useTimeLimit.value,
@@ -212,7 +243,7 @@ fun SetTimeLimitsScreen(
                             onClick = {
                                 val updated = selectedApps.toMutableList()
                                 updated.remove(app)
-                                viewModel.setSelectedApps(updated)
+                                onSelectedAppsChange(updated)
                             },
                             label = { Text(app.appName ?: app.appPackage ?: "") },
                             leadingIcon = {
@@ -310,18 +341,37 @@ fun SetTimeLimitsScreen(
                             )
                         )
                     }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(selected = limitEach.value, onClick = { limitEach.value = true })
-                        Text("Limit for EACH app")
-                        Spacer(modifier = Modifier.width(16.dp))
-                        RadioButton(selected = !limitEach.value, onClick = { limitEach.value = false })
-                        Text("Limit for ALL apps")
+                    Spacer(Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = limitEach.value,
+                                onClick = { limitEach.value = true }
+                            )
+                            Text("Limit for EACH app")
+                        }
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = !limitEach.value,
+                                onClick = { limitEach.value = false }
+                            )
+                            Text("Limit for ALL apps")
+                        }
                     }
                 }
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Divider()
+            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -460,7 +510,7 @@ fun SetTimeLimitsScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Divider()
+            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
             Spacer(modifier = Modifier.height(16.dp))
 
             Text("Active Days")
@@ -510,7 +560,7 @@ fun SetTimeLimitsScreen(
             }
             
             Spacer(modifier = Modifier.height(16.dp))
-            Divider()
+            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
             Spacer(modifier = Modifier.height(16.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -582,8 +632,8 @@ fun SetTimeLimitsScreen(
                     }
 
                     Spacer(modifier = Modifier.height(16.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(16.dp))
+                     HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
+                     Spacer(modifier = Modifier.height(16.dp))
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Cumulative Time")
@@ -718,3 +768,54 @@ private data class TimePickerTarget(
     val rangeIndex: Int,
     val isStart: Boolean
 )
+
+@Preview(showBackground = true, widthDp = 411, heightDp = 891)
+@Composable
+private fun SetTimeLimitsScreenPreview() {
+    var previewSelectedApps by remember {
+        mutableStateOf(
+            listOf(
+                AppInfo(appName = "YouTube", appPackage = "com.google.android.youtube"),
+                AppInfo(appName = "Instagram", appPackage = "com.instagram.android"),
+                AppInfo(appName = "TikTok", appPackage = "com.zhiliaoapp.musically")
+            )
+        )
+    }
+    var previewDraft by remember {
+        mutableStateOf(
+            SetTimeLimitDraft(
+                groupName = "Social Apps",
+                useTimeLimit = true,
+                timeHrLimit = "1",
+                timeMinLimit = "30",
+                limitEach = false,
+                useTimeRange = true,
+                blockOutsideTimeRange = true,
+                timeRanges = listOf(TimeRange(startHour = 9, startMinute = 0, endHour = 22, endMinute = 0)),
+                startHour = 9,
+                startMinute = 0,
+                endHour = 22,
+                endMinute = 0,
+                weekDays = listOf(1, 2, 3, 4, 5),
+                cumulativeTime = false,
+                useReset = true,
+                resetHours = "4",
+                resetMinutes = "0"
+            )
+        )
+    }
+
+    AppTheme {
+        SetTimeLimitsScreenContent(
+            group = null,
+            draft = previewDraft,
+            selectedApps = previewSelectedApps,
+            onSelectedAppsChange = { previewSelectedApps = it },
+            onDraftChange = { previewDraft = it },
+            onFinish = {},
+            onCancel = {},
+            onEditApps = {},
+            onUpgradeToPremium = {}
+        )
+    }
+}

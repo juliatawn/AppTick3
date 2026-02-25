@@ -184,15 +184,20 @@ Running on Darwin 25.3.0 (arm64)
     - `ColorPickerScreenTest.kt`: Instrumentation tests that verify color wheel updates are isolated to the active tab target (text/background/icon), and that text-color edits do not mutate icon preview color in custom icon mode.
 - **androidTest**
     - `AndroidManifest.xml`: Test APK manifest overrides that grant network access and enable cleartext for emulator-backed Firebase/Auth integration tests.
+    - `ChangelogDialogTest.kt`: Compose instrumentation test that validates changelog sections/feature copy render and the close action triggers dismissal.
     - `MainActivityLockModesIntentTest.kt`: Activity-level instrumentation tests that verify locked top-bar lock-mode icon behavior routes to password/security-key unlock activities or the lockdown blocked screen.
     - `lockModes/PasswordResetScreenTest.kt`: Compose instrumentation tests that verify reset UI blocks link sending until the mode-specific recovery email is verified.
     - `lockModes/RecoveryEmailHelperIntegrationTest.kt`: Firebase Auth Emulator integration test that sends and verifies a recovery email-link round trip via `RecoveryEmailHelper`.
     - `lockModes/PasswordResetActivityNavigationTest.kt`: Activity-level instrumentation tests that verify post-success routing goes to the correct password/security-key destination.
+    - `premiumMode/PremiumModeInfoScreenTest.kt`: Compose instrumentation test that verifies Premium Mode Info feature bullets and back-navigation callback.
+    - `premiumMode/PremiumModeScreenTest.kt`: Compose instrumentation tests for premium/free content and lock-mode mutual-exclusion disable messaging across active modes.
 - **debug**
     - `AndroidManifest.xml`: Debug-only manifest override that enables cleartext traffic so Firebase/Auth emulator integration tests can connect to host emulator endpoints.
 - **test/lockModes**
     - `RecoveryEmailEnforcerTest.kt`: Unit tests for lock-mode recovery-email enforcement prompt/flag-clear behavior.
     - `RecoveryResetPolicyTest.kt`: Unit tests for password/security-key reset eligibility and email-match checks.
     - `PasswordResetDestinationResolverTest.kt`: Unit tests for post-link success destination resolution (setup/reset/fallback paths).
+- **test**
+    - `ChangelogTest.kt`: Unit tests for changelog show/seen preference behavior on first launch and app updates.
 - **test/backgroundProcesses**
     - `NotificationGroupSelectionTest.kt`: Unit tests for `pickNotificationGroup()` active profile selection logic and `formatGroupNotificationText()` formatting, covering single/multiple/paused profiles and limitEach ranking.

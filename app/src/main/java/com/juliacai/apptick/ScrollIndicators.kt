@@ -34,6 +34,7 @@ fun Modifier.verticalScrollWithIndicator(
     indicatorColor: Color,
     thickness: Dp = 3.dp,
     minThumbHeight: Dp = 24.dp,
+    maxThumbFraction: Float = 0.33f,
     endPadding: Dp = 4.dp
 ): Modifier = composed {
     val view = LocalView.current
@@ -55,8 +56,9 @@ fun Modifier.verticalScrollWithIndicator(
             val thicknessPx = thickness.toPx()
             val minThumbHeightPx = minThumbHeight.toPx()
             val endPaddingPx = endPadding.toPx()
+            val maxThumbHeightPx = (size.height * maxThumbFraction.coerceIn(0f, 1f))
             val thumbHeight = max((size.height / totalContentHeight) * size.height, minThumbHeightPx)
-                .coerceAtMost(size.height)
+                .coerceAtMost(maxThumbHeightPx.coerceAtLeast(minThumbHeightPx))
             val availableTravel = (size.height - thumbHeight).coerceAtLeast(0f)
             val progress = (scrollState.value.toFloat() / scrollState.maxValue.toFloat()).coerceIn(0f, 1f)
             val top = availableTravel * progress
@@ -75,6 +77,7 @@ fun Modifier.verticalScrollWithIndicator(
     indicatorColor: Color = rememberScrollbarColor(),
     thickness: Dp = 3.dp,
     minThumbHeight: Dp = 24.dp,
+    maxThumbFraction: Float = 0.33f,
     endPadding: Dp = 4.dp
 ): Modifier {
     val scrollState = rememberScrollState()
@@ -83,6 +86,7 @@ fun Modifier.verticalScrollWithIndicator(
         indicatorColor = indicatorColor,
         thickness = thickness,
         minThumbHeight = minThumbHeight,
+        maxThumbFraction = maxThumbFraction,
         endPadding = endPadding
     )
 }

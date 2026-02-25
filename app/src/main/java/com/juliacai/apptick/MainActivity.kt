@@ -354,6 +354,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 if (isLimitEditingLocked() && !canAddWhileLocked) {
                                     launchUnlockFlow()
                                 } else {
+                                    shouldPromptRelock = false
                                     startedFromExistingGroupEdit = false
                                     appLimitViewModel.clearState()
                                     navController.navigate("selectApps")
@@ -710,9 +711,14 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             onFinish = {
                                 if (it.id == 0L) {
                                     pendingScrollToBottomTargetSize = orderedGroups.size + 1
+                                    shouldPromptRelock = false
                                 }
                                 appLimitViewModel.saveGroup(it)
-                                if (startedFromExistingGroupEdit && shouldShowLockdownRelockPrompt()) {
+                                if (
+                                    startedFromExistingGroupEdit &&
+                                    it.id != 0L &&
+                                    shouldShowLockdownRelockPrompt()
+                                ) {
                                     shouldPromptRelock = true
                                 }
                                 relockCredentialModesIfNeeded()
@@ -882,8 +888,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val lockdownEnd = state.lockdownEndTimeMillis
             if (lockdownEnd > nowMillis) {
                 val formattedEnd =
-                    SimpleDateFormat("EEE, MMM d h:mm a", Locale.getDefault()).format(Date(lockdownEnd))
-                return "Lockdown mode is active. You can change limits after $formattedEnd."
+                    SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(Date(lockdownEnd))
+                return "Lockdown active until $formattedEnd."
             }
             return "Lockdown mode just expired. Reopen the page to update settings."
         }

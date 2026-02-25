@@ -87,8 +87,8 @@ class LockdownTimeActivity : AppCompatActivity() {
             putLong("lockdown_end_time", selectedDateTime.timeInMillis)
         }
 
-        val formattedDateTime = SimpleDateFormat("MMM dd, yyyy 'at' hh:mm a", Locale.getDefault()).format(selectedDateTime.time)
-        Toast.makeText(this, "Lockdown mode activated until $formattedDateTime", Toast.LENGTH_LONG).show()
+        val formattedDateTime = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault()).format(selectedDateTime.time)
+        Toast.makeText(this, "Lockdown on until $formattedDateTime", Toast.LENGTH_LONG).show()
 
         finish()
     }

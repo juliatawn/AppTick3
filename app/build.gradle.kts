@@ -14,8 +14,8 @@ android {
         applicationId = "com.juliacai.apptick"
         minSdk = 27
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0"
+        versionCode = 30
+        versionName = "2026.3.24v2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

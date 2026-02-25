@@ -12,7 +12,6 @@
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
-<!--    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>-->
 
     <application
         android:allowBackup="true"
@@ -34,11 +33,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-
-<!--        <activity android:name=".newAppLimit.TabTimeLimitActivity" />-->
-
-<!--        <activity android:name=".premiumMode.PremiumModeActivity" />-->
-<!--        <activity android:name=".appLimit.AppLimitDetailsActivity" />-->
         <activity
             android:name=".block.BlockWindowActivity"
             android:taskAffinity="com.juliacai.apptick.block"
@@ -53,11 +47,6 @@
         <activity android:name=".premiumMode.LockdownModeActivity" />
         <activity android:name=".premiumMode.LockdownTimeActivity" />
         <activity android:name=".deviceApps.GroupPage" />
-
-<!--        <service-->
-<!--            android:name=".backgroundProcesses.BackgroundChecker"-->
-<!--            android:enabled="true"-->
-<!--            android:exported="false" />-->
 
         <service android:name=".backgroundProcesses.BackgroundChecker" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

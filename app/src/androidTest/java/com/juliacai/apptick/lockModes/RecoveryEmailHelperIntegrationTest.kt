@@ -10,6 +10,7 @@ import com.google.common.truth.Truth.assertThat
 import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import org.json.JSONObject
+import org.junit.Ignore
 import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Test
@@ -20,6 +21,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
+@Ignore("Firebase recovery-link flow is deprecated and no longer part of active AppTick behavior.")
 class RecoveryEmailHelperIntegrationTest {
 
     private lateinit var context: Context

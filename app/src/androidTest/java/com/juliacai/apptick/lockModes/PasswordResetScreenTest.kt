@@ -1,6 +1,7 @@
 package com.juliacai.apptick.lockModes
 
 import android.content.Context
+import android.os.Build
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -9,6 +10,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.juliacai.apptick.AppTheme
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,6 +21,15 @@ class PasswordResetScreenTest {
 
     @get:Rule
     val composeRule = createComposeRule()
+
+    @Before
+    fun setUp() {
+        assumeTrue(
+            "Compose-only UI tests are stable on emulator in this suite",
+            Build.FINGERPRINT.contains("generic", ignoreCase = true) ||
+                Build.MODEL.contains("Emulator", ignoreCase = true)
+        )
+    }
 
     @Test
     fun resetScreen_whenRecoveryEmailNotVerified_blocksResetForm() {

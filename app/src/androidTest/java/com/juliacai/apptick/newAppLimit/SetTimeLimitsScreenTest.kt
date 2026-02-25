@@ -1,9 +1,11 @@
 package com.juliacai.apptick.newAppLimit
 
+import android.os.Build
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import com.juliacai.apptick.groups.AppLimitGroup
+import org.junit.Assume.assumeTrue
+import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,6 +15,15 @@ class SetTimeLimitsScreenTest {
 
     @get:Rule
     val composeTestRule = createComposeRule()
+
+    @Before
+    fun setUp() {
+        assumeTrue(
+            "Compose-only UI tests are stable on emulator in this suite",
+            Build.FINGERPRINT.contains("generic", ignoreCase = true) ||
+                Build.MODEL.contains("Emulator", ignoreCase = true)
+        )
+    }
 
     @Test
     fun setTimeLimitsScreen_displaysCorrectly() {

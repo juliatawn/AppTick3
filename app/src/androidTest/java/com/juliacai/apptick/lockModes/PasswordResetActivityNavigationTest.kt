@@ -17,10 +17,12 @@ import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.not
 import org.junit.After
 import org.junit.Before
+import org.junit.Ignore
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
+@Ignore("Legacy PasswordResetActivity flow is no longer exported/wired in the active app flow.")
 class PasswordResetActivityNavigationTest {
 
     @Before

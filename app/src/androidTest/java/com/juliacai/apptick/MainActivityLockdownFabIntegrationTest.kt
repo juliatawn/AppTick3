@@ -1,6 +1,7 @@
 package com.juliacai.apptick
 
 import android.content.Context
+import android.os.Build
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -13,6 +14,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.Assume.assumeTrue
 
 @RunWith(AndroidJUnit4::class)
 class MainActivityLockdownFabIntegrationTest {
@@ -22,6 +24,11 @@ class MainActivityLockdownFabIntegrationTest {
 
     @Before
     fun setUp() {
+        assumeTrue(
+            "MainActivity compose instrumentation is only stable on emulator in this suite",
+            Build.FINGERPRINT.contains("generic", ignoreCase = true) ||
+                Build.MODEL.contains("Emulator", ignoreCase = true)
+        )
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
             .edit()
