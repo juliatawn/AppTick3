@@ -2,6 +2,7 @@ package com.juliacai.apptick.appLimit
 
 import android.content.Intent
 import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,7 @@ class AppLimitDetailsActivity : AppCompatActivity() {
     private val appLimitGroupDao by lazy { db.appLimitGroupDao() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         val groupId = intent.getLongExtra("GROUP_ID", -1)

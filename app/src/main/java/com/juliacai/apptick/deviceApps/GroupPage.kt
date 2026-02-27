@@ -127,7 +127,11 @@ class GroupPage : BaseActivity() {
 
         setContent {
             val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+            val isPremium = prefs.getBoolean("premium", false)
             val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
+            var showDuplicatePremiumDialog by androidx.compose.runtime.remember {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
 
             var hasReorderedApps by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(prefs.getBoolean(PREF_APPS_REORDERED, false))
@@ -217,6 +221,10 @@ class GroupPage : BaseActivity() {
                         },
                         onDuplicate = {
                             showActionsDialog = false
+                            if (!isPremium) {
+                                showDuplicatePremiumDialog = true
+                                return@GroupActionsDialog
+                            }
                             val duplicateIntent = Intent(this@GroupPage, MainActivity::class.java).apply {
                                 putExtra(MainActivity.EXTRA_DUPLICATE_GROUP_ID, currentGroup.id)
                             }
@@ -238,6 +246,31 @@ class GroupPage : BaseActivity() {
                                     Toast.LENGTH_SHORT
                                 ).show()
                                 finish()
+                            }
+                        }
+                    )
+                }
+
+                if (showDuplicatePremiumDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showDuplicatePremiumDialog = false },
+                        title = { Text("Premium Feature") },
+                        text = { Text("Duplicate is available in Premium Mode.") },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    showDuplicatePremiumDialog = false
+                                    startActivity(Intent(this@GroupPage, MainActivity::class.java).apply {
+                                        putExtra(MainActivity.EXTRA_OPEN_LOCK_MODES, true)
+                                    })
+                                }
+                            ) {
+                                Text("Buy Premium")
+                            }
+                        },
+                        dismissButton = {
+                            OutlinedButton(onClick = { showDuplicatePremiumDialog = false }) {
+                                Text("Cancel")
                             }
                         }
                     )

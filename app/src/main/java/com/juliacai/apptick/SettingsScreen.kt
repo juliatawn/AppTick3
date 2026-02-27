@@ -284,50 +284,52 @@ fun SettingsScreen(
                 )
             }
             Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                /*
+                /** START OF PREMIUM MODE DEBUG TOGGLE **/
+
                 // Debug-only premium toggle
-                val isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
-                if (isDebuggable) {
-                    Spacer(modifier = Modifier.height(24.dp))
-                    Divider()
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("Debug Options", style = MaterialTheme.typography.titleMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Premium Mode (Debug)", modifier = Modifier.weight(1f))
-                        Switch(
-                            checked = isPremium,
-                            onCheckedChange = {
-                                isPremium = it
-                                if (it) {
-                                    groupPrefs.edit {
-                                        putBoolean("debug_force_free", false)
-                                        putBoolean("premium", true)
-                                    }
-                                } else {
-                                    // Force free-user behavior even if billing callbacks run.
-                                    groupPrefs.edit {
-                                        putBoolean("debug_force_free", true)
-                                        putBoolean("premium", false)
-                                        putBoolean("floatingBubbleEnabled", false)
-                                    }
-                                    isCustomColorMode = false
-                                    isDarkMode = false
-                                    floatingBubbleEnabled = false
-                                    ThemeModeManager.persistCustomColorMode(context, false)
-                                    ThemeModeManager.persistDarkMode(context, false)
-                                    ThemeModeManager.apply(context)
-                                    context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
-                                }
-                            }
-                        )
-                    }
-                    Text("Toggle to simulate premium purchase in emulator", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                }
-                */
+//                val isDebuggable = (context.applicationInfo.flags and android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0
+//                if (isDebuggable) {
+//                    Spacer(modifier = Modifier.height(24.dp))
+//                    Divider()
+//                    Spacer(modifier = Modifier.height(16.dp))
+//                    Text("Debug Options", style = MaterialTheme.typography.titleMedium)
+//                    Spacer(modifier = Modifier.height(8.dp))
+//                    Row(
+//                        modifier = Modifier.fillMaxWidth(),
+//                        verticalAlignment = Alignment.CenterVertically
+//                    ) {
+//                        Text("Premium Mode (Debug)", modifier = Modifier.weight(1f))
+//                        Switch(
+//                            checked = isPremium,
+//                            onCheckedChange = {
+//                                isPremium = it
+//                                if (it) {
+//                                    groupPrefs.edit {
+//                                        putBoolean("debug_force_free", false)
+//                                        putBoolean("premium", true)
+//                                    }
+//                                } else {
+//                                    // Force free-user behavior even if billing callbacks run.
+//                                    groupPrefs.edit {
+//                                        putBoolean("debug_force_free", true)
+//                                        putBoolean("premium", false)
+//                                        putBoolean("floatingBubbleEnabled", false)
+//                                    }
+//                                    isCustomColorMode = false
+//                                    isDarkMode = false
+//                                    floatingBubbleEnabled = false
+//                                    ThemeModeManager.persistCustomColorMode(context, false)
+//                                    ThemeModeManager.persistDarkMode(context, false)
+//                                    ThemeModeManager.apply(context)
+//                                    context.sendBroadcast(Intent("COLORS_CHANGED").setPackage(context.packageName))
+//                                }
+//                            }
+//                        )
+//                    }
+//                    Text("Toggle to simulate premium purchase in emulator", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+//                }
+
+                /** END OF PREMIUM MODE DEBUG TOGGLE **/
 
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(

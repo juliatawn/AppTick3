@@ -101,9 +101,10 @@ Running on Darwin 25.3.0 (arm64)
     - `BaseActivity.kt`: A base class for activities that handles shared functionality like theme and color changes.
     - `CustomViewPager.kt`: A custom ViewPager that allows for disabling swipe gestures.
     - `Changelog.kt`: Reusable changelog dialog content/UI and SharedPreferences helpers that track whether the current app version changelog has been seen.
+    - `FeaturePhotoCarousel.kt`: Version-gated startup feature-photo carousel helpers/composable that auto-discovers `apptick_<number>` drawables, keeps them in numeric order, and routes users via Skip/Next/Done before permission onboarding/home.
     - `DateTimePickerDialog.kt`: A dialog for picking a date and time.
     - `LockPolicy.kt`: Pure lock-evaluation rules for password/security-key/lockdown logic, including weekly one-time unlock windows.
-    - `MainActivity.kt`: The main activity of the application, responsible for checking permissions, setting up billing, displaying the main UI, preserving saved group-card order during startup data loads, handling edit-group deep links into SetTimeLimitsScreen, and auto-showing the changelog on first launch after install/update.
+    - `MainActivity.kt`: The main activity of the application, responsible for startup flow orchestration (loading screen -> feature-photo carousel -> permission onboarding/home), checking permissions, setting up billing, displaying the main UI, preserving saved group-card order during startup data loads, handling edit-group deep links into SetTimeLimitsScreen, and auto-showing the changelog on first launch after install/update.
     - `MainScreen.kt`: The main UI of the app, built with Jetpack Compose. It displays the top app bar, floating action button, battery-reliability warning banner when optimization is restrictive, and the list of app limit groups.
     - `MainViewModel.kt`: The ViewModel for the MainActivity, responsible for managing app-limit data, premium state, and pause/resume service lifecycle behavior.
     - `Receiver.kt`: A BroadcastReceiver that handles boot/unlock/screen/package-update events plus a watchdog alarm broadcast to keep `BackgroundChecker` running whenever limits or settings-protection require enforcement.

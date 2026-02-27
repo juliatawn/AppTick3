@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +36,7 @@ class UsbSecurityKeySetupActivity : AppCompatActivity() {
     private lateinit var usbManager: UsbManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager

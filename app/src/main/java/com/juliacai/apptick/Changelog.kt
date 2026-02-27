@@ -28,8 +28,9 @@ New premium features:
 - Backup and restore option -- can backup AppTick app limit groups and settings to a file, and can import the file on any of your devices that have AppTick (local save).
 - Lockdown mode (fixed) -- lock app limit settings from being changed, set a day to change setting OR set weekday(s) that you can change them.
 - Fingerprint/biometrics and Security key are optional to add to Password mode.
-- Dark mode & light mode toggle
+- Dark mode & light mode toggle.
 - Color palette for AppTick.
+- Duplicate groups.
 
 New FREE features:
 - Group details page, you can click on the card in the main group to see how much time each app has been used for and how much time is left for the app limit.

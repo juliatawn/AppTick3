@@ -7,27 +7,43 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
+import com.google.gson.annotations.SerializedName
 import com.juliacai.apptick.groups.TimeRange
 import java.io.IOException
 
 data class BackupAppSettings(
+    @SerializedName(value = "showTimeLeft", alternate = ["a"])
     val showTimeLeft: Boolean,
+    @SerializedName(value = "floatingBubbleEnabled", alternate = ["b"])
     val floatingBubbleEnabled: Boolean,
+    @SerializedName(value = "darkModeEnabled", alternate = ["c"])
     val darkModeEnabled: Boolean,
+    @SerializedName(value = "customColorModeEnabled", alternate = ["d"])
     val customColorModeEnabled: Boolean,
+    @SerializedName(value = "customPrimaryColor", alternate = ["e"])
     val customPrimaryColor: Int?,
+    @SerializedName(value = "customAccentColor", alternate = ["f"])
     val customAccentColor: Int?,
+    @SerializedName(value = "customBackgroundColor", alternate = ["g"])
     val customBackgroundColor: Int?,
+    @SerializedName(value = "customCardColor", alternate = ["h"])
     val customCardColor: Int?,
+    @SerializedName(value = "customIconColor", alternate = ["i"])
     val customIconColor: Int?,
+    @SerializedName(value = "appIconColorMode", alternate = ["j"])
     val appIconColorMode: String?,
+    @SerializedName(value = "groupCardOrder", alternate = ["k"])
     val groupCardOrder: List<Long>? = null
 )
 
 data class AppLimitBackup(
+    @SerializedName(value = "schemaVersion", alternate = ["a"])
     val schemaVersion: Int,
+    @SerializedName(value = "exportedAtMillis", alternate = ["b"])
     val exportedAtMillis: Long,
+    @SerializedName(value = "groups", alternate = ["c"])
     val groups: List<AppLimitGroupEntity>,
+    @SerializedName(value = "appSettings", alternate = ["d"])
     val appSettings: BackupAppSettings
 )
 
@@ -70,17 +86,26 @@ object AppLimitBackupManager {
 
     fun fromJson(json: String): AppLimitBackup {
         val root = JsonParser.parseString(json).asJsonObject
-        val schemaVersion = root.get("schemaVersion")?.asInt ?: 0
+        val modelParsedBackup = runCatching { gson.fromJson(json, AppLimitBackup::class.java) }.getOrNull()
+        val schemaVersion = root.get("schemaVersion")?.asInt ?: modelParsedBackup?.schemaVersion ?: 0
         if (schemaVersion !in 1..CURRENT_SCHEMA_VERSION) {
             throw IllegalArgumentException("Unsupported backup schema version: $schemaVersion")
         }
 
         val groupsType = object : TypeToken<List<AppLimitGroupEntity>>() {}.type
-        val groups = gson.fromJson<List<AppLimitGroupEntity>>(
-            root.get("groups"),
-            groupsType
-        )?.map { group ->
-            val parsedRanges = runCatching { group.timeRanges }.getOrDefault(emptyList())
+        val rawGroups = if (root.has("groups")) {
+            gson.fromJson<List<AppLimitGroupEntity>>(
+                root.get("groups"),
+                groupsType
+            )
+        } else {
+            modelParsedBackup?.groups
+        }
+        val groups = rawGroups?.map { group ->
+            val parsedRanges = runCatching { group.timeRanges }.getOrNull().orEmpty()
+            val safeWeekDays = runCatching { group.weekDays }.getOrNull().orEmpty()
+            val safeApps = runCatching { group.apps }.getOrNull().orEmpty()
+            val safePerAppUsage = runCatching { group.perAppUsage }.getOrNull().orEmpty()
             val normalizedRanges = if (parsedRanges.isNotEmpty()) {
                 parsedRanges
             } else if (group.useTimeRange) {
@@ -96,22 +121,38 @@ object AppLimitBackupManager {
                 emptyList()
             }
             if (schemaVersion < 3) {
-                group.copy(isExpanded = true, timeRanges = normalizedRanges)
+                group.copy(
+                    isExpanded = true,
+                    weekDays = safeWeekDays,
+                    apps = safeApps,
+                    timeRanges = normalizedRanges,
+                    perAppUsage = safePerAppUsage
+                )
             } else {
-                group.copy(timeRanges = normalizedRanges)
+                group.copy(
+                    weekDays = safeWeekDays,
+                    apps = safeApps,
+                    timeRanges = normalizedRanges,
+                    perAppUsage = safePerAppUsage
+                )
             }
         } ?: emptyList()
 
         val appSettingsObject = root.getAsJsonObject("appSettings")
         val legacyPreferencesObject = root.getAsJsonObject("preferences")
+        val modelSettings = modelParsedBackup?.appSettings
         val settingsObject = appSettingsObject ?: legacyPreferencesObject ?: JsonObject()
         val showTimeLeft = settingsObject.get("showTimeLeft")?.asBoolean
             ?: settingsObject.get(KEY_SHOW_TIME_LEFT)?.asBoolean
+            ?: modelSettings?.showTimeLeft
             ?: true
         val floatingBubbleEnabled = settingsObject.get("floatingBubbleEnabled")?.asBoolean
             ?: settingsObject.get(KEY_FLOATING_BUBBLE_ENABLED)?.asBoolean
+            ?: modelSettings?.floatingBubbleEnabled
             ?: false
-        val exportedAtMillis = root.get("exportedAtMillis")?.asLong ?: 0L
+        val exportedAtMillis = root.get("exportedAtMillis")?.asLong
+            ?: modelParsedBackup?.exportedAtMillis
+            ?: 0L
 
         return AppLimitBackup(
             schemaVersion = schemaVersion,
@@ -122,27 +163,35 @@ object AppLimitBackupManager {
                 floatingBubbleEnabled = floatingBubbleEnabled,
                 darkModeEnabled = settingsObject.get("darkModeEnabled")?.asBoolean
                     ?: settingsObject.get(KEY_DARK_MODE)?.asBoolean
+                    ?: modelSettings?.darkModeEnabled
                     ?: false,
                 customColorModeEnabled = settingsObject.get("customColorModeEnabled")?.asBoolean
                     ?: settingsObject.get(KEY_CUSTOM_COLOR_MODE)?.asBoolean
+                    ?: modelSettings?.customColorModeEnabled
                     ?: false,
                 customPrimaryColor = settingsObject.get("customPrimaryColor")?.asInt
-                    ?: settingsObject.get(KEY_CUSTOM_PRIMARY_COLOR)?.asInt,
+                    ?: settingsObject.get(KEY_CUSTOM_PRIMARY_COLOR)?.asInt
+                    ?: modelSettings?.customPrimaryColor,
                 customAccentColor = settingsObject.get("customAccentColor")?.asInt
-                    ?: settingsObject.get(KEY_CUSTOM_ACCENT_COLOR)?.asInt,
+                    ?: settingsObject.get(KEY_CUSTOM_ACCENT_COLOR)?.asInt
+                    ?: modelSettings?.customAccentColor,
                 customBackgroundColor = settingsObject.get("customBackgroundColor")?.asInt
-                    ?: settingsObject.get(KEY_CUSTOM_BACKGROUND_COLOR)?.asInt,
+                    ?: settingsObject.get(KEY_CUSTOM_BACKGROUND_COLOR)?.asInt
+                    ?: modelSettings?.customBackgroundColor,
                 customCardColor = settingsObject.get("customCardColor")?.asInt
-                    ?: settingsObject.get(KEY_CUSTOM_CARD_COLOR)?.asInt,
+                    ?: settingsObject.get(KEY_CUSTOM_CARD_COLOR)?.asInt
+                    ?: modelSettings?.customCardColor,
                 customIconColor = settingsObject.get("customIconColor")?.asInt
-                    ?: settingsObject.get(KEY_CUSTOM_ICON_COLOR)?.asInt,
+                    ?: settingsObject.get(KEY_CUSTOM_ICON_COLOR)?.asInt
+                    ?: modelSettings?.customIconColor,
                 appIconColorMode = settingsObject.get("appIconColorMode")?.asString
-                    ?: settingsObject.get(KEY_APP_ICON_COLOR_MODE)?.asString,
+                    ?: settingsObject.get(KEY_APP_ICON_COLOR_MODE)?.asString
+                    ?: modelSettings?.appIconColorMode,
                 groupCardOrder = settingsObject.get("groupCardOrder")?.let { element ->
                     gson.fromJson<List<Long>>(element, object : TypeToken<List<Long>>() {}.type)
                 } ?: settingsObject.get(KEY_GROUP_CARD_ORDER)?.let { element ->
                     gson.fromJson<List<Long>>(element, object : TypeToken<List<Long>>() {}.type)
-                }
+                } ?: modelSettings?.groupCardOrder
             )
         )
     }

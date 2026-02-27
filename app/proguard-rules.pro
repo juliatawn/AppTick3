@@ -19,3 +19,12 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# Keep Gson-backed JSON models fully stable across release builds
+# (backup export/import + Room JSON converters).
+-keep class com.juliacai.apptick.data.AppLimitBackup { *; }
+-keep class com.juliacai.apptick.data.BackupAppSettings { *; }
+-keep class com.juliacai.apptick.data.AppLimitGroupEntity { *; }
+-keep class com.juliacai.apptick.appLimit.AppInGroup { *; }
+-keep class com.juliacai.apptick.groups.TimeRange { *; }
+-keep class com.juliacai.apptick.groups.AppUsageStat { *; }

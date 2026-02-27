@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/apptick_1,@drawable/apptick_2,@drawable/apptick_3,@drawable/apptick_4,@drawable/apptick_5,@drawable/apptick_6,@drawable/apptick_7" />

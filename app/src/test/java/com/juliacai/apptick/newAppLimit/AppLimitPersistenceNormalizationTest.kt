@@ -36,6 +36,37 @@ class AppLimitPersistenceNormalizationTest {
     }
 
     @Test
+    fun duplicateGroup_preservesConfigurationFields() {
+        val original = AppLimitGroup(
+            id = 42L,
+            name = "Focus",
+            timeHrLimit = 2,
+            timeMinLimit = 15,
+            limitEach = true,
+            resetMinutes = 90,
+            weekDays = listOf(1, 3, 5),
+            apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")),
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            cumulativeTime = true
+        )
+
+        val duplicated = duplicateGroupForCreation(original)
+
+        assertEquals("Focus", duplicated.name)
+        assertEquals(2, duplicated.timeHrLimit)
+        assertEquals(15, duplicated.timeMinLimit)
+        assertTrue(duplicated.limitEach)
+        assertEquals(90, duplicated.resetMinutes)
+        assertEquals(listOf(1, 3, 5), duplicated.weekDays)
+        assertEquals(1, duplicated.apps.size)
+        assertEquals("com.google.android.youtube", duplicated.apps.first().appPackage)
+        assertTrue(duplicated.useTimeRange)
+        assertTrue(duplicated.blockOutsideTimeRange)
+        assertTrue(duplicated.cumulativeTime)
+    }
+
+    @Test
     fun newGroupWithTimeLimit_initializesTimeRemainingFromLimit() {
         val group = AppLimitGroup(
             id = 0L,

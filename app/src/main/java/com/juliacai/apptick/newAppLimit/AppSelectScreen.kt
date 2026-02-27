@@ -13,9 +13,12 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,8 +34,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.ImeAction
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.juliacai.apptick.AppTheme
 import coil.compose.rememberAsyncImagePainter
@@ -52,6 +58,8 @@ fun AppSelectScreen(
     val apps by appListViewModel.filteredApps.collectAsState()
     val selectedApps by viewModel.selectedApps.observeAsState(emptyList())
     val searchTerm by appListViewModel.searchTerm.collectAsState()
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val listState = rememberLazyListState()
     val scrollbarColor = rememberScrollbarColor()
 
@@ -92,7 +100,29 @@ fun AppSelectScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                label = { Text("Search Apps") }
+                label = { Text("Search Apps") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(
+                    onSearch = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    },
+                    onDone = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                    }
+                ),
+                trailingIcon = {
+                    if (searchTerm.isNotEmpty()) {
+                        IconButton(onClick = { appListViewModel.onSearchTermChanged("") }) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Clear search"
+                            )
+                        }
+                    }
+                }
             )
             if (apps.isEmpty()) {
                 CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
@@ -104,15 +134,9 @@ fun AppSelectScreen(
                         .lazyColumnScrollIndicator(listState, scrollbarColor)
                 ) {
                     items(apps) { app ->
-                        val isSelected = selectedApps.contains(app)
+                        val isSelected = isAppSelected(app, selectedApps)
                         AppListItem(app = app, isSelected = isSelected, onAppSelected = { 
-                            val currentSelected = selectedApps.toMutableList()
-                            if (currentSelected.contains(app)) {
-                                currentSelected.remove(app)
-                            } else {
-                                currentSelected.add(app)
-                            }
-                            viewModel.setSelectedApps(currentSelected)
+                            viewModel.setSelectedApps(toggleSelectedApp(app, selectedApps))
                         })
                     }
                 }

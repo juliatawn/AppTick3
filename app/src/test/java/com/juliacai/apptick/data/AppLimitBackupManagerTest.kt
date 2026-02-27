@@ -180,4 +180,110 @@ class AppLimitBackupManagerTest {
         assertThat(parsed.groups).hasSize(1)
         assertThat(parsed.groups.first().timeRanges).containsExactly(TimeRange(9, 15, 17, 45))
     }
+
+    @Test
+    fun fromJson_nullListFields_treatedAsEmptyLists() {
+        val json = """
+            {
+              "schemaVersion": 3,
+              "groups": [
+                {
+                  "id": 8,
+                  "name": "Null lists",
+                  "timeHrLimit": 1,
+                  "timeMinLimit": 0,
+                  "limitEach": false,
+                  "resetHours": 0,
+                  "weekDays": null,
+                  "apps": null,
+                  "paused": false,
+                  "useTimeRange": false,
+                  "blockOutsideTimeRange": false,
+                  "timeRanges": null,
+                  "startHour": 0,
+                  "startMinute": 0,
+                  "endHour": 0,
+                  "endMinute": 0,
+                  "cumulativeTime": false,
+                  "timeRemaining": 0,
+                  "nextResetTime": 0,
+                  "nextAddTime": 0,
+                  "perAppUsage": null,
+                  "isExpanded": true
+                }
+              ],
+              "appSettings": {
+                "showTimeLeft": true,
+                "floatingBubbleEnabled": false,
+                "darkModeEnabled": false,
+                "customColorModeEnabled": false
+              }
+            }
+        """.trimIndent()
+
+        val parsed = AppLimitBackupManager.fromJson(json)
+
+        assertThat(parsed.groups).hasSize(1)
+        with(parsed.groups.first()) {
+            assertThat(weekDays).isEmpty()
+            assertThat(apps).isEmpty()
+            assertThat(timeRanges).isEmpty()
+            assertThat(perAppUsage).isEmpty()
+        }
+    }
+
+    @Test
+    fun fromJson_obfuscatedKeys_parsesBackup() {
+        val json = """
+            {
+              "a": 3,
+              "b": 1730000000000,
+              "c": [
+                {
+                  "a": 42,
+                  "b": "Obfuscated",
+                  "c": 1,
+                  "d": 30,
+                  "e": false,
+                  "f": 0,
+                  "g": [],
+                  "h": [
+                    { "a": "YouTube", "b": "com.google.android.youtube", "c": null }
+                  ],
+                  "i": false,
+                  "j": true,
+                  "k": true,
+                  "l": null,
+                  "m": 9,
+                  "n": 0,
+                  "o": 22,
+                  "p": 0,
+                  "q": false,
+                  "r": 0,
+                  "s": 0,
+                  "t": 0,
+                  "u": null,
+                  "v": true
+                }
+              ],
+              "d": {
+                "a": true,
+                "b": false,
+                "c": false,
+                "d": false,
+                "k": [42]
+              }
+            }
+        """.trimIndent()
+
+        val parsed = AppLimitBackupManager.fromJson(json)
+
+        assertThat(parsed.schemaVersion).isEqualTo(3)
+        assertThat(parsed.groups).hasSize(1)
+        assertThat(parsed.groups.first().id).isEqualTo(42L)
+        assertThat(parsed.groups.first().apps).hasSize(1)
+        assertThat(parsed.groups.first().apps.first().appPackage).isEqualTo("com.google.android.youtube")
+        assertThat(parsed.groups.first().timeRanges).containsExactly(TimeRange(9, 0, 22, 0))
+        assertThat(parsed.appSettings.groupCardOrder).containsExactly(42L)
+    }
 }

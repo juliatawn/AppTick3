@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
 
@@ -159,8 +160,13 @@ object AppTheme {
 
         if (context is AppCompatActivity) {
             context.window.decorView.setBackgroundColor(palette.background)
-            context.window.statusBarColor = palette.primary
-            context.window.navigationBarColor = palette.primary
+            val insetsController = WindowCompat.getInsetsController(
+                context.window,
+                context.window.decorView
+            )
+            val useLightSystemBarIcons = ColorUtils.calculateLuminance(palette.background) > 0.5
+            insetsController?.isAppearanceLightStatusBars = useLightSystemBarIcons
+            insetsController?.isAppearanceLightNavigationBars = useLightSystemBarIcons
         }
     }
 

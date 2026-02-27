@@ -3,7 +3,6 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
 }
 
 android {
@@ -14,8 +13,8 @@ android {
         applicationId = "com.juliacai.apptick"
         minSdk = 27
         targetSdk = 36
-        versionCode = 30
-        versionName = "2026.3.24v2"
+        versionCode = 40
+        versionName = "2026.3.26v40"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -27,6 +26,10 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            ndk {
+                // Include native symbol metadata for Play Console crash/ANR symbolication.
+                debugSymbolLevel = "SYMBOL_TABLE"
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -118,13 +121,5 @@ dependencies {
 
     // Gson
     implementation(libs.gson)
-
-    // Credentials
-    implementation(libs.androidx.credentials)
-    implementation(libs.androidx.credentials.play.services.auth)
-
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth.ktx)
 
 }

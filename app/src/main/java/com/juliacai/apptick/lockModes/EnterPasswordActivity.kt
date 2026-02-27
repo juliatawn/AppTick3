@@ -6,6 +6,7 @@ import android.content.Context
 import android.hardware.usb.UsbManager
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricManager
@@ -22,6 +23,7 @@ class EnterPasswordActivity : AppCompatActivity() {
     private lateinit var biometricPrompt: BiometricPrompt
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)

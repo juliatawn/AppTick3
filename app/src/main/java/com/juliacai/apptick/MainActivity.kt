@@ -235,6 +235,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     shouldShowChangelogOnLaunch(prefs, appVersionCode)
                 )
             }
+            var premiumFeatureDialogFor by rememberSaveable {
+                androidx.compose.runtime.mutableStateOf<String?>(null)
+            }
             var showChangelogDialog by rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(false)
             }
@@ -275,8 +278,14 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     launchEditGroupId = null
                 }
 
-                androidx.compose.runtime.LaunchedEffect(pendingDuplicateGroupId) {
+                androidx.compose.runtime.LaunchedEffect(pendingDuplicateGroupId, premiumEnabled) {
                     val groupId = pendingDuplicateGroupId ?: return@LaunchedEffect
+                    if (!premiumEnabled) {
+                        premiumFeatureDialogFor = "Duplicate"
+                        pendingDuplicateGroupId = null
+                        launchDuplicateGroupId = null
+                        return@LaunchedEffect
+                    }
                     startedFromExistingGroupEdit = false
                     appLimitViewModel.loadGroupForDuplication(groupId)
                     navController.navigate("setTimeLimit")
@@ -293,22 +302,47 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     launchOpenLockModes = false
                 }
 
+                val photoResIds = featurePhotoResIds()
                 val needsPermissions = !hasAllPermissions()
+                val shouldShowFeaturePhotos = shouldShowFeaturePhotosOnLaunch(
+                    prefs = prefs,
+                    versionCode = appVersionCode,
+                    photoResIds = photoResIds
+                )
                 NavHost(
                     navController = navController,
-                    startDestination = if (needsPermissions) "permissionOnboarding" else "main"
+                    startDestination = startupDestinationRoute(
+                        shouldShowFeaturePhotos = shouldShowFeaturePhotos,
+                        needsPermissions = needsPermissions
+                    )
                 ) {
-                    composable("permissionOnboarding") {
+                    composable(STARTUP_ROUTE_FEATURE_PHOTOS) {
+                        val onFeaturePhotosFinished = {
+                            markFeaturePhotosSeen(prefs, appVersionCode)
+                            val nextRoute = postFeaturePhotosRoute(needsPermissions = !hasAllPermissions())
+                            navController.navigate(nextRoute) {
+                                popUpTo(STARTUP_ROUTE_FEATURE_PHOTOS) { inclusive = true }
+                            }
+                        }
+
+                        FeaturePhotoCarouselScreen(
+                            photoResIds = photoResIds,
+                            onSkip = onFeaturePhotosFinished,
+                            onComplete = onFeaturePhotosFinished
+                        )
+                    }
+
+                    composable(STARTUP_ROUTE_PERMISSION_ONBOARDING) {
                         PermissionOnboardingScreen(
                             onAllGranted = {
-                                navController.navigate("main") {
-                                    popUpTo("permissionOnboarding") { inclusive = true }
+                                navController.navigate(STARTUP_ROUTE_MAIN) {
+                                    popUpTo(STARTUP_ROUTE_PERMISSION_ONBOARDING) { inclusive = true }
                                 }
                             }
                         )
                     }
 
-                    composable("main") {
+                    composable(STARTUP_ROUTE_MAIN) {
                         androidx.compose.runtime.LaunchedEffect(Unit) {
                             if (pendingLaunchChangelog) {
                                 showChangelogDialog = true
@@ -508,6 +542,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 },
                                 onDuplicate = {
                                     selectedGroupForActions = null
+                                    if (!premiumEnabled) {
+                                        premiumFeatureDialogFor = "Duplicate"
+                                        return@GroupActionsDialog
+                                    }
                                     startedFromExistingGroupEdit = false
                                     appLimitViewModel.startDuplicatingGroup(currentGroup)
                                     navController.navigate("setTimeLimit")
@@ -515,6 +553,31 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 onDelete = {
                                     selectedGroupForActions = null
                                     viewModel.deleteGroup(currentGroup)
+                                }
+                            )
+                        }
+
+                        premiumFeatureDialogFor?.let { featureName ->
+                            androidx.compose.material3.AlertDialog(
+                                onDismissRequest = { premiumFeatureDialogFor = null },
+                                title = { androidx.compose.material3.Text("Premium Feature") },
+                                text = { androidx.compose.material3.Text("$featureName is available in Premium Mode.") },
+                                confirmButton = {
+                                    androidx.compose.material3.Button(
+                                        onClick = {
+                                            premiumFeatureDialogFor = null
+                                            navController.navigate("premium")
+                                        }
+                                    ) {
+                                        androidx.compose.material3.Text("Buy Premium")
+                                    }
+                                },
+                                dismissButton = {
+                                    androidx.compose.material3.OutlinedButton(
+                                        onClick = { premiumFeatureDialogFor = null }
+                                    ) {
+                                        androidx.compose.material3.Text("Cancel")
+                                    }
                                 }
                             )
                         }
