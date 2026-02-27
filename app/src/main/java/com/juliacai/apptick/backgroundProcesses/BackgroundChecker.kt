@@ -199,9 +199,15 @@ class BackgroundChecker : Service() {
                     }
 
                     try {
-                        // Bubble visibility should follow real foreground state and avoid stale
-                        // fallback packages lingering during app/home transitions.
-                        updateFloatingBubble(foregroundApp)
+                        val bubbleFallbackApp = if (
+                            foregroundApp == null &&
+                            !lastForegroundApp.isNullOrBlank()
+                        ) {
+                            lastForegroundApp
+                        } else {
+                            null
+                        }
+                        updateFloatingBubble(foregroundApp, bubbleFallbackApp)
                     } catch (e: Exception) {
                         e.printStackTrace()
                     }
@@ -492,7 +498,7 @@ class BackgroundChecker : Service() {
 
     // ── Floating bubble management ────────────────────────────────────────────
 
-    private suspend fun updateFloatingBubble(currentApp: String?) {
+    private suspend fun updateFloatingBubble(currentApp: String?, fallbackApp: String?) {
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
         val isPremium = prefs.getBoolean("premium", false)
         if (!isPremium) {
@@ -511,15 +517,17 @@ class BackgroundChecker : Service() {
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
-        if (shouldHideFloatingBubbleForForegroundApp(currentApp, packageName)) {
+        val foregroundApp = currentApp ?: fallbackApp
+        if (shouldHideFloatingBubbleForForegroundApp(foregroundApp, packageName)) {
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
-        val foregroundApp = currentApp ?: return
+
+        val resolvedForegroundApp = foregroundApp ?: return
 
         // Read fresh data from DB to avoid stale cachedGroups lag
         val freshGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
-        val info = pickNotificationGroup(freshGroups, foregroundApp)
+        val info = pickNotificationGroup(freshGroups, resolvedForegroundApp)
         if (info == null) {
             // User is in an app with no active limit — hide bubble
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
@@ -531,18 +539,22 @@ class BackgroundChecker : Service() {
             (group.timeHrLimit * 60 + group.timeMinLimit).toLong()
         )
         val appUsed = group.perAppUsage
-            .firstOrNull { it.appPackage == foregroundApp }?.usedMillis ?: 0L
+            .firstOrNull { it.appPackage == resolvedForegroundApp }?.usedMillis ?: 0L
         val timeRemaining = if (group.limitEach) {
             (limitMillis - appUsed).coerceAtLeast(0L)
         } else {
             group.timeRemaining
+        }
+        if (timeRemaining <= 0L) {
+            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
+            return
         }
 
         val bubbleText = formatBubbleCountdown(timeRemaining)
 
         try {
             startService(
-                FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, foregroundApp)
+                FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, resolvedForegroundApp)
             )
         } catch (_: Exception) {}
     }
@@ -552,8 +564,8 @@ class BackgroundChecker : Service() {
         @VisibleForTesting
         internal fun shouldHideFloatingBubbleForForegroundApp(
             currentApp: String?,
-            appTickPackage: String
-        ): Boolean = currentApp == null || currentApp == appTickPackage
+            @Suppress("UNUSED_PARAMETER") appTickPackage: String
+        ): Boolean = currentApp == null
 
         private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
         private const val SETTINGS_PROTECTION_BURST_CHECK_INTERVAL = 100L // rapid checks while Settings/uninstall flow stays open
@@ -891,6 +903,10 @@ class BackgroundChecker : Service() {
                 (limitMillis - appUsed).coerceAtLeast(0L)
             } else {
                 group.timeRemaining
+            }
+            if (timeRemaining <= 0L) {
+                try { ctx.startService(FloatingBubbleService.hideIntent(ctx)) } catch (_: Exception) {}
+                return
             }
             val bubbleText = formatBubbleCountdown(timeRemaining)
             try {

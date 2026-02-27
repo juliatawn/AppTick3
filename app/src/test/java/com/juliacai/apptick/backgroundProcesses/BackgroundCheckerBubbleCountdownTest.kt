@@ -27,14 +27,14 @@ class BackgroundCheckerBubbleCountdownTest {
     }
 
     @Test
-    fun shouldHideFloatingBubbleForForegroundApp_hidesForNullAndAppTickOnly() {
+    fun shouldHideFloatingBubbleForForegroundApp_hidesForNullOnly() {
         assertTrue(
             BackgroundChecker.shouldHideFloatingBubbleForForegroundApp(
                 currentApp = null,
                 appTickPackage = "com.juliacai.apptick"
             )
         )
-        assertTrue(
+        assertFalse(
             BackgroundChecker.shouldHideFloatingBubbleForForegroundApp(
                 currentApp = "com.juliacai.apptick",
                 appTickPackage = "com.juliacai.apptick"
