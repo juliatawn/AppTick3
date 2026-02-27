@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import com.juliacai.apptick.appLimit.AppInGroup
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Before
@@ -27,6 +28,10 @@ class LegacyMigrationIntegrationTest {
         dao = database.appLimitGroupDao()
         legacyFile = File(context.filesDir, "appLimitPrefs")
         if (legacyFile.exists()) legacyFile.delete()
+        context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .remove("legacy_app_name_repair_done_v1")
+            .commit()
     }
 
     @After
@@ -35,6 +40,10 @@ class LegacyMigrationIntegrationTest {
         context.getSharedPreferences("groupPrefs_legacy_migration_test", Context.MODE_PRIVATE)
             .edit()
             .clear()
+            .commit()
+        context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+            .edit()
+            .remove("legacy_app_name_repair_done_v1")
             .commit()
         database.close()
     }
@@ -77,6 +86,32 @@ class LegacyMigrationIntegrationTest {
         assertThat(groups).hasSize(1)
         assertThat(groups.first().name).isEqualTo("Focus")
         assertThat(legacyFile.exists()).isFalse()
+    }
+
+    @Test
+    fun migrate_repairsStoredAppNamesThatEqualPackageName() = runTest {
+        val packageName = context.packageName
+        val expectedLabel = context.packageManager
+            .getApplicationLabel(context.applicationInfo)
+            .toString()
+            .trim()
+        dao.insertAppLimitGroup(
+            AppLimitGroupEntity(
+                name = "Repair",
+                apps = listOf(
+                    AppInGroup(
+                        appName = packageName,
+                        appPackage = packageName,
+                        appIcon = ""
+                    )
+                )
+            )
+        )
+
+        LegacyDataMigrator(context, dao).migrate()
+
+        val repaired = dao.getAllAppLimitGroupsImmediate().single()
+        assertThat(repaired.apps.single().appName).isEqualTo(expectedLabel)
     }
 
     @Test

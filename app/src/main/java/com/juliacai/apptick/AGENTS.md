@@ -129,7 +129,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppTickDatabase.kt`: The main Room database class for the application, defining the database configuration, entities, migrations, and providing access to the DAOs.
     - `AppLimitBackupManager.kt`: Serializes/deserializes backup JSON for app-limit configurations (including persisted group card expansion state) plus AppTick UI settings (theme/colors/notification-bubble options) and handles reading/writing backup files through SAF Uris.
     - `Converters.kt`: A Room type converter class that handles the conversion of complex data types, such as lists of integers and AppInGroup objects, into a format that can be stored in the database.
-    - `LegacyDataMigrator.kt`: Handles the migration of data from a legacy database schema.
+    - `LegacyDataMigrator.kt`: Handles migration from the legacy `appLimitPrefs` file and runs a one-time repair pass to normalize stored app display names that were saved as package IDs.
     - `Mapper.kt`: Contains extension functions that handle the mapping between the AppLimitGroup domain model and the AppLimitGroupEntity database entity.
 - **deviceApps**
     - `AppListViewModel.kt`: The ViewModel for the AppSearchActivity, responsible for managing the list of apps.

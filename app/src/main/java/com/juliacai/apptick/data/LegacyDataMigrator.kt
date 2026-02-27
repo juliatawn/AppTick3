@@ -1,6 +1,7 @@
 package com.juliacai.apptick.data
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.util.Log
 import com.juliacai.apptick.TimeManager
 import com.juliacai.apptick.appLimit.AppInGroup
@@ -16,36 +17,92 @@ class LegacyDataMigrator(
 
     suspend fun migrate() {
         MIGRATION_MUTEX.withLock {
-            val legacyFile = File(context.filesDir, "appLimitPrefs")
-            if (!legacyFile.exists()) {
-                Log.i("LegacyDataMigrator", "No legacy data file found.")
-                return
+            migrateLegacyFileIfPresent()
+            normalizeStoredAppDisplayNamesIfNeeded()
+        }
+    }
+
+    private suspend fun migrateLegacyFileIfPresent() {
+        val legacyFile = File(context.filesDir, "appLimitPrefs")
+        if (!legacyFile.exists()) {
+            Log.i("LegacyDataMigrator", "No legacy data file found.")
+            return
+        }
+
+        try {
+            val lines = legacyFile.readLines()
+            val existingKeys = appLimitGroupDao
+                .getAllAppLimitGroupsImmediate()
+                .mapTo(mutableSetOf(), ::dedupeKey)
+
+            var insertedCount = 0
+            for (line in lines) {
+                if (line.isBlank()) continue
+                val entity = LegacyAppLimitLineParser.parseLineToEntity(
+                    line = line,
+                    appNameResolver = ::resolveInstalledAppLabel
+                ) ?: continue
+                val key = dedupeKey(entity)
+                if (existingKeys.add(key)) {
+                    appLimitGroupDao.insertAppLimitGroup(entity)
+                    insertedCount++
+                }
             }
+            legacyFile.delete()
+            Log.i(
+                "LegacyDataMigrator",
+                "Legacy data migration completed. Inserted $insertedCount new groups."
+            )
+        } catch (e: Exception) {
+            Log.e("LegacyDataMigrator", "Error migrating legacy data", e)
+        }
+    }
 
-            try {
-                val lines = legacyFile.readLines()
-                val existingKeys = appLimitGroupDao
-                    .getAllAppLimitGroupsImmediate()
-                    .mapTo(mutableSetOf(), ::dedupeKey)
+    private suspend fun normalizeStoredAppDisplayNamesIfNeeded() {
+        val prefs = context.getSharedPreferences(MIGRATION_PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(KEY_APP_NAME_REPAIR_DONE, false)) return
 
-                var insertedCount = 0
-                for (line in lines) {
-                    if (line.isBlank()) continue
-                    val entity = LegacyAppLimitLineParser.parseLineToEntity(line) ?: continue
-                    val key = dedupeKey(entity)
-                    if (existingKeys.add(key)) {
-                        appLimitGroupDao.insertAppLimitGroup(entity)
-                        insertedCount++
+        try {
+            val groups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
+            var repairedGroups = 0
+            for (group in groups) {
+                var repaired = false
+                val updatedApps = group.apps.map { app ->
+                    val resolvedName = resolveInstalledAppLabel(app.appPackage)
+                    if (shouldRepairAppName(app.appName, app.appPackage) && !resolvedName.isNullOrBlank()) {
+                        repaired = true
+                        app.copy(appName = resolvedName)
+                    } else {
+                        app
                     }
                 }
-                legacyFile.delete()
-                Log.i(
-                    "LegacyDataMigrator",
-                    "Legacy data migration completed. Inserted $insertedCount new groups."
-                )
-            } catch (e: Exception) {
-                Log.e("LegacyDataMigrator", "Error migrating legacy data", e)
+                if (repaired) {
+                    appLimitGroupDao.updateAppLimitGroup(group.copy(apps = updatedApps))
+                    repairedGroups++
+                }
             }
+            prefs.edit().putBoolean(KEY_APP_NAME_REPAIR_DONE, true).apply()
+            Log.i(
+                "LegacyDataMigrator",
+                "App name normalization complete. Repaired $repairedGroups groups."
+            )
+        } catch (e: Exception) {
+            Log.e("LegacyDataMigrator", "Error normalizing stored app names", e)
+        }
+    }
+
+    private fun shouldRepairAppName(appName: String, appPackage: String): Boolean {
+        return appName.isBlank() || appName == appPackage
+    }
+
+    private fun resolveInstalledAppLabel(appPackage: String): String? {
+        return try {
+            val appInfo = context.packageManager.getApplicationInfo(appPackage, 0)
+            context.packageManager.getApplicationLabel(appInfo).toString().trim().ifBlank { null }
+        } catch (_: PackageManager.NameNotFoundException) {
+            null
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -66,11 +123,17 @@ class LegacyDataMigrator(
 
     companion object {
         private val MIGRATION_MUTEX = Mutex()
+        private const val MIGRATION_PREFS = "groupPrefs"
+        private const val KEY_APP_NAME_REPAIR_DONE = "legacy_app_name_repair_done_v1"
     }
 }
 
 internal object LegacyAppLimitLineParser {
-    fun parseLineToEntity(line: String, nowMillis: Long = System.currentTimeMillis()): AppLimitGroupEntity? {
+    fun parseLineToEntity(
+        line: String,
+        nowMillis: Long = System.currentTimeMillis(),
+        appNameResolver: (String) -> String? = { null }
+    ): AppLimitGroupEntity? {
         try {
             val parts = line.split(":", limit = 10)
             if (parts.size < 10) return null
@@ -94,9 +157,11 @@ internal object LegacyAppLimitLineParser {
             val apps = parseStringList(parts[8])
                 .filter { it.isNotBlank() }
                 .map { appPackage ->
+                    val normalizedPackage = appPackage.trim()
+                    val resolvedName = appNameResolver(normalizedPackage).orEmpty().trim()
                     AppInGroup(
-                        appPackage = appPackage.trim(),
-                        appName = appPackage.trim(),
+                        appPackage = normalizedPackage,
+                        appName = resolvedName.ifBlank { normalizedPackage },
                         appIcon = ""
                     )
                 }

@@ -23,6 +23,23 @@ class LegacyAppLimitLineParserTest {
     }
 
     @Test
+    fun parseLineToEntity_usesResolverLabelWhenAvailable() {
+        val legacyLine =
+            "0:1700000000000:1:30:true:Focus:2:[1, 2, 7]:[com.supercell.clashofclans]:false"
+
+        val parsed = LegacyAppLimitLineParser.parseLineToEntity(
+            line = legacyLine,
+            nowMillis = 1700000000000L,
+            appNameResolver = { packageName ->
+                if (packageName == "com.supercell.clashofclans") "Clash of Clans" else null
+            }
+        )
+
+        assertThat(parsed).isNotNull()
+        assertThat(parsed!!.apps.single().appName).isEqualTo("Clash of Clans")
+    }
+
+    @Test
     fun parseLineToEntity_handlesEmptyLists() {
         val legacyLine = "1:1700000000000:0:0:false::0:[]:[]:true"
 
