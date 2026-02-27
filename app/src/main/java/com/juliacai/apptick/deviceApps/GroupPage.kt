@@ -405,8 +405,15 @@ fun GroupDetails(
     onAppsReordered: (List<com.juliacai.apptick.appLimit.AppInGroup>) -> Unit = {}
 ) {
     val context = LocalContext.current
-    val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis }
-    val groupUsedMillis = group.perAppUsage.sumOf { it.usedMillis.coerceAtLeast(0L) }
+    val groupPackages = remember(group.apps) { group.apps.map { it.appPackage }.toSet() }
+    val usageByPackage = remember(group.perAppUsage, groupPackages) {
+        group.perAppUsage
+            .asSequence()
+            .filter { it.appPackage in groupPackages }
+            .associate { it.appPackage to it.usedMillis.coerceAtLeast(0L) }
+    }
+    val groupUsedMillis = usageByPackage.values.sum()
+    val groupTimeLeftMillis = remember(group) { totalGroupTimeLeftMillis(group) }
     val listState = rememberLazyListState()
     val orderedApps = remember { mutableStateListOf<com.juliacai.apptick.appLimit.AppInGroup>() }
     var draggingAppPackage by remember { mutableStateOf<String?>(null) }
@@ -465,7 +472,7 @@ fun GroupDetails(
                             style = MaterialTheme.typography.headlineMedium
                         )
                         Text(
-                            text = formatTimeRemaining(group.timeRemaining),
+                            text = formatTimeRemaining(groupTimeLeftMillis),
                             style = MaterialTheme.typography.displaySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -488,7 +495,7 @@ fun GroupDetails(
                             style = MaterialTheme.typography.bodySmall
                         )
 
-                        if (group.cumulativeTime) {
+                        if (group.cumulativeTime && !group.limitEach) {
                             val limitInMillis = (group.timeHrLimit * 60 + group.timeMinLimit) * 60_000L
                             val carriedOver = (group.timeRemaining - limitInMillis).coerceAtLeast(0L)
                             if (carriedOver > 0) {
@@ -744,7 +751,7 @@ fun GroupDetails(
                     Column(horizontalAlignment = Alignment.End) {
                         LabelValueText(
                             label = "Left:",
-                            value = formatTimeRemaining(group.timeRemaining),
+                            value = formatTimeRemaining(groupTimeLeftMillis),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -758,6 +765,19 @@ fun GroupDetails(
                 }
             }
         }
+    }
+}
+
+private fun totalGroupTimeLeftMillis(group: AppLimitGroup): Long {
+    if (!group.limitEach) return group.timeRemaining.coerceAtLeast(0L)
+
+    val limitPerAppMillis = ((group.timeHrLimit * 60L) + group.timeMinLimit.toLong())
+        .coerceAtLeast(0L) * 60_000L
+    if (limitPerAppMillis <= 0L) return 0L
+
+    val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis.coerceAtLeast(0L) }
+    return group.apps.sumOf { app ->
+        (limitPerAppMillis - (usageByPackage[app.appPackage] ?: 0L)).coerceAtLeast(0L)
     }
 }
 

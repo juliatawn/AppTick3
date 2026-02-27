@@ -294,7 +294,7 @@ private fun isGroupCurrentlyLimited(
 }
 
 private fun formatTimeLeft(group: AppLimitGroup): String {
-    val totalMinutes = (group.timeRemaining.coerceAtLeast(0L) / 60_000L).toInt()
+    val totalMinutes = (totalGroupTimeLeftMillis(group) / 60_000L).toInt()
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
     val parts = buildList {
@@ -302,6 +302,19 @@ private fun formatTimeLeft(group: AppLimitGroup): String {
         if (minutes > 0 || hours == 0) add("$minutes min")
     }
     return parts.joinToString(" ")
+}
+
+private fun totalGroupTimeLeftMillis(group: AppLimitGroup): Long {
+    if (!group.limitEach) return group.timeRemaining.coerceAtLeast(0L)
+
+    val limitPerAppMillis = ((group.timeHrLimit * 60L) + group.timeMinLimit.toLong())
+        .coerceAtLeast(0L) * 60_000L
+    if (limitPerAppMillis <= 0L) return 0L
+
+    val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis.coerceAtLeast(0L) }
+    return group.apps.sumOf { app ->
+        (limitPerAppMillis - (usageByPackage[app.appPackage] ?: 0L)).coerceAtLeast(0L)
+    }
 }
 
 private fun formatActiveDaysInfo(group: AppLimitGroup): String {
