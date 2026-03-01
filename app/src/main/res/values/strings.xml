@@ -53,4 +53,5 @@
     <string name="time_spent">Time Spent: %1$dh %2$dm</string>
     <string name="app_time_spent">App Time Spent: %1$dh %2$dm</string>
     <string name="group_time_spent">Group Time Spent: %1$dh %2$dm</string>
+    <string name="accessibility_service_description">AppTick uses this service to detect which app you are currently using so it can enforce your screen time limits. It only tracks which app is in the foreground and does not read any content from your apps.</string>
 </resources>

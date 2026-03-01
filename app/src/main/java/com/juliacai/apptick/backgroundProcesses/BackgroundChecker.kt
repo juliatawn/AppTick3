@@ -790,6 +790,11 @@ class BackgroundChecker : Service() {
     // ── Foreground app detection ──────────────────────────────────────────────
 
     private fun getForegroundApp(): String? {
+        // Primary: AccessibilityService provides instant, event-driven detection
+        val accessibilityApp = AppTickAccessibilityService.getForegroundPackage()
+        if (accessibilityApp != null) return accessibilityApp
+
+        // Fallback: UsageStatsManager polling (when accessibility service is not enabled)
         val time = System.currentTimeMillis()
         val events = usageStatsManager.queryEvents(time - FOREGROUND_EVENT_LOOKBACK_MS, time)
         var foregroundApp: String? = null
