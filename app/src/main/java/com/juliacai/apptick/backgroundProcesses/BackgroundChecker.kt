@@ -86,6 +86,9 @@ class BackgroundChecker : Service() {
     private var lastSettingsUnlockPromptElapsed: Long = 0L
     @Volatile
     private var fixedElapsedForTestingMs: Long? = null
+    @VisibleForTesting
+    var navigateHomeCallCount = 0
+        private set
 
     inner class LocalBinder : Binder() {
         fun getService(): BackgroundChecker = this@BackgroundChecker
@@ -218,6 +221,17 @@ class BackgroundChecker : Service() {
         }
     }
 
+    // ── Navigate home to dismiss floating windows before blocking ────────────
+
+    private fun navigateHome() {
+        navigateHomeCallCount++
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(homeIntent)
+    }
+
     // ── Core limit checking ───────────────────────────────────────────────────
 
     suspend fun checkAppLimits(foregroundApp: String?) {
@@ -239,6 +253,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", false)
                 blockIntent.putExtra("next_reset_time", 0L)
                 blockIntent.putExtra("block_reason", "Used up time limit")
+                navigateHome()
                 startActivity(blockIntent)
                 return
             }
@@ -335,6 +350,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", true)
                 blockIntent.putExtra("next_reset_time", group.nextResetTime)
                 blockIntent.putExtra("block_reason", "Outside configured time range")
+                navigateHome()
                 startActivity(blockIntent)
                 continue
             }
@@ -358,6 +374,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Used up time limit")
+                    navigateHome()
                     startActivity(blockIntent)
                     continue
                 }
@@ -404,6 +421,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Out of Time")
+                    navigateHome()
                     startActivity(blockIntent)
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage
