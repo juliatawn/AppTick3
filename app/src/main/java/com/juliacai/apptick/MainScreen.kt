@@ -48,12 +48,14 @@ fun MainScreen(
     batteryWarningDismissable: Boolean,
     batteryWarningText: String,
     batteryWarningDetails: List<Pair<String, String>>,
+    hasOemRestrictions: Boolean,
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onPremiumClick: () -> Unit,
     onOpenAppBatterySettings: () -> Unit,
     onOpenGeneralBatterySettings: () -> Unit,
     onOpenDontKillMyApp: () -> Unit,
+    onOpenOemStartupSettings: () -> Unit,
     onRefreshBatteryStatus: () -> Unit,
     onDismissBatteryWarning: () -> Unit,
     onDismissGroupDetailsHint: () -> Unit,
@@ -176,6 +178,15 @@ fun MainScreen(
                         ) {
                             Text("Open dontkillmyapp.com")
                         }
+                        if (hasOemRestrictions) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = onOpenOemStartupSettings,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Open OEM Startup Settings")
+                            }
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         OutlinedButton(
                             onClick = onRefreshBatteryStatus,
@@ -260,12 +271,14 @@ fun MainScreenPreview() {
             batteryWarningDismissable = true,
             batteryWarningText = "Battery warning text",
             batteryWarningDetails = listOf("Detail 1" to "Value 1", "Detail 2" to "Value 2"),
+            hasOemRestrictions = true,
             onFabClick = {},
             onSettingsClick = {},
             onPremiumClick = {},
             onOpenAppBatterySettings = {},
             onOpenGeneralBatterySettings = {},
             onOpenDontKillMyApp = {},
+            onOpenOemStartupSettings = {},
             onRefreshBatteryStatus = {},
             onDismissBatteryWarning = {},
             onDismissGroupDetailsHint = {},
