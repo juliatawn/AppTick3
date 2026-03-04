@@ -221,15 +221,26 @@ class BackgroundChecker : Service() {
         }
     }
 
-    // ── Navigate home to dismiss floating windows before blocking ────────────
+    // ── Dismiss floating windows before blocking ───────────────────────────────
 
-    private fun navigateHome() {
-        navigateHomeCallCount++
-        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    /**
+     * Attempts to close floating/freeform windows for the blocked app.
+     * Primary: uses AccessibilityService GLOBAL_ACTION_BACK to close the floating window.
+     * Fallback: navigates to the home screen (less reliable on some OEMs like Honor/Huawei
+     * where floating windows persist over the home screen).
+     */
+    private fun dismissFloatingWindow(blockedPackage: String?) {
+        navigateHomeCallCount++ // keep counter for test compatibility
+        val closedViaAccessibility = blockedPackage != null &&
+                AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
+        if (!closedViaAccessibility) {
+            // Fallback: navigate home when accessibility service is not available
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(homeIntent)
         }
-        startActivity(homeIntent)
     }
 
     // ── Core limit checking ───────────────────────────────────────────────────
@@ -253,7 +264,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", false)
                 blockIntent.putExtra("next_reset_time", 0L)
                 blockIntent.putExtra("block_reason", "Used up time limit")
-                navigateHome()
+                dismissFloatingWindow(foregroundApp)
                 startActivity(blockIntent)
                 return
             }
@@ -350,7 +361,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", true)
                 blockIntent.putExtra("next_reset_time", group.nextResetTime)
                 blockIntent.putExtra("block_reason", "Outside configured time range")
-                navigateHome()
+                dismissFloatingWindow(appInGroup.appPackage)
                 startActivity(blockIntent)
                 continue
             }
@@ -374,7 +385,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Used up time limit")
-                    navigateHome()
+                    dismissFloatingWindow(appInGroup.appPackage)
                     startActivity(blockIntent)
                     continue
                 }
@@ -421,7 +432,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Out of Time")
-                    navigateHome()
+                    dismissFloatingWindow(appInGroup.appPackage)
                     startActivity(blockIntent)
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage

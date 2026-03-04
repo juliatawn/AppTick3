@@ -277,6 +277,106 @@ class AccessibilityBlockingIntegrationTest {
         )
     }
 
+    // ── Dismiss floating window fallback tests ──────────────────────────
+
+    @Test
+    fun testDismissFloatingWindowFallsBackToHomeWhenNoServiceInstance() = runTest {
+        // Accessibility is "simulated" as running (for foreground detection),
+        // but there is no real service instance — tryCloseFloatingWindow returns false,
+        // so dismissFloatingWindow should fall back to the home navigation path.
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Dismiss Fallback Test",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            timeRemaining = 1_000L,
+            apps = listOf(AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        service.checkAppLimits("com.amazon.mShop.android.shopping")
+
+        // navigateHomeCallCount increments in dismissFloatingWindow
+        assertEquals(
+            "dismissFloatingWindow should increment counter even via fallback path",
+            1, service.navigateHomeCallCount
+        )
+        val updated = dao.getGroup(1)!!
+        assertEquals(0L, updated.timeRemaining)
+    }
+
+    @Test
+    fun testDismissFloatingWindowCalledForZeroLimitWithAccessibility() = runTest {
+        // Zero-limit group with accessibility running — should still trigger dismiss
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Zero Limit Dismiss",
+            timeHrLimit = 0,
+            timeMinLimit = 0,
+            timeRemaining = 0L,
+            apps = listOf(AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.amazon.mShop.android.shopping")
+
+            val blockedActivity = instrumentation.waitForMonitorWithTimeout(monitor, 3_000L)
+            assertNotNull("BlockWindowActivity should launch for zero-limit block", blockedActivity)
+            blockedActivity?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+
+        assertEquals(
+            "dismissFloatingWindow should be called for zero-limit block with accessibility",
+            1, service.navigateHomeCallCount
+        )
+    }
+
+    @Test
+    fun testDismissFloatingWindowNotCalledWhenTimeRemains() = runTest {
+        // Plenty of time remaining — dismissFloatingWindow should NOT be called
+        val group = AppLimitGroup(
+            id = 1,
+            name = "No Dismiss Test",
+            timeHrLimit = 1,
+            timeRemaining = 3_600_000L,
+            apps = listOf(AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        service.checkAppLimits("com.amazon.mShop.android.shopping")
+
+        assertEquals(
+            "dismissFloatingWindow should NOT be called when time remains",
+            0, service.navigateHomeCallCount
+        )
+    }
+
     // ── Helper methods ────────────────────────────────────────────────────
 
     private suspend fun clearAllGroups() {
