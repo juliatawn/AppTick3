@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Bundle
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -23,6 +24,15 @@ class BlockWindowActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+
+        // Block back press so the user can't dismiss the block screen
+        // and so async BACK actions from floating window dismissal don't close it.
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                // Do nothing — block screen should not be dismissible via back
+            }
+        })
+
         hideFloatingBubble()
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         AppTheme.applyTheme(this)

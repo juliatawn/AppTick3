@@ -33,29 +33,37 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
- * Lightweight overlay service that draws a small, semi-transparent floating
- * bubble showing the active profile's time remaining while the user is inside
- * a time-limited app.
+ * Lightweight overlay service that draws semi-transparent floating bubbles
+ * showing time remaining for time-limited apps.
  *
- * The bubble is draggable. When the user begins dragging, a dismiss target (✕)
- * appears at the bottom of the screen. Dropping the bubble onto it dismisses
- * the bubble and shows a Toast instructing the user to re-show via the
- * AppTick notification action.
+ * In split-screen mode, each visible limited app gets its own bubble so the
+ * user can see both countdowns simultaneously. Both timers decrement in real
+ * time. Each bubble is independently draggable and remembers its position
+ * per app.
+ *
+ * Dropping any bubble onto the dismiss target dismisses all bubbles.
  */
 class FloatingBubbleService : Service() {
 
     private var windowManager: WindowManager? = null
-    private var bubbleView: View? = null
     private var dismissTarget: View? = null
-    private var timeTextView: TextView? = null
-    private var bubbleParams: WindowManager.LayoutParams? = null
     private var dismissParams: WindowManager.LayoutParams? = null
+    private var foregroundStarted = false
+    private var timerStarted = false
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
 
-    private var timeRemainingMillis: Long = 0
-    private var activeAppPackage: String? = null
+    /** Per-app bubble state. */
+    private class BubbleEntry {
+        var view: View? = null
+        var textView: TextView? = null
+        var params: WindowManager.LayoutParams? = null
+        var timeRemainingMillis: Long = 0
+    }
+
+    /** All active bubbles, keyed by app package name. */
+    private val bubbles = LinkedHashMap<String, BubbleEntry>()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -70,45 +78,55 @@ class FloatingBubbleService : Service() {
         when (action) {
             ACTION_UPDATE -> {
                 val text = intent.getStringExtra(EXTRA_BUBBLE_TEXT) ?: return START_NOT_STICKY
-                timeRemainingMillis = intent.getLongExtra(EXTRA_TIME_MILLIS, 0)
+                val timeMillis = intent.getLongExtra(EXTRA_TIME_MILLIS, 0)
                 val appPackage = intent.getStringExtra(EXTRA_APP_PACKAGE)
-                if (bubbleView == null) {
-                    val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
-                    if (prefs.getBoolean(PREF_BUBBLE_DISMISSED, false)) {
-                        return START_NOT_STICKY
-                    }
-                    activeAppPackage = appPackage
-                    createBubble()
-                    if (bubbleView == null) {
-                        Log.e("FloatingBubbleService", "Failed to create bubble view on update")
-                        return START_NOT_STICKY
-                    }
-                    startForegroundWithNotification()
-                    startUpdatingTime()
+                    ?: return START_NOT_STICKY
+
+                val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
+                if (prefs.getBoolean(PREF_BUBBLE_DISMISSED, false)) {
+                    return START_NOT_STICKY
                 }
-                maybeApplyPositionForApp(appPackage)
-                updateBubbleText(text)
+
+                val entry = bubbles.getOrPut(appPackage) { BubbleEntry() }
+                entry.timeRemainingMillis = timeMillis
+
+                if (entry.view == null) {
+                    createBubble(appPackage, entry)
+                    if (entry.view == null) {
+                        bubbles.remove(appPackage)
+                        Log.e(TAG, "Failed to create bubble view for $appPackage")
+                        return START_NOT_STICKY
+                    }
+                }
+                ensureForegroundAndTimer()
+                entry.textView?.text = text
             }
-            ACTION_HIDE -> hideBubble()
+            ACTION_HIDE -> hideAllBubbles()
             ACTION_SHOW -> {
                 val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
                 prefs.edit().putBoolean(PREF_BUBBLE_DISMISSED, false).apply()
                 val text = intent.getStringExtra(EXTRA_BUBBLE_TEXT)
-                if (text != null) {
-                    timeRemainingMillis = intent.getLongExtra(EXTRA_TIME_MILLIS, 0)
-                    val appPackage = intent.getStringExtra(EXTRA_APP_PACKAGE)
-                    if (bubbleView == null) {
-                        activeAppPackage = appPackage
-                        createBubble()
-                        if (bubbleView == null) {
-                            Log.e("FloatingBubbleService", "Failed to create bubble view on show")
+                val appPackage = intent.getStringExtra(EXTRA_APP_PACKAGE)
+                if (text != null && appPackage != null) {
+                    val timeMillis = intent.getLongExtra(EXTRA_TIME_MILLIS, 0)
+                    val entry = bubbles.getOrPut(appPackage) { BubbleEntry() }
+                    entry.timeRemainingMillis = timeMillis
+                    if (entry.view == null) {
+                        createBubble(appPackage, entry)
+                        if (entry.view == null) {
+                            bubbles.remove(appPackage)
                             return START_NOT_STICKY
                         }
-                        startForegroundWithNotification()
-                        startUpdatingTime()
                     }
-                    maybeApplyPositionForApp(appPackage)
-                    updateBubbleText(text)
+                    ensureForegroundAndTimer()
+                    entry.textView?.text = text
+                }
+            }
+            ACTION_REMOVE_APP -> {
+                val appPackage = intent.getStringExtra(EXTRA_APP_PACKAGE) ?: return START_NOT_STICKY
+                removeBubbleForApp(appPackage)
+                if (bubbles.isEmpty()) {
+                    hideAllBubbles()
                 }
             }
             else -> stopSelf()
@@ -116,17 +134,32 @@ class FloatingBubbleService : Service() {
         return START_STICKY
     }
 
+    // ── Timer ─────────────────────────────────────────────────────────────
+
+    private fun ensureForegroundAndTimer() {
+        if (!foregroundStarted) {
+            startForegroundWithNotification()
+            foregroundStarted = true
+        }
+        if (!timerStarted) {
+            timerStarted = true
+            startUpdatingTime()
+        }
+    }
+
     private fun startUpdatingTime() {
         serviceScope.launch {
             while (true) {
                 delay(1000)
-                timeRemainingMillis -= 1000
-                if (timeRemainingMillis < 0) timeRemainingMillis = 0
-
-                val timeString = formatBubbleCountdown(timeRemainingMillis)
-
-                launch(Dispatchers.Main) {
-                    updateBubbleText(timeString)
+                // Snapshot the entries to avoid ConcurrentModificationException
+                val entries = synchronized(bubbles) { bubbles.values.toList() }
+                for (entry in entries) {
+                    entry.timeRemainingMillis -= 1000
+                    if (entry.timeRemainingMillis < 0) entry.timeRemainingMillis = 0
+                    val timeString = formatBubbleCountdown(entry.timeRemainingMillis)
+                    launch(Dispatchers.Main) {
+                        entry.textView?.text = timeString
+                    }
                 }
             }
         }
@@ -146,6 +179,8 @@ class FloatingBubbleService : Service() {
         val minutes = totalMinutes % 60L
         return String.format("%02d:%02d", hours, minutes)
     }
+
+    // ── Notification ──────────────────────────────────────────────────────
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -178,13 +213,12 @@ class FloatingBubbleService : Service() {
         }
     }
 
-
     private fun dp(value: Float): Int =
         TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics
         ).toInt()
 
-    // ── Dismiss target (✕ circle shown at bottom while dragging) ──────────
+    // ── Dismiss target ───────────────────────────────────────────────────
 
     private fun createDismissTarget() {
         if (dismissTarget != null) return
@@ -229,7 +263,7 @@ class FloatingBubbleService : Service() {
         }
 
         dismissTarget = container
-        container.alpha = 0f // start invisible
+        container.alpha = 0f
         try { windowManager?.addView(container, dismissParams) } catch (_: Exception) {}
     }
 
@@ -248,23 +282,22 @@ class FloatingBubbleService : Service() {
         dismissTarget = null
     }
 
-    /** Whether the bubble centre is hovering over the dismiss target. */
     private fun isOverDismissTarget(bubbleScreenX: Float, bubbleScreenY: Float): Boolean {
         val target = dismissTarget ?: return false
         val loc = IntArray(2)
         target.getLocationOnScreen(loc)
         val cx = loc[0] + target.width / 2f
         val cy = loc[1] + target.height / 2f
-        val radius = dp(40f)  // generous hit area
+        val radius = dp(40f)
         val dx = bubbleScreenX - cx
         val dy = bubbleScreenY - cy
         return dx * dx + dy * dy <= radius * radius
     }
 
-    // ── Bubble view ──────────────────────────────────────────────────────
+    // ── Bubble view creation ─────────────────────────────────────────────
 
     @SuppressLint("ClickableViewAccessibility")
-    private fun createBubble() {
+    private fun createBubble(appPackage: String, entry: BubbleEntry) {
         createDismissTarget()
 
         val container = LinearLayout(this).apply {
@@ -275,14 +308,13 @@ class FloatingBubbleService : Service() {
 
             val bg = android.graphics.drawable.GradientDrawable().apply {
                 cornerRadius = dp(20f).toFloat()
-                // 70% opacity background as requested
                 setColor(android.graphics.Color.argb(178, 20, 20, 20))
                 setStroke(dp(1f), android.graphics.Color.argb(220, 255, 255, 255))
             }
             background = bg
         }
 
-        timeTextView = TextView(this).apply {
+        val textView = TextView(this).apply {
             setTextColor(android.graphics.Color.WHITE)
             textSize = 15f
             typeface = Typeface.DEFAULT_BOLD
@@ -292,12 +324,10 @@ class FloatingBubbleService : Service() {
             gravity = Gravity.CENTER
             textAlignment = View.TEXT_ALIGNMENT_CENTER
         }
-        container.addView(timeTextView, LinearLayout.LayoutParams(
+        container.addView(textView, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.WRAP_CONTENT,
             LinearLayout.LayoutParams.WRAP_CONTENT
         ))
-
-        bubbleView = container
 
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -306,7 +336,24 @@ class FloatingBubbleService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
 
-        bubbleParams = WindowManager.LayoutParams(
+        // Stagger default Y position for multiple bubbles so they don't overlap
+        val bubbleIndex = bubbles.keys.indexOf(appPackage).coerceAtLeast(0)
+        val staggerOffset = bubbleIndex * dp(55f)
+        val defaultX = 0
+        val defaultY = resources.displayMetrics.heightPixels / 2 + staggerOffset
+        val (loadedX, loadedY) = loadSavedBubblePosition(appPackage, defaultX, defaultY)
+
+        // If another bubble already occupies this exact position, apply stagger offset
+        val posX = loadedX
+        val posY = if (bubbleIndex > 0 && bubbles.values.any { entry ->
+                entry.params?.let { it.x == loadedX && it.y == loadedY } == true
+            }) {
+            loadedY + staggerOffset
+        } else {
+            loadedY
+        }
+
+        val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
             overlayType,
@@ -314,15 +361,15 @@ class FloatingBubbleService : Service() {
                     WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            // Use START-based coordinates so drag direction matches finger movement consistently.
             gravity = Gravity.TOP or Gravity.START
-            val defaultX = (resources.displayMetrics.widthPixels - dp(120f)).coerceAtLeast(dp(16f))
-            val defaultY = dp(110f)
-            val initialPosition = loadSavedBubblePosition(activeAppPackage, defaultX, defaultY)
-            x = initialPosition.first
-            y = initialPosition.second
+            x = posX
+            y = posY
             alpha = 1f
         }
+
+        entry.view = container
+        entry.textView = textView
+        entry.params = params
 
         // ── Drag + drop-to-dismiss ───────────────────────────────────────
         var initialX = 0
@@ -331,11 +378,12 @@ class FloatingBubbleService : Service() {
         var initialTouchY = 0f
         var isDragging = false
 
-        container.setOnTouchListener { view, event ->
+        container.setOnTouchListener { _, event ->
+            val p = entry.params ?: return@setOnTouchListener false
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
-                    initialX = bubbleParams!!.x
-                    initialY = bubbleParams!!.y
+                    initialX = p.x
+                    initialY = p.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     isDragging = false
@@ -349,11 +397,10 @@ class FloatingBubbleService : Service() {
                         showDismissTarget()
                     }
                     if (isDragging) {
-                        bubbleParams!!.x = initialX + dx
-                        bubbleParams!!.y = initialY + dy
-                        windowManager?.updateViewLayout(bubbleView, bubbleParams)
+                        p.x = initialX + dx
+                        p.y = initialY + dy
+                        try { windowManager?.updateViewLayout(entry.view, p) } catch (_: Exception) {}
 
-                        // Highlight dismiss target when hovering over it
                         val hovering = isOverDismissTarget(event.rawX, event.rawY)
                         dismissTarget?.scaleX = if (hovering) 1.3f else 1f
                         dismissTarget?.scaleY = if (hovering) 1.3f else 1f
@@ -362,10 +409,10 @@ class FloatingBubbleService : Service() {
                 }
                 MotionEvent.ACTION_UP -> {
                     if (isDragging && isOverDismissTarget(event.rawX, event.rawY)) {
-                        dismissBubble()
+                        dismissAllBubbles()
                     } else {
                         if (isDragging) {
-                            saveBubblePosition(bubbleParams!!.x, bubbleParams!!.y, activeAppPackage)
+                            saveBubblePosition(p.x, p.y, appPackage)
                         }
                         hideDismissTarget()
                     }
@@ -376,30 +423,16 @@ class FloatingBubbleService : Service() {
         }
 
         try {
-            windowManager?.addView(bubbleView, bubbleParams)
+            windowManager?.addView(container, params)
         } catch (e: Exception) {
-            Log.e("FloatingBubbleService", "Unable to add floating bubble view", e)
-            bubbleView = null
-            timeTextView = null
+            Log.e(TAG, "Unable to add floating bubble view for $appPackage", e)
+            entry.view = null
+            entry.textView = null
+            entry.params = null
         }
     }
 
-    private fun updateBubbleText(text: String) {
-        timeTextView?.text = text
-    }
-
-    private fun maybeApplyPositionForApp(appPackage: String?) {
-        if (bubbleView == null || bubbleParams == null || activeAppPackage == appPackage) return
-        activeAppPackage = appPackage
-        val currentX = bubbleParams!!.x
-        val currentY = bubbleParams!!.y
-        val savedPosition = loadSavedBubblePosition(appPackage, currentX, currentY)
-        bubbleParams!!.x = savedPosition.first
-        bubbleParams!!.y = savedPosition.second
-        try {
-            windowManager?.updateViewLayout(bubbleView, bubbleParams)
-        } catch (_: Exception) {}
-    }
+    // ── Position persistence ─────────────────────────────────────────────
 
     private fun loadSavedBubblePosition(appPackage: String?, defaultX: Int, defaultY: Int): Pair<Int, Int> {
         val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
@@ -426,42 +459,61 @@ class FloatingBubbleService : Service() {
         editor.apply()
     }
 
-    private fun hideBubble() {
-        removeBubbleView()
+    // ── Lifecycle ────────────────────────────────────────────────────────
+
+    /** Remove a single app's bubble view from the window. */
+    private fun removeBubbleForApp(appPackage: String) {
+        val entry = bubbles.remove(appPackage) ?: return
+        try {
+            if (entry.view != null) windowManager?.removeView(entry.view)
+        } catch (_: Exception) {}
+    }
+
+    /** Remove all bubble views from the window. */
+    private fun removeAllBubbleViews() {
+        for ((_, entry) in bubbles) {
+            try {
+                if (entry.view != null) windowManager?.removeView(entry.view)
+            } catch (_: Exception) {}
+        }
+        bubbles.clear()
+    }
+
+    private fun hideAllBubbles() {
+        removeAllBubbleViews()
         removeDismissTarget()
+        foregroundStarted = false
+        timerStarted = false
         stopSelf()
     }
 
-    private fun dismissBubble() {
+    private fun dismissAllBubbles() {
         val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         prefs.edit().putBoolean(PREF_BUBBLE_DISMISSED, true).apply()
 
-        removeBubbleView()
+        removeAllBubbleViews()
         removeDismissTarget()
         Toast.makeText(
             this,
             "Tap AppTick notification to show bubble again",
             Toast.LENGTH_LONG
         ).show()
+        foregroundStarted = false
+        timerStarted = false
         stopSelf()
-    }
-
-    private fun removeBubbleView() {
-        try {
-            if (bubbleView != null) windowManager?.removeView(bubbleView)
-        } catch (_: Exception) {}
-        bubbleView = null
-        timeTextView = null
     }
 
     override fun onDestroy() {
         serviceJob.cancel()
-        removeBubbleView()
+        removeAllBubbleViews()
         removeDismissTarget()
+        foregroundStarted = false
+        timerStarted = false
         super.onDestroy()
     }
 
     companion object {
+        private const val TAG = "FloatingBubbleService"
         const val EXTRA_ACTION = "bubble_action"
         const val EXTRA_BUBBLE_TEXT = "bubble_text"
         const val EXTRA_TIME_MILLIS = "time_millis"
@@ -469,6 +521,7 @@ class FloatingBubbleService : Service() {
         const val ACTION_UPDATE = "update"
         const val ACTION_HIDE = "hide"
         const val ACTION_SHOW = "show"
+        const val ACTION_REMOVE_APP = "remove_app"
         const val PREF_BUBBLE_DISMISSED = "bubbleDismissed"
         const val PREF_FLOATING_BUBBLE_ENABLED = "floatingBubbleEnabled"
         const val PREF_BUBBLE_POS_X = "floatingBubblePosX"
@@ -505,6 +558,12 @@ class FloatingBubbleService : Service() {
                 putExtra(EXTRA_ACTION, ACTION_SHOW)
                 putExtra(EXTRA_BUBBLE_TEXT, text)
                 putExtra(EXTRA_TIME_MILLIS, timeMillis)
+                putExtra(EXTRA_APP_PACKAGE, appPackage)
+            }
+
+        fun removeAppIntent(context: Context, appPackage: String): Intent =
+            Intent(context, FloatingBubbleService::class.java).apply {
+                putExtra(EXTRA_ACTION, ACTION_REMOVE_APP)
                 putExtra(EXTRA_APP_PACKAGE, appPackage)
             }
     }

@@ -142,6 +142,7 @@ private fun SetTimeLimitsScreenContent(
     val resetMinutes = remember(initialResetMinutes) { mutableStateOf(initialResetMinutes) }
 
     val showNoTimeLimitWarning = remember { mutableStateOf(false) }
+    val showZeroTimeSaveWarning = remember { mutableStateOf(false) }
     val timePickerTarget = remember { mutableStateOf<TimePickerTarget?>(null) }
     val isResetHoursError = remember { mutableStateOf(false) }
 
@@ -195,6 +196,49 @@ private fun SetTimeLimitsScreenContent(
             )
         }
     ) { paddingValues ->
+        val doSave = {
+            val resetHr = resetHours.value.toIntOrNull() ?: 0
+            val resetMin = resetMinutes.value.toIntOrNull() ?: 0
+            val resetTotalMinutes = (resetHr * 60) + resetMin
+            isResetHoursError.value = useReset.value && resetTotalMinutes <= 0
+            if (!isResetHoursError.value) {
+                val effectiveTimeHrLimit = if (useTimeLimit.value) (timeHrLimit.value.toIntOrNull() ?: 0) else 0
+                val effectiveTimeMinLimit = if (useTimeLimit.value) (timeMinLimit.value.toIntOrNull() ?: 0) else 0
+                val configuredTimeRanges = if (useTimeRange.value) {
+                    if (timeRanges.isEmpty()) listOf(TimeRange()) else timeRanges.toList()
+                } else {
+                    emptyList()
+                }
+                val firstRange = configuredTimeRanges.firstOrNull() ?: TimeRange()
+                val newGroup = (group ?: AppLimitGroup()).copy(
+                    name = if (groupName.value.isNotBlank()) groupName.value else {
+                        if (selectedApps.isNotEmpty()) "${selectedApps[0].appName} Group" else "App Limit Group"
+                    },
+                    timeHrLimit = effectiveTimeHrLimit,
+                    timeMinLimit = effectiveTimeMinLimit,
+                    limitEach = limitEach.value,
+                    weekDays = weekDays.value,
+                    useTimeRange = useTimeRange.value,
+                    blockOutsideTimeRange = useTimeRange.value && blockOutsideTimeRange.value,
+                    timeRanges = configuredTimeRanges,
+                    startHour = firstRange.startHour,
+                    startMinute = firstRange.startMinute,
+                    endHour = firstRange.endHour,
+                    endMinute = firstRange.endMinute,
+                    cumulativeTime = useReset.value && cumulativeTime.value,
+                    resetMinutes = if (useReset.value) resetTotalMinutes else 0,
+                    apps = selectedApps.map {
+                        AppInGroup(
+                            it.appName ?: "",
+                            it.appPackage ?: "",
+                            it.appPackage ?: ""
+                        )
+                    }
+                )
+                onFinish(newGroup)
+            }
+        }
+
         Column(
             modifier = Modifier
                 .padding(paddingValues)
@@ -657,51 +701,37 @@ private fun SetTimeLimitsScreenContent(
                 OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Spacer(modifier = Modifier.width(16.dp))
                 Button(onClick = {
-                    val resetHr = resetHours.value.toIntOrNull() ?: 0
-                    val resetMin = resetMinutes.value.toIntOrNull() ?: 0
-                    val resetTotalMinutes = (resetHr * 60) + resetMin
-                    isResetHoursError.value = useReset.value && resetTotalMinutes <= 0
-                    if (!isResetHoursError.value) {
-                        val effectiveTimeHrLimit = if (useTimeLimit.value) (timeHrLimit.value.toIntOrNull() ?: 0) else 0
-                        val effectiveTimeMinLimit = if (useTimeLimit.value) (timeMinLimit.value.toIntOrNull() ?: 0) else 0
-                        val configuredTimeRanges = if (useTimeRange.value) {
-                            if (timeRanges.isEmpty()) listOf(TimeRange()) else timeRanges.toList()
-                        } else {
-                            emptyList()
-                        }
-                        val firstRange = configuredTimeRanges.firstOrNull() ?: TimeRange()
-                        val newGroup = (group ?: AppLimitGroup()).copy(
-                            name = if (groupName.value.isNotBlank()) groupName.value else {
-                                if (selectedApps.isNotEmpty()) "${selectedApps[0].appName} Group" else "App Limit Group"
-                            },
-                            timeHrLimit = effectiveTimeHrLimit,
-                            timeMinLimit = effectiveTimeMinLimit,
-                            limitEach = limitEach.value,
-                            weekDays = weekDays.value,
-                            useTimeRange = useTimeRange.value,
-                            blockOutsideTimeRange = useTimeRange.value && blockOutsideTimeRange.value,
-                            timeRanges = configuredTimeRanges,
-                            startHour = firstRange.startHour,
-                            startMinute = firstRange.startMinute,
-                            endHour = firstRange.endHour,
-                            endMinute = firstRange.endMinute,
-                            cumulativeTime = useReset.value && cumulativeTime.value,
-                            resetMinutes = if (useReset.value) resetTotalMinutes else 0,
-                            apps = selectedApps.map {
-                                AppInGroup(
-                                    it.appName ?: "",
-                                    it.appPackage ?: "",
-                                    it.appPackage ?: ""
-                                )
-                            }
-                        )
-                        onFinish(newGroup)
+                    val hr = timeHrLimit.value.toIntOrNull() ?: 0
+                    val min = timeMinLimit.value.toIntOrNull() ?: 0
+                    if (useTimeLimit.value && hr == 0 && min == 0) {
+                        showZeroTimeSaveWarning.value = true
+                    } else {
+                        doSave()
                     }
                 }, modifier = Modifier.weight(1f)) { Text("Save") }
             }
         }
 
-        if (showNoTimeLimitWarning.value) { AlertDialog(onDismissRequest = { showNoTimeLimitWarning.value = false }, title = { Text("Always Block App") }, text = { Text("Are you sure you want the app to be blocked with 0 time use?") }, confirmButton = { Button({ showNoTimeLimitWarning.value = false }) { Text("Continue") } }, dismissButton = { Button({ showNoTimeLimitWarning.value = false; useTimeLimit.value = true }) { Text("Cancel") } }) }
+        if (showNoTimeLimitWarning.value) { AlertDialog(onDismissRequest = { showNoTimeLimitWarning.value = false; useTimeLimit.value = true }, title = { Text("Always Block App") }, text = { Text("Are you sure you want the app to be blocked with 0 time use?") }, confirmButton = { Button({ showNoTimeLimitWarning.value = false }) { Text("Continue") } }, dismissButton = { Button({ showNoTimeLimitWarning.value = false; useTimeLimit.value = true }) { Text("Cancel") } }) }
+        if (showZeroTimeSaveWarning.value) {
+            AlertDialog(
+                onDismissRequest = { showZeroTimeSaveWarning.value = false },
+                title = { Text("Always Block App") },
+                text = { Text("Are you sure you want the app to be blocked with 0 time use?") },
+                confirmButton = {
+                    Button({
+                        showZeroTimeSaveWarning.value = false
+                        useTimeLimit.value = false
+                        doSave()
+                    }) { Text("Continue") }
+                },
+                dismissButton = {
+                    Button({
+                        showZeroTimeSaveWarning.value = false
+                    }) { Text("Cancel") }
+                }
+            )
+        }
         timePickerTarget.value?.let { pickerTarget ->
             val context = androidx.compose.ui.platform.LocalContext.current
             val currentRange = timeRanges.getOrNull(pickerTarget.rangeIndex) ?: TimeRange()

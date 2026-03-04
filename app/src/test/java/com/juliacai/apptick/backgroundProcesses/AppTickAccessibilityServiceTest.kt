@@ -223,6 +223,63 @@ class AppTickAccessibilityServiceTest {
         )
     }
 
+    // ── getVisiblePackages tests ─────────────────────────────────────────────
+
+    @Test
+    fun `getVisiblePackages returns empty when service is not running`() {
+        AppTickAccessibilityService.simulateForTesting(
+            "com.example.app", running = false,
+            visiblePackages = setOf("com.example.app")
+        )
+        assertEquals(
+            "Should return empty set when service is not running",
+            emptySet<String>(),
+            AppTickAccessibilityService.getVisiblePackages()
+        )
+    }
+
+    @Test
+    fun `getVisiblePackages returns empty when data is stale`() {
+        AppTickAccessibilityService.simulateForTesting(
+            "com.example.app", running = true,
+            visiblePackages = setOf("com.example.app", "com.example.other")
+        )
+        AppTickAccessibilityService.setLastUpdateTimeForTesting(System.currentTimeMillis() - 15_000L)
+        assertEquals(
+            "Should return empty set when data is stale",
+            emptySet<String>(),
+            AppTickAccessibilityService.getVisiblePackages()
+        )
+    }
+
+    @Test
+    fun `getVisiblePackages returns packages when running and fresh`() {
+        val visible = setOf("com.example.app", "com.example.pip")
+        AppTickAccessibilityService.simulateForTesting(
+            "com.example.app", running = true,
+            visiblePackages = visible
+        )
+        assertEquals(
+            "Should return visible packages for split-screen detection",
+            visible,
+            AppTickAccessibilityService.getVisiblePackages()
+        )
+    }
+
+    @Test
+    fun `getVisiblePackages resets to empty on resetForTesting`() {
+        AppTickAccessibilityService.simulateForTesting(
+            "com.example.app", running = true,
+            visiblePackages = setOf("com.example.app", "com.example.other")
+        )
+        AppTickAccessibilityService.resetForTesting()
+        assertEquals(
+            "Should return empty set after reset",
+            emptySet<String>(),
+            AppTickAccessibilityService.getVisiblePackages()
+        )
+    }
+
     // ── Fallback scenario tests ─────────────────────────────────────────────
 
     @Test

@@ -19,6 +19,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -374,6 +375,172 @@ class AccessibilityBlockingIntegrationTest {
         assertEquals(
             "dismissFloatingWindow should NOT be called when time remains",
             0, service.navigateHomeCallCount
+        )
+    }
+
+    // ── Block screen launches before floating window dismissal ──────────
+
+    @Test
+    fun testBlockScreenLaunchesForRegularFullscreenApp() = runTest {
+        // A regular fullscreen app should always trigger the block screen (not home navigation).
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Fullscreen Block Test",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            timeRemaining = 1_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        // Simulate accessibility detecting a fullscreen (non-floating) app
+        AppTickAccessibilityService.simulateForTesting(
+            "com.instagram.android", running = true, floating = false
+        )
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.instagram.android")
+
+            val blockedActivity = instrumentation.waitForMonitorWithTimeout(monitor, 3_000L)
+            assertNotNull(
+                "BlockWindowActivity should launch for fullscreen app being blocked",
+                blockedActivity
+            )
+            blockedActivity?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(0L, updated.timeRemaining)
+    }
+
+    @Test
+    fun testBlockScreenLaunchesOnEveryCheckCycle() = runTest {
+        // When the app is blocked and user returns to it, each check cycle should
+        // re-launch the block screen to persist the block.
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Persistent Block Test",
+            timeHrLimit = 0,
+            timeMinLimit = 0,
+            timeRemaining = 0L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        AppTickAccessibilityService.simulateForTesting(
+            "com.instagram.android", running = true, floating = false
+        )
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+
+        // First check cycle — should block
+        val monitor1 = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.instagram.android")
+            val activity1 = instrumentation.waitForMonitorWithTimeout(monitor1, 3_000L)
+            assertNotNull("First block screen should appear", activity1)
+            activity1?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor1)
+        }
+
+        // Second check cycle — should re-block (persistent)
+        val monitor2 = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.instagram.android")
+            val activity2 = instrumentation.waitForMonitorWithTimeout(monitor2, 3_000L)
+            assertNotNull("Block screen should re-launch on next check cycle", activity2)
+            activity2?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor2)
+        }
+
+        // dismissFloatingWindow should be called each time
+        assertEquals(
+            "dismissFloatingWindow should be called for each block",
+            2, service.navigateHomeCallCount
+        )
+    }
+
+    @Test
+    fun testDismissCalledAfterBlockScreenForFloatingApp() = runTest {
+        // When a floating app is blocked, the block screen should still launch
+        // and dismissFloatingWindow should be called.
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Floating Block Test",
+            timeHrLimit = 0,
+            timeMinLimit = 0,
+            timeRemaining = 0L,
+            apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        // Simulate a floating (PiP) YouTube window
+        AppTickAccessibilityService.simulateForTesting(
+            "com.google.android.youtube", running = true, floating = true
+        )
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.google.android.youtube")
+
+            val blockedActivity = instrumentation.waitForMonitorWithTimeout(monitor, 3_000L)
+            assertNotNull(
+                "BlockWindowActivity should launch even for floating apps",
+                blockedActivity
+            )
+            blockedActivity?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+
+        assertEquals(
+            "dismissFloatingWindow should be called for floating app block",
+            1, service.navigateHomeCallCount
+        )
+    }
+
+    // ── Visible apps / PiP bubble tracking ───────────────────────────────
+
+    @Test
+    fun testVisiblePackagesIncludesPiPApp() = runTest {
+        // When a PiP app is visible alongside the foreground app,
+        // getVisiblePackages should return both.
+        val visibleApps = setOf("com.android.launcher3", "com.google.android.youtube")
+        AppTickAccessibilityService.simulateForTesting(
+            "com.android.launcher3", running = true, floating = false,
+            visiblePackages = visibleApps
+        )
+
+        val packages = AppTickAccessibilityService.getVisiblePackages()
+        assertTrue(
+            "Visible packages should include PiP YouTube",
+            packages.contains("com.google.android.youtube")
+        )
+        assertTrue(
+            "Visible packages should include foreground app",
+            packages.contains("com.android.launcher3")
         )
     }
 

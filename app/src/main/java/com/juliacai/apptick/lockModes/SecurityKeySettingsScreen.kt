@@ -45,6 +45,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.juliacai.apptick.LockMode
+import com.juliacai.apptick.safePop
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.premiumMode.DeviceAdmin
 import com.juliacai.apptick.verticalScrollWithIndicator
@@ -118,7 +119,7 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = { navController.safePop() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -260,7 +261,7 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                         BackgroundChecker.startServiceIfNotRunning(context.applicationContext)
                     }
                     Toast.makeText(context, "Security key enabled", Toast.LENGTH_SHORT).show()
-                    navController.popBackStack()
+                    navController.safePop()
                 },
                 enabled = activeLockMode == LockMode.NONE || activeLockMode == LockMode.SECURITY_KEY,
                 modifier = Modifier.fillMaxWidth()
@@ -283,7 +284,7 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                             putBoolean("securityKeyUnlocked", false)
                         }
                         Toast.makeText(context, "Security key disabled", Toast.LENGTH_SHORT).show()
-                        navController.popBackStack()
+                        navController.safePop()
                     },
                     modifier = Modifier.fillMaxWidth()
                 ) {

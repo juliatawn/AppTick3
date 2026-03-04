@@ -78,6 +78,7 @@ class BackgroundChecker : Service() {
 
     private var lastForegroundApp: String? = null
     private var prevBubbleForegroundApp: String? = null
+    private val activeBubbleApps = mutableSetOf<String>()
     private var lastCheckElapsed: Long = 0L
     private var isScreenOn = true
     private var bubbleShowReceiver: BroadcastReceiver? = null
@@ -189,31 +190,60 @@ class BackgroundChecker : Service() {
                     }
                     val appToCheck = foregroundApp ?: lastForegroundApp
                     loopDelayMs = currentCheckIntervalMs(appToCheck)
-                    
-                    try {
-                        checkAppLimits(appToCheck)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+
+                    // In split-screen, charge time to ALL visible apps simultaneously.
+                    val visibleApps = AppTickAccessibilityService.getVisiblePackages()
+                    val isSplitScreen = visibleApps.size > 1
+
+                    if (isSplitScreen) {
+                        Log.d("BG_Service", "Split-screen detected: $visibleApps (focused=$appToCheck)")
                     }
 
-                    try {
-                        updateNotification(appToCheck)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                    // Compute elapsed once so each app gets the same delta
+                    val elapsed = computeElapsedDelta()
 
-                    try {
-                        val bubbleFallbackApp = if (
-                            foregroundApp == null &&
-                            !lastForegroundApp.isNullOrBlank()
-                        ) {
-                            lastForegroundApp
-                        } else {
-                            null
+                    var anyBlocked = false
+                    if (isSplitScreen) {
+                        // Process ALL visible apps so every timer gets charged,
+                        // even when one app triggers the block screen.
+                        for (app in visibleApps) {
+                            try {
+                                val blocked = checkAppLimits(app, elapsed)
+                                if (blocked) anyBlocked = true
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                            }
                         }
-                        updateFloatingBubble(foregroundApp, bubbleFallbackApp)
-                    } catch (e: Exception) {
-                        e.printStackTrace()
+                    } else {
+                        try {
+                            anyBlocked = checkAppLimits(appToCheck, elapsed)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+
+                    // Skip notification and bubble updates when a block screen was launched
+                    // to avoid WindowManager errors from state transitions.
+                    if (!anyBlocked) {
+                        try {
+                            updateNotification(appToCheck)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+
+                        try {
+                            val bubbleFallbackApp = if (
+                                foregroundApp == null &&
+                                !lastForegroundApp.isNullOrBlank()
+                            ) {
+                                lastForegroundApp
+                            } else {
+                                null
+                            }
+                            updateFloatingBubble(foregroundApp, bubbleFallbackApp, visibleApps)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
                     }
                 }
                 delay(loopDelayMs)
@@ -224,18 +254,21 @@ class BackgroundChecker : Service() {
     // ── Dismiss floating windows before blocking ───────────────────────────────
 
     /**
-     * Attempts to close floating/freeform windows for the blocked app.
+     * Called before launching the block screen.
      *
-     * - Floating + accessibility available: sends BACK to close the floating window.
-     * - Fullscreen + accessibility available: does nothing — block screen overlays directly.
-     * - Accessibility unavailable: navigates HOME as a best-effort fallback.
+     * When the accessibility service is running:
+     * - Floating windows: sends BACK to close them (no HOME — that would dismiss the block screen).
+     * - Fullscreen apps: does nothing — block screen overlays directly.
+     *
+     * When accessibility is NOT running, navigates HOME as a best-effort fallback.
      */
     private fun dismissFloatingWindow(blockedPackage: String?) {
         navigateHomeCallCount++ // keep counter for test compatibility
         if (blockedPackage != null && AppTickAccessibilityService.isRunning) {
-            // Accessibility service is running — it knows if the app is floating or not.
-            // tryCloseFloatingWindow sends BACK only for floating windows;
-            // for fullscreen apps it returns false and we do nothing (block screen overlays directly).
+            // tryCloseFloatingWindow sends BACK only for actual floating windows
+            // (using 85% area threshold to avoid false positives on fullscreen apps).
+            // For fullscreen apps it returns false and we do nothing — block screen overlays directly.
+            // NOTE: closeFloatingWindow no longer sends HOME, so the block screen always shows.
             AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
             return
         }
@@ -249,9 +282,13 @@ class BackgroundChecker : Service() {
 
     // ── Core limit checking ───────────────────────────────────────────────────
 
-    suspend fun checkAppLimits(foregroundApp: String?) {
+    /**
+     * Returns true if the app was blocked (block screen was launched).
+     * Callers in split-screen should stop processing further apps after a block.
+     */
+    suspend fun checkAppLimits(foregroundApp: String?, elapsedOverride: Long? = null): Boolean {
         // Never block AppTick itself — the user must always be able to manage their limits
-        if (foregroundApp == packageName) return
+        if (foregroundApp == packageName) return false
 
         when (evaluateSettingsProtectionAction(foregroundApp)) {
             SettingsProtectionAction.ALLOW -> Unit
@@ -268,17 +305,17 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", false)
                 blockIntent.putExtra("next_reset_time", 0L)
                 blockIntent.putExtra("block_reason", "Used up time limit")
-                dismissFloatingWindow(foregroundApp)
                 startActivity(blockIntent)
-                return
+                dismissFloatingWindow(foregroundApp)
+                return true
             }
             SettingsProtectionAction.REQUEST_PASSWORD -> {
                 maybeLaunchSettingsUnlockActivity(LockMode.PASSWORD)
-                return
+                return true
             }
             SettingsProtectionAction.REQUEST_SECURITY_KEY -> {
                 maybeLaunchSettingsUnlockActivity(LockMode.SECURITY_KEY)
-                return
+                return true
             }
         }
 
@@ -295,17 +332,19 @@ class BackgroundChecker : Service() {
 
         if (activeGroups.isEmpty() && !shouldKeepServiceForSettingsProtection()) {
             stopSelf()
-            return
+            return false
         }
 
-        // Measure real elapsed time since last check
-        val elapsed = fixedElapsedForTestingMs ?: run {
+        // Measure real elapsed time since last check.
+        // elapsedOverride is used in split-screen mode to share a single delta across multiple calls.
+        val elapsed = elapsedOverride ?: fixedElapsedForTestingMs ?: run {
             val now = SystemClock.elapsedRealtime()
             val delta = (now - lastCheckElapsed).coerceIn(0L, MAX_ELAPSED)
             lastCheckElapsed = now
             delta
         }
 
+        var didBlock = false
         for (entity in activeGroups) {
             val group = entity.toDomainModel()
             val now = System.currentTimeMillis()
@@ -365,8 +404,9 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", true)
                 blockIntent.putExtra("next_reset_time", group.nextResetTime)
                 blockIntent.putExtra("block_reason", "Outside configured time range")
-                dismissFloatingWindow(appInGroup.appPackage)
                 startActivity(blockIntent)
+                dismissFloatingWindow(appInGroup.appPackage)
+                didBlock = true
                 continue
             }
 
@@ -389,8 +429,9 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Used up time limit")
-                    dismissFloatingWindow(appInGroup.appPackage)
                     startActivity(blockIntent)
+                    dismissFloatingWindow(appInGroup.appPackage)
+                    didBlock = true
                     continue
                 }
 
@@ -436,8 +477,9 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Out of Time")
-                    dismissFloatingWindow(appInGroup.appPackage)
                     startActivity(blockIntent)
+                    dismissFloatingWindow(appInGroup.appPackage)
+                    didBlock = true
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
@@ -450,6 +492,7 @@ class BackgroundChecker : Service() {
                 }
             }
         }
+        return didBlock
     }
 
     // ── Notification ──────────────────────────────────────────────────────────
@@ -532,7 +575,11 @@ class BackgroundChecker : Service() {
 
     // ── Floating bubble management ────────────────────────────────────────────
 
-    private suspend fun updateFloatingBubble(currentApp: String?, fallbackApp: String?) {
+    private suspend fun updateFloatingBubble(
+        currentApp: String?,
+        fallbackApp: String?,
+        visibleApps: Set<String> = emptySet()
+    ) {
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
 
         // Reset dismissed flag when the foreground app changes so the bubble
@@ -546,6 +593,7 @@ class BackgroundChecker : Service() {
 
         val isPremium = prefs.getBoolean("premium", false)
         if (!isPremium) {
+            activeBubbleApps.clear()
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
@@ -553,16 +601,19 @@ class BackgroundChecker : Service() {
             FloatingBubbleService.PREF_FLOATING_BUBBLE_ENABLED, false
         )
         if (!bubbleEnabled) {
+            activeBubbleApps.clear()
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
         if (!Settings.canDrawOverlays(this)) {
             Log.w("BG_Service", "Floating bubble enabled but overlay permission is missing")
+            activeBubbleApps.clear()
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
         val foregroundApp = currentApp ?: fallbackApp
         if (shouldHideFloatingBubbleForForegroundApp(foregroundApp, packageName)) {
+            activeBubbleApps.clear()
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
@@ -571,38 +622,72 @@ class BackgroundChecker : Service() {
 
         // Read fresh data from DB to avoid stale cachedGroups lag
         val freshGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
-        val info = pickNotificationGroup(freshGroups, resolvedForegroundApp)
-        if (info == null) {
-            // User is in an app with no active limit — hide bubble
+
+        // Collect ALL visible apps that should show a bubble
+        val appsToShow = mutableMapOf<String, Pair<Long, String>>() // package -> (timeRemaining, text)
+
+        // Check foreground app
+        computeBubbleDataForApp(freshGroups, resolvedForegroundApp)?.let {
+            appsToShow[resolvedForegroundApp] = it
+        }
+
+        // Check other visible apps (split-screen, PiP) — each gets its own bubble
+        for (visibleApp in visibleApps) {
+            if (visibleApp in appsToShow) continue
+            computeBubbleDataForApp(freshGroups, visibleApp)?.let {
+                appsToShow[visibleApp] = it
+            }
+        }
+
+        if (appsToShow.isEmpty()) {
+            activeBubbleApps.clear()
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
             return
         }
 
+        // Remove bubbles for apps no longer visible/limited
+        val appsToRemove = activeBubbleApps - appsToShow.keys
+        for (app in appsToRemove) {
+            try { startService(FloatingBubbleService.removeAppIntent(this, app)) } catch (_: Exception) {}
+        }
+
+        // Update/create bubbles for all visible limited apps
+        for ((app, pair) in appsToShow) {
+            val (timeRemaining, bubbleText) = pair
+            try {
+                startService(
+                    FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, app)
+                )
+            } catch (_: Exception) {}
+        }
+
+        activeBubbleApps.clear()
+        activeBubbleApps.addAll(appsToShow.keys)
+    }
+
+    /**
+     * Returns (timeRemaining, formattedText) for an app if it has an active limit
+     * with time remaining, or null if no bubble should be shown.
+     */
+    private fun computeBubbleDataForApp(
+        groups: List<AppLimitGroupEntity>,
+        appPackage: String
+    ): Pair<Long, String>? {
+        val info = pickNotificationGroup(groups, appPackage) ?: return null
         val group = info.entity.toDomainModel()
         val limitMillis = TimeUnit.MINUTES.toMillis(
             (group.timeHrLimit * 60 + group.timeMinLimit).toLong()
         )
         val appUsed = group.perAppUsage
-            .firstOrNull { it.appPackage == resolvedForegroundApp }?.usedMillis ?: 0L
+            .firstOrNull { it.appPackage == appPackage }?.usedMillis ?: 0L
         val timeRemaining = if (group.limitEach) {
             (limitMillis - appUsed).coerceAtLeast(0L)
         } else {
             group.timeRemaining
         }
-        if (timeRemaining <= 0L) {
-            try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
-            return
-        }
-
-        val bubbleText = formatBubbleCountdown(timeRemaining)
-
-        try {
-            startService(
-                FloatingBubbleService.updateIntent(this, bubbleText, timeRemaining, resolvedForegroundApp)
-            )
-        } catch (_: Exception) {}
+        if (timeRemaining <= 0L) return null
+        return timeRemaining to formatBubbleCountdown(timeRemaining)
     }
-
 
     companion object {
         @VisibleForTesting
@@ -829,6 +914,19 @@ class BackgroundChecker : Service() {
         val hours = totalMinutes / 60L
         val minutes = totalMinutes % 60L
         return String.format("%02d:%02d", hours, minutes)
+    }
+
+    /**
+     * Computes the real-time elapsed delta since the last check, capped at MAX_ELAPSED.
+     * Call once per loop iteration and pass to checkAppLimits to avoid double-counting.
+     */
+    private fun computeElapsedDelta(): Long {
+        return fixedElapsedForTestingMs ?: run {
+            val now = SystemClock.elapsedRealtime()
+            val delta = (now - lastCheckElapsed).coerceIn(0L, MAX_ELAPSED)
+            lastCheckElapsed = now
+            delta
+        }
     }
 
     // ── Foreground app detection ──────────────────────────────────────────────

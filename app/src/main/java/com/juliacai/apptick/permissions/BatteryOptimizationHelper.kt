@@ -21,6 +21,10 @@ object BatteryOptimizationHelper {
 
     private val HONOR_HUAWEI_BRANDS = setOf("honor", "huawei")
     private val XIAOMI_BRANDS = setOf("xiaomi", "redmi", "poco")
+    private val SAMSUNG_BRANDS = setOf("samsung")
+    private val OPPO_BRANDS = setOf("oppo", "realme", "oneplus")
+    private val VIVO_BRANDS = setOf("vivo", "iqoo")
+    private val OTHER_AGGRESSIVE_BRANDS = setOf("meizu", "asus", "lenovo", "nokia", "hmd global", "tecno", "infinix", "itel", "nothing")
 
     fun getStatus(context: Context): BatteryOptimizationStatus {
         val appContext = context.applicationContext
@@ -40,15 +44,23 @@ object BatteryOptimizationHelper {
 
         val manufacturer = Build.MANUFACTURER.orEmpty().lowercase()
         val brand = Build.BRAND.orEmpty().lowercase()
-        val honorHuaweiDetected = HONOR_HUAWEI_BRANDS.any { manufacturer.contains(it) || brand.contains(it) }
-        val xiaomiDetected = XIAOMI_BRANDS.any { manufacturer.contains(it) || brand.contains(it) }
-        val hasAdditionalOemRestrictions = honorHuaweiDetected || xiaomiDetected
-        val oemGuidance = if (honorHuaweiDetected) {
-            "Also allow AppTick in App launch/Auto-start and set battery to No restrictions in Honor/Huawei system settings."
-        } else if (xiaomiDetected) {
-            "Also enable Auto-start for AppTick in Security app and set Battery saver to No restrictions on Xiaomi/Redmi/POCO."
-        } else {
-            null
+        fun matchesBrands(brands: Set<String>) = brands.any { manufacturer.contains(it) || brand.contains(it) }
+        val honorHuaweiDetected = matchesBrands(HONOR_HUAWEI_BRANDS)
+        val xiaomiDetected = matchesBrands(XIAOMI_BRANDS)
+        val samsungDetected = matchesBrands(SAMSUNG_BRANDS)
+        val oppoDetected = matchesBrands(OPPO_BRANDS)
+        val vivoDetected = matchesBrands(VIVO_BRANDS)
+        val otherAggressiveDetected = matchesBrands(OTHER_AGGRESSIVE_BRANDS)
+        val hasAdditionalOemRestrictions = honorHuaweiDetected || xiaomiDetected ||
+            samsungDetected || oppoDetected || vivoDetected || otherAggressiveDetected
+        val oemGuidance = when {
+            honorHuaweiDetected -> "Also allow AppTick in App launch/Auto-start and set battery to No restrictions in Honor/Huawei system settings."
+            xiaomiDetected -> "Also enable Auto-start for AppTick in Security app and set Battery saver to No restrictions on Xiaomi/Redmi/POCO."
+            samsungDetected -> "Also check that AppTick is not in Sleeping or Deep sleeping apps lists in Device care > Battery settings."
+            oppoDetected -> "Also enable Auto-launch for AppTick and disable battery optimization in your phone's Battery settings."
+            vivoDetected -> "Also allow AppTick in Background power consumption settings and enable Auto-start."
+            otherAggressiveDetected -> "Your phone manufacturer may aggressively restrict background apps. Check your phone's battery or app management settings to allow AppTick to run in the background."
+            else -> null
         }
 
         return BatteryOptimizationStatus(
@@ -93,16 +105,34 @@ object BatteryOptimizationHelper {
     fun openManufacturerBackgroundSettings(context: Context): Boolean {
         val packageUri = Uri.parse("package:${context.packageName}")
         val intents = listOf(
+            // Xiaomi / Redmi / POCO
             Intent().setClassName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
             Intent("miui.intent.action.OP_AUTO_START"),
             Intent().setClassName("com.miui.securitycenter", "com.miui.powerkeeper.ui.HiddenAppsConfigActivity").apply {
                 putExtra("package_name", context.packageName)
                 putExtra("package_label", context.packageName)
             },
+            // Honor
             Intent().setClassName("com.hihonor.systemmanager", "com.hihonor.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
+            // Huawei
             Intent().setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.optimize.process.ProtectActivity"),
             Intent().setClassName("com.huawei.systemmanager", "com.huawei.systemmanager.startupmgr.ui.StartupNormalAppListActivity"),
             Intent("huawei.intent.action.HSM_PROTECTED_APPS"),
+            // Samsung
+            Intent().setClassName("com.samsung.android.lool", "com.samsung.android.sm.battery.ui.BatteryActivity"),
+            Intent().setClassName("com.samsung.android.sm", "com.samsung.android.sm.battery.ui.BatteryActivity"),
+            // Oppo / Realme / OnePlus
+            Intent().setClassName("com.coloros.safecenter", "com.coloros.safecenter.startupapp.StartupAppListActivity"),
+            Intent().setClassName("com.oppo.safe", "com.oppo.safe.permission.startup.StartupAppListActivity"),
+            Intent().setClassName("com.oneplus.security", "com.oneplus.security.chainlaunch.view.ChainLaunchAppListActivity"),
+            // Vivo / iQOO
+            Intent().setClassName("com.vivo.permissionmanager", "com.vivo.permissionmanager.activity.BgStartUpManagerActivity"),
+            Intent().setClassName("com.iqoo.secure", "com.iqoo.secure.ui.phoneoptimize.BgStartUpManager"),
+            // Asus
+            Intent().setClassName("com.asus.mobilemanager", "com.asus.mobilemanager.autostart.AutoStartActivity"),
+            // Nokia / HMD
+            Intent().setClassName("com.evenwell.powersaving.g3", "com.evenwell.powersaving.g3.exception.PowerSaverExceptionActivity"),
+            // Fallback: app details
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
         )
         return launchFirstAvailable(context, intents)

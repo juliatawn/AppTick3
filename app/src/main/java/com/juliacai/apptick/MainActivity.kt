@@ -19,7 +19,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.core.content.edit
 import androidx.core.content.pm.PackageInfoCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -65,6 +67,29 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/**
+ * Lifecycle-aware navigation helpers that prevent double-tap navigation.
+ * A rapid second tap during the navigation animation is ignored because the
+ * departing composable's lifecycle is no longer RESUMED.
+ */
+internal fun NavController.safePop(): Boolean {
+    return if (currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
+        popBackStack()
+    } else false
+}
+
+internal fun NavController.safePop(route: String, inclusive: Boolean): Boolean {
+    return if (currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
+        popBackStack(route, inclusive)
+    } else false
+}
+
+internal fun NavController.safeNav(route: String, builder: androidx.navigation.NavOptionsBuilder.() -> Unit = {}) {
+    if (currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
+        navigate(route, builder)
+    }
+}
 
 class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
@@ -182,9 +207,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val premiumEnabled = isPremium || isPremiumEnabledNow()
             val batteryStatus =
                 batteryOptimizationStatusState.value ?: BatteryOptimizationHelper.getStatus(applicationContext)
-            val oemOnlyBatteryRisk = batteryStatus.ignoringBatteryOptimizations &&
-                !batteryStatus.backgroundRestricted &&
-                batteryStatus.hasAdditionalOemRestrictions
+            val standardBatteryIssue = !batteryStatus.ignoringBatteryOptimizations || batteryStatus.backgroundRestricted
+            val oemOnlyBatteryRisk = !standardBatteryIssue && batteryStatus.hasAdditionalOemRestrictions
             var oemBatteryWarningDismissed by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(
                     prefs.getBoolean(PREF_BATTERY_OEM_WARNING_DISMISSED, false)
@@ -373,7 +397,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             appLimitGroupCount = orderedGroups.size,
                             showLockedIcon = isLockModesLocked,
                             showGroupDetailsHint = showGroupDetailsHint && orderedGroups.isNotEmpty(),
-                            showBatteryWarning = !batteryStatus.unrestricted && !(oemOnlyBatteryRisk && oemBatteryWarningDismissed),
+                            showBatteryWarning = standardBatteryIssue || (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed),
                             batteryWarningDismissable = oemOnlyBatteryRisk,
                             batteryWarningText = buildString {
                                 append("AppTick may not block reliably until battery mode is set to Unrestricted.")
@@ -398,22 +422,18 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     shouldPromptRelock = false
                                     startedFromExistingGroupEdit = false
                                     appLimitViewModel.clearState()
-                                    navController.navigate("selectApps")
+                                    navController.safeNav("selectApps")
                                 }
                             },
                             onSettingsClick = {
-                                if (navController.currentDestination?.route != "settings") {
-                                    navController.navigate("settings") {
-                                        launchSingleTop = true
-                                    }
+                                navController.safeNav("settings") {
+                                    launchSingleTop = true
                                 }
                             },
                             onPremiumClick = {
                                 if (!isPremiumEnabledNow()) {
-                                    if (navController.currentDestination?.route != "premium") {
-                                        navController.navigate("premium") {
-                                            launchSingleTop = true
-                                        }
+                                    navController.safeNav("premium") {
+                                        launchSingleTop = true
                                     }
                                     return@MainScreen
                                 }
@@ -424,10 +444,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     System.currentTimeMillis()
                                 )
                                 if (!decision.isLocked) {
-                                    if (navController.currentDestination?.route != "premium") {
-                                        navController.navigate("premium") {
-                                            launchSingleTop = true
-                                        }
+                                    navController.safeNav("premium") {
+                                        launchSingleTop = true
                                     }
                                 } else if (
                                     currentState.activeLockMode == LockMode.PASSWORD ||
@@ -435,12 +453,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 ) {
                                     launchUnlockFlow(openLockModesAfterUnlock = true)
                                 } else if (currentState.activeLockMode == LockMode.LOCKDOWN) {
-                                    navController.navigate("lockModesBlocked")
+                                    navController.safeNav("lockModesBlocked")
                                 } else {
-                                    if (navController.currentDestination?.route != "premium") {
-                                        navController.navigate("premium") {
-                                            launchSingleTop = true
-                                        }
+                                    navController.safeNav("premium") {
+                                        launchSingleTop = true
                                     }
                                 }
                             },
@@ -554,7 +570,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     selectedGroupForActions = null
                                     startedFromExistingGroupEdit = true
                                     appLimitViewModel.startEditingGroup(currentGroup)
-                                    navController.navigate("setTimeLimit")
+                                    navController.safeNav("setTimeLimit")
                                 },
                                 onDuplicate = {
                                     selectedGroupForActions = null
@@ -564,7 +580,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     }
                                     startedFromExistingGroupEdit = false
                                     appLimitViewModel.startDuplicatingGroup(currentGroup)
-                                    navController.navigate("setTimeLimit")
+                                    navController.safeNav("setTimeLimit")
                                 },
                                 onDelete = {
                                     selectedGroupForActions = null
@@ -582,7 +598,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     androidx.compose.material3.Button(
                                         onClick = {
                                             premiumFeatureDialogFor = null
-                                            navController.navigate("premium")
+                                            navController.safeNav("premium")
                                         }
                                     ) {
                                         androidx.compose.material3.Text("Buy Premium")
@@ -724,24 +740,24 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
                     composable("settings") {
                         SettingsScreen(
-                            onBackClick = { navController.popBackStack(route = "main", inclusive = false) },
-                            onCustomizeColors = { navController.navigate("colorPicker") },
-                            onUpgradeToPremium = { navController.navigate("premium") },
-                            onOpenPremiumModeInfo = { navController.navigate("premiumModeInfo") },
-                            onOpenAppLimitBackup = { navController.navigate("appLimitBackup") },
+                            onBackClick = { navController.safePop("main", inclusive = false) },
+                            onCustomizeColors = { navController.safeNav("colorPicker") },
+                            onUpgradeToPremium = { navController.safeNav("premium") },
+                            onOpenPremiumModeInfo = { navController.safeNav("premiumModeInfo") },
+                            onOpenAppLimitBackup = { navController.safeNav("appLimitBackup") },
                             onOpenChangelog = { showChangelogDialog = true }
                         )
                     }
 
                     composable("appLimitBackup") {
                         AppLimitBackupScreen(
-                            onBackClick = { navController.popBackStack() }
+                            onBackClick = { navController.safePop() }
                         )
                     }
 
                     composable("colorPicker") {
                         com.juliacai.apptick.settings.ColorPickerScreen(
-                            onBackClick = { navController.popBackStack() }
+                            onBackClick = { navController.safePop() }
                         )
                     }
 
@@ -758,11 +774,11 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             AppLimitDetailsScreen(
                                 groupId = groupId,
                                 viewModel = viewModel,
-                                onBackClick = { navController.popBackStack() },
+                                onBackClick = { navController.safePop() },
                                 onEditClick = { group ->
                                     startedFromExistingGroupEdit = true
                                     appLimitViewModel.startEditingGroup(group)
-                                    navController.navigate("setTimeLimit")
+                                    navController.safeNav("setTimeLimit")
                                 }
                             )
                         }
@@ -772,11 +788,13 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         AppSelectScreen(
                             viewModel = appLimitViewModel,
                             onNextClick = {
+                                if (navController.currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) != true) return@AppSelectScreen
                                 if (!navController.popBackStack("setTimeLimit", inclusive = false)) {
                                     navController.navigate("setTimeLimit")
                                 }
                             },
                             onCancel = {
+                                if (navController.currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) != true) return@AppSelectScreen
                                 if (!navController.popBackStack("setTimeLimit", inclusive = false)) {
                                     navController.popBackStack("main", inclusive = false)
                                 }
@@ -802,18 +820,19 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                 }
                                 relockCredentialModesIfNeeded()
                                 startedFromExistingGroupEdit = false
-                                navController.popBackStack(route = "main", inclusive = false)
+                                navController.safePop("main", inclusive = false)
                             },
                             onCancel = {
                                 startedFromExistingGroupEdit = false
-                                navController.popBackStack(route = "main", inclusive = false)
+                                navController.safePop("main", inclusive = false)
                             },
                             onEditApps = {
+                                if (navController.currentBackStackEntry?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) != true) return@SetTimeLimitsScreen
                                 if (!navController.popBackStack("selectApps", inclusive = false)) {
                                     navController.navigate("selectApps")
                                 }
                             },
-                            onUpgradeToPremium = { navController.navigate("premium") }
+                            onUpgradeToPremium = { navController.safeNav("premium") }
                         )
                     }
 
@@ -826,21 +845,21 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             navController = navController,
                             onBackClick = {
                                 relockCredentialModesIfNeeded()
-                                navController.popBackStack()
+                                navController.safePop()
                             }
                         )
                     }
 
                     composable("premiumModeInfo") {
                         PremiumModeInfoScreen(
-                            onBackClick = { navController.popBackStack() }
+                            onBackClick = { navController.safePop() }
                         )
                     }
 
                     composable("lockModesBlocked") {
                         LockModesBlockedScreen(
                             message = buildLockModesBlockedMessage(),
-                            onBackClick = { navController.popBackStack() }
+                            onBackClick = { navController.safePop() }
                         )
                     }
                 }
