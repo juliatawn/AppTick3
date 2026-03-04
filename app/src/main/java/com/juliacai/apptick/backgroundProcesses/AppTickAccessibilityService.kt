@@ -20,11 +20,32 @@ class AppTickAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString()
-            if (!pkg.isNullOrBlank()) {
+            if (!pkg.isNullOrBlank() && !isOverlayOrSystemPackage(pkg)) {
                 currentForegroundPackage = pkg
                 lastUpdateTimeMillis = System.currentTimeMillis()
             }
         }
+    }
+
+    /**
+     * Returns true only for packages that are passive system overlays — things that
+     * appear on top of apps without the user intentionally switching away. This keeps
+     * the timer running for the real foreground app underneath.
+     *
+     * Regular apps (including chat bubbles, floating windows, etc.) are NOT filtered
+     * because the user is actively using them and they should count as foreground.
+     * When those windows close, Android fires TYPE_WINDOW_STATE_CHANGED for the
+     * underlying app, so the timer resumes automatically.
+     */
+    private fun isOverlayOrSystemPackage(pkg: String): Boolean {
+        // Our own package — floating bubble, blocking overlay
+        if (pkg == applicationContext.packageName) return true
+        // Keyboard / IME packages — user is still in the underlying app while typing
+        if (pkg.contains(".inputmethod") || pkg.contains(".keyboard") || pkg.contains(".ime")) return true
+        if (pkg in KNOWN_SYSTEM_PACKAGES) return true
+        // Permission dialogs — transient system prompts
+        if (pkg == "com.android.permissioncontroller") return true
+        return false
     }
 
     override fun onInterrupt() {
@@ -49,6 +70,17 @@ class AppTickAccessibilityService : AccessibilityService() {
 
         /** Max age before accessibility data is considered stale. */
         private const val MAX_STALENESS_MS = 10_000L
+
+        /** Keyboard packages that are passive overlays and should not replace the foreground app. */
+        private val KNOWN_SYSTEM_PACKAGES = setOf(
+            "com.google.android.inputmethod.latin",  // Gboard
+            "com.samsung.android.honeyboard",         // Samsung keyboard
+            "com.swiftkey.swiftkey",                   // SwiftKey
+            "com.huawei.ohos.inputmethod",             // Huawei/HONOR keyboard
+            "com.microsoft.swiftkey",                  // Microsoft SwiftKey
+            "com.touchtype.swiftkey",                  // SwiftKey (alt package)
+            "com.baidu.input",                         // Baidu IME
+        )
 
         @Volatile
         var currentForegroundPackage: String? = null

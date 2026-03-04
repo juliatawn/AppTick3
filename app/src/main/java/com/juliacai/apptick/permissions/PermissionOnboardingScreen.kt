@@ -94,19 +94,6 @@ private val steps = listOf(
         )
     ),
     PermissionStepData(
-        title = "Accessibility Permission",
-        description = "AppTick can use an accessibility service to more reliably detect which app you are using. This helps ensure time limits work correctly on all devices.",
-        whyNeeded = "• Instantly detect which app is in the foreground\n• More reliable than standard detection on some devices\n• Ensures time limits are enforced without gaps\n• Does not read any content from your apps",
-        howToSteps = listOf(
-            "Tap the button below to open Accessibility Settings",
-            "Find 'AppTick' under Downloaded/Installed services",
-            "Enable the AppTick service",
-            "Confirm in the dialog that appears",
-            "Return to AppTick"
-        ),
-        isOptional = true
-    ),
-    PermissionStepData(
         title = "Usage Access Permission",
         description = "AppTick needs to track app usage so it can enforce the time limits you set.",
         whyNeeded = "• Track time spent in apps\n• Set and enforce time limits\n• Show usage for time limit\n• Block apps when limits are reached",
@@ -126,6 +113,19 @@ private val steps = listOf(
             "Go to Notifications",
             "Enable notifications for AppTick"
         )
+    ),
+    PermissionStepData(
+        title = "Accessibility Permission",
+        description = "AppTick can use an accessibility service to more reliably detect which app you are using. This helps ensure time limits work correctly on all devices.",
+        whyNeeded = "• Instantly detect which app is in the foreground\n• More reliable than standard detection on some devices\n• Ensures time limits are enforced without gaps\n• Does not read any content from your apps",
+        howToSteps = listOf(
+            "Tap the button below to open Accessibility Settings",
+            "Find 'AppTick' under Downloaded/Installed services",
+            "Enable the AppTick service",
+            "Confirm in the dialog that appears",
+            "Return to AppTick"
+        ),
+        isOptional = true
     )
 )
 
@@ -152,20 +152,20 @@ private fun isNotificationGranted(context: Context): Boolean =
 
 private fun isStepGranted(stepIndex: Int, context: Context): Boolean = when (stepIndex) {
     0 -> isOverlayGranted(context)
-    1 -> isAccessibilityGranted(context)
-    2 -> isUsageStatsGranted(context)
-    3 -> isNotificationGranted(context)
+    1 -> isUsageStatsGranted(context)
+    2 -> isNotificationGranted(context)
+    3 -> isAccessibilityGranted(context)
     else -> true
 }
 
 private fun launchSettingsForStep(stepIndex: Int, context: Context) {
     val intent = when (stepIndex) {
         0 -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri())
-        1 -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        2 -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-        3 -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+        1 -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+        2 -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         }
+        3 -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         else -> return
     }
     context.startActivity(intent)
@@ -217,7 +217,7 @@ fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
                     .fillMaxSize()
                     .verticalScrollWithIndicator()
                     .padding(10.dp)
-                    .padding(bottom = 100.dp),
+                    .padding(bottom = if (stepData.isOptional) 150.dp else 100.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Step indicator dots
@@ -302,17 +302,17 @@ private fun PermissionStepContent(
                 modifier = Modifier.height(30.dp)
             )
             1 -> Image(
-                painter = painterResource(id = R.drawable.ic_accessibility),
-                contentDescription = null,
-                modifier = Modifier.height(30.dp)
-            )
-            2 -> Image(
                 painter = painterResource(id = R.drawable.ic_usage_stats),
                 contentDescription = null,
                 modifier = Modifier.height(30.dp)
             )
-            3 -> Image(
+            2 -> Image(
                 imageVector = Icons.Rounded.Notifications,
+                contentDescription = null,
+                modifier = Modifier.height(30.dp)
+            )
+            3 -> Image(
+                painter = painterResource(id = R.drawable.ic_accessibility),
                 contentDescription = null,
                 modifier = Modifier.height(30.dp)
             )
@@ -432,18 +432,18 @@ private fun PermissionStepOverlayPreview() {
 
 @Preview(showBackground = true)
 @Composable
-private fun PermissionStepAccessibilityPreview() {
+private fun PermissionStepNotificationPreview() {
     AppTheme {
         PermissionStepContent(
-            data = steps[1],
-            stepIndex = 1
+            data = steps[2],
+            stepIndex = 2
         )
     }
 }
 
 @Preview(showBackground = true)
 @Composable
-private fun PermissionStepNotificationPreview() {
+private fun PermissionStepAccessibilityPreview() {
     AppTheme {
         PermissionStepContent(
             data = steps[3],
