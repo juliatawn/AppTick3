@@ -225,22 +225,26 @@ class BackgroundChecker : Service() {
 
     /**
      * Attempts to close floating/freeform windows for the blocked app.
-     * Primary: uses AccessibilityService GLOBAL_ACTION_BACK to close the floating window.
-     * Fallback: navigates to the home screen (less reliable on some OEMs like Honor/Huawei
-     * where floating windows persist over the home screen).
+     *
+     * - Floating + accessibility available: sends BACK to close the floating window.
+     * - Fullscreen + accessibility available: does nothing — block screen overlays directly.
+     * - Accessibility unavailable: navigates HOME as a best-effort fallback.
      */
     private fun dismissFloatingWindow(blockedPackage: String?) {
         navigateHomeCallCount++ // keep counter for test compatibility
-        val closedViaAccessibility = blockedPackage != null &&
-                AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
-        if (!closedViaAccessibility) {
-            // Fallback: navigate home when accessibility service is not available
-            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_HOME)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(homeIntent)
+        if (blockedPackage != null && AppTickAccessibilityService.isRunning) {
+            // Accessibility service is running — it knows if the app is floating or not.
+            // tryCloseFloatingWindow sends BACK only for floating windows;
+            // for fullscreen apps it returns false and we do nothing (block screen overlays directly).
+            AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
+            return
         }
+        // Fallback: accessibility service not available, navigate home as best-effort
+        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_HOME)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        startActivity(homeIntent)
     }
 
     // ── Core limit checking ───────────────────────────────────────────────────

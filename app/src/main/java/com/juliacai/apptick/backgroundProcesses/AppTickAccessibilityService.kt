@@ -24,8 +24,39 @@ class AppTickAccessibilityService : AccessibilityService() {
             if (!pkg.isNullOrBlank() && !isOverlayOrSystemPackage(pkg)) {
                 currentForegroundPackage = pkg
                 lastUpdateTimeMillis = System.currentTimeMillis()
+                // Detect floating state now while window info is freshest
+                isCurrentAppFloating = checkIfWindowIsFloating(event.windowId)
             }
         }
+    }
+
+    /**
+     * Checks if ANY visible application window is smaller than the screen,
+     * which indicates a floating/freeform window is present.
+     *
+     * Does not match by windowId (unreliable on some OEMs). Instead checks
+     * all application windows — if any is non-fullscreen, we're in floating mode.
+     */
+    private fun checkIfWindowIsFloating(@Suppress("UNUSED_PARAMETER") windowId: Int): Boolean {
+        try {
+            val windowList = windows ?: return false
+            val display = resources.displayMetrics
+            for (window in windowList) {
+                if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
+                    val bounds = android.graphics.Rect()
+                    window.getBoundsInScreen(bounds)
+                    if (bounds.width() < display.widthPixels ||
+                        bounds.height() < display.heightPixels) {
+                        Log.d(TAG, "Floating window detected (${bounds.width()}x${bounds.height()} " +
+                                "vs screen ${display.widthPixels}x${display.heightPixels})")
+                        return true
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error checking window floating state", e)
+        }
+        return false
     }
 
     /**
@@ -54,41 +85,19 @@ class AppTickAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Attempts to close a floating window for the given package by performing
-     * GLOBAL_ACTION_BACK. Floating/freeform windows close on BACK press,
-     * unlike HOME which leaves them visible on some OEMs (e.g. Honor/Huawei).
+     * Closes a floating window by sending GLOBAL_ACTION_BACK, but only if the
+     * current app was detected as floating when its accessibility event fired.
      *
-     * Returns true if a BACK action was dispatched.
+     * Returns true if a BACK action was dispatched (app was floating).
+     * Returns false for fullscreen apps — no BACK is sent to avoid navigating
+     * back within the app and delaying the block screen.
      */
     fun closeFloatingWindow(blockedPackage: String): Boolean {
-        // Try to detect if there's a non-fullscreen window for the blocked package
-        try {
-            val windows = windows // AccessibilityService.getWindows()
-            if (windows != null) {
-                for (window in windows) {
-                    if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
-                        // Check if this looks like a floating window (not fullscreen)
-                        val bounds = android.graphics.Rect()
-                        window.getBoundsInScreen(bounds)
-                        val display = resources.displayMetrics
-                        val isFloating = bounds.width() < display.widthPixels ||
-                                bounds.height() < display.heightPixels
-                        if (isFloating) {
-                            Log.i(TAG, "Found floating window (${bounds.width()}x${bounds.height()}), " +
-                                    "sending BACK to close it")
-                            performGlobalAction(GLOBAL_ACTION_BACK)
-                            return true
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Error checking windows, falling back to BACK action", e)
+        if (!isCurrentAppFloating) {
+            Log.d(TAG, "App $blockedPackage is fullscreen, skipping BACK action")
+            return false
         }
-
-        // Fallback: always send BACK if we're trying to block a floating app.
-        // This handles cases where window enumeration isn't available.
-        Log.i(TAG, "Sending BACK action to dismiss potential floating window for $blockedPackage")
+        Log.i(TAG, "App $blockedPackage is floating, sending BACK to close it")
         performGlobalAction(GLOBAL_ACTION_BACK)
         return true
     }
@@ -105,6 +114,7 @@ class AppTickAccessibilityService : AccessibilityService() {
         instance = null
         isRunning = false
         currentForegroundPackage = null
+        isCurrentAppFloating = false
         Log.i(TAG, "AccessibilityService destroyed")
     }
 
@@ -150,6 +160,11 @@ class AppTickAccessibilityService : AccessibilityService() {
         var isRunning: Boolean = false
             private set
 
+        /** Whether the current foreground app was detected as a floating/freeform window. */
+        @Volatile
+        var isCurrentAppFloating: Boolean = false
+            private set
+
         /**
          * Returns the accessibility-reported foreground package if the service
          * is running and the data is fresh (< 10 seconds old), otherwise null.
@@ -170,6 +185,7 @@ class AppTickAccessibilityService : AccessibilityService() {
             isRunning = false
             currentForegroundPackage = null
             lastUpdateTimeMillis = 0L
+            isCurrentAppFloating = false
         }
 
         /**
@@ -177,9 +193,10 @@ class AppTickAccessibilityService : AccessibilityService() {
          * Used for testing only.
          */
         @androidx.annotation.VisibleForTesting
-        fun simulateForTesting(packageName: String?, running: Boolean) {
+        fun simulateForTesting(packageName: String?, running: Boolean, floating: Boolean = false) {
             isRunning = running
             currentForegroundPackage = packageName
+            isCurrentAppFloating = floating
             lastUpdateTimeMillis = if (running && packageName != null) {
                 System.currentTimeMillis()
             } else {
