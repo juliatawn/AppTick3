@@ -148,6 +148,41 @@ class AppTickAccessibilityServiceTest {
         )
     }
 
+    // ── tryCloseFloatingWindow tests ────────────────────────────────────────
+
+    @Test
+    fun `tryCloseFloatingWindow returns false when service instance is null`() {
+        // Default state: no instance available (service never connected)
+        assertFalse(
+            "Should return false when no service instance is available",
+            AppTickAccessibilityService.tryCloseFloatingWindow("com.example.blocked")
+        )
+    }
+
+    @Test
+    fun `tryCloseFloatingWindow returns false even when simulated as running`() {
+        // simulateForTesting sets isRunning=true but does NOT set the instance reference,
+        // so tryCloseFloatingWindow should still return false (no real service to perform BACK)
+        AppTickAccessibilityService.simulateForTesting("com.example.app", running = true)
+
+        assertFalse(
+            "Should return false when service is simulated but no real instance exists",
+            AppTickAccessibilityService.tryCloseFloatingWindow("com.example.app")
+        )
+    }
+
+    @Test
+    fun `tryCloseFloatingWindow returns false after resetForTesting`() {
+        // Ensure resetForTesting clears the instance reference
+        AppTickAccessibilityService.simulateForTesting("com.example.app", running = true)
+        AppTickAccessibilityService.resetForTesting()
+
+        assertFalse(
+            "Should return false after resetForTesting clears instance",
+            AppTickAccessibilityService.tryCloseFloatingWindow("com.example.app")
+        )
+    }
+
     // ── Fallback scenario tests ─────────────────────────────────────────────
 
     @Test
