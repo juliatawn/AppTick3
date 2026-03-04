@@ -201,6 +201,156 @@ class BackgroundCheckerTest {
         dao.getAllAppLimitGroupsImmediate().forEach { dao.deleteAppLimitGroup(it) }
     }
 
+    private fun bindService(): BackgroundChecker {
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        return (binder as BackgroundChecker.LocalBinder).getService()
+    }
+
+    // ── Navigate-home-before-block tests ─────────────────────────────────
+
+    @Test
+    @Throws(Exception::class)
+    fun testNavigateHomeCalledWhenTimeExhausted() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Home Nav Test",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            timeRemaining = 1_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        service.checkAppLimits("com.instagram.android")
+
+        assertEquals(
+            "navigateHome should be called once when block triggers",
+            1, service.navigateHomeCallCount
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testNavigateHomeCalledWhenZeroLimit() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Zero Limit Test",
+            timeHrLimit = 0,
+            timeMinLimit = 0,
+            timeRemaining = 0L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        service.checkAppLimits("com.instagram.android")
+
+        assertEquals(
+            "navigateHome should be called for zero-limit block",
+            1, service.navigateHomeCallCount
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testNavigateHomeNotCalledWhenTimeRemaining() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "No Block Test",
+            timeHrLimit = 1,
+            timeRemaining = 3_600_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        service.checkAppLimits("com.instagram.android")
+
+        assertEquals(
+            "navigateHome should NOT be called when time remains",
+            0, service.navigateHomeCallCount
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testNavigateHomeCalledOnOutsideTimeRange() = runTest {
+        // Create a group with time range that excludes the current time
+        // Use a range from 03:00-03:01 — guaranteed to be outside this range
+        // during any normal test execution
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Time Range Block Test",
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            timeRemaining = 3_600_000L,
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            timeRanges = listOf(
+                com.juliacai.apptick.groups.TimeRange(
+                    startHour = 3,
+                    startMinute = 0,
+                    endHour = 3,
+                    endMinute = 1
+                )
+            ),
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        service.checkAppLimits("com.instagram.android")
+
+        assertEquals(
+            "navigateHome should be called for outside-time-range block",
+            1, service.navigateHomeCallCount
+        )
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testNavigateHomeCalledOnEachBlock() = runTest {
+        // Two groups that both block the same app — navigateHome should be called twice
+        val group1 = AppLimitGroup(
+            id = 1,
+            name = "Group A",
+            timeHrLimit = 0,
+            timeMinLimit = 0,
+            timeRemaining = 0L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        val group2 = AppLimitGroup(
+            id = 2,
+            name = "Group B",
+            timeHrLimit = 0,
+            timeMinLimit = 0,
+            timeRemaining = 0L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group1)
+        dao.insertAppLimitGroup(group2)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        service.checkAppLimits("com.instagram.android")
+
+        assertTrue(
+            "navigateHome should be called at least once across multiple blocking groups",
+            service.navigateHomeCallCount >= 1
+        )
+    }
+
     // ── Daily / Periodic reset integration tests ─────────────────────────
 
     @Test
