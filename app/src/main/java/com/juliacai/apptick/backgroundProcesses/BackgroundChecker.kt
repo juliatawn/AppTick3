@@ -77,6 +77,7 @@ class BackgroundChecker : Service() {
     private lateinit var mNotificationManager: NotificationManager
 
     private var lastForegroundApp: String? = null
+    private var prevBubbleForegroundApp: String? = null
     private var lastCheckElapsed: Long = 0L
     private var isScreenOn = true
     private var bubbleShowReceiver: BroadcastReceiver? = null
@@ -500,6 +501,16 @@ class BackgroundChecker : Service() {
 
     private suspend fun updateFloatingBubble(currentApp: String?, fallbackApp: String?) {
         val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+
+        // Reset dismissed flag when the foreground app changes so the bubble
+        // reappears the next time the user enters a limited app.
+        if (currentApp != null && currentApp != prevBubbleForegroundApp) {
+            prefs.edit().putBoolean(FloatingBubbleService.PREF_BUBBLE_DISMISSED, false).apply()
+        }
+        if (currentApp != null) {
+            prevBubbleForegroundApp = currentApp
+        }
+
         val isPremium = prefs.getBoolean("premium", false)
         if (!isPremium) {
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}
