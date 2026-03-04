@@ -1,0 +1,300 @@
+package com.juliacai.apptick.backgroundProcesses
+
+import android.content.Context
+import android.content.Intent
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.MediumTest
+import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.rule.ServiceTestRule
+import com.juliacai.apptick.appLimit.AppInGroup
+import com.juliacai.apptick.block.BlockWindowActivity
+import com.juliacai.apptick.data.AppLimitGroupDao
+import com.juliacai.apptick.data.AppTickDatabase
+import com.juliacai.apptick.data.toEntity
+import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.AppUsageStat
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Before
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+/**
+ * Integration tests verifying that the BackgroundChecker blocking flow works
+ * correctly when the AccessibilityService is providing foreground app data
+ * versus when it falls back to UsageStatsManager.
+ *
+ * These tests exercise the full path from checkAppLimits() through to database
+ * updates and BlockWindowActivity launch, validating:
+ * - Time tracking with accessibility-detected apps
+ * - Blocking triggers when limits are reached
+ * - Per-app and group-wide limit enforcement
+ * - Fallback behavior when accessibility data is unavailable
+ */
+@ExperimentalCoroutinesApi
+@RunWith(AndroidJUnit4::class)
+@MediumTest
+class AccessibilityBlockingIntegrationTest {
+
+    @get:Rule
+    val serviceRule = ServiceTestRule()
+
+    private lateinit var database: AppTickDatabase
+    private lateinit var dao: AppLimitGroupDao
+    private lateinit var context: Context
+
+    @Before
+    fun setup() = runTest {
+        context = InstrumentationRegistry.getInstrumentation().targetContext
+        BackgroundChecker.disableBackgroundLoopForTesting = true
+        database = AppTickDatabase.getDatabase(context)
+        dao = database.appLimitGroupDao()
+        clearAllGroups()
+        // Reset accessibility service state via reflection
+        resetAccessibilityState()
+    }
+
+    @After
+    fun tearDown() = runTest {
+        clearAllGroups()
+        BackgroundChecker.disableBackgroundLoopForTesting = false
+        resetAccessibilityState()
+    }
+
+    // ── Accessibility-aware time tracking ─────────────────────────────────
+
+    @Test
+    fun testTimeDecrementWorksWithAccessibilityDetectedApp() = runTest {
+        // Setup: group with 5-minute limit, full time remaining
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Accessibility Test",
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            timeRemaining = 300_000L,
+            apps = listOf(AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        // Simulate accessibility service detecting Amazon as foreground
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        // Run several check cycles
+        repeat(5) { service.checkAppLimits("com.amazon.mShop.android.shopping") }
+
+        val updated = dao.getGroup(1)!!
+        // 5 ticks * 2 seconds = 10 seconds used, 290 seconds remaining
+        assertEquals(290_000L, updated.timeRemaining)
+    }
+
+    @Test
+    fun testBlockingTriggersWhenLimitReachedWithAccessibility() = runTest {
+        // Setup: group with only 2 seconds remaining
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Block Test",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            timeRemaining = 2_000L,
+            apps = listOf(AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            // This should exhaust the limit and trigger blocking
+            service.checkAppLimits("com.amazon.mShop.android.shopping")
+
+            val blockedActivity = instrumentation.waitForMonitorWithTimeout(monitor, 3_000L)
+            assertNotNull("BlockWindowActivity should launch when limit is reached", blockedActivity)
+            blockedActivity?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(0L, updated.timeRemaining)
+    }
+
+    // ── Per-app limit enforcement ─────────────────────────────────────────
+
+    @Test
+    fun testPerAppLimitTrackingWithAccessibility() = runTest {
+        // Setup: limit-each group with two apps
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Multi App Test",
+            timeHrLimit = 0,
+            timeMinLimit = 10,
+            limitEach = true,
+            timeRemaining = 600_000L,
+            apps = listOf(
+                AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"),
+                AppInGroup("Twitter", "com.twitter.android", "com.twitter.android")
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        // Simulate using Amazon (detected via accessibility) for 3 seconds
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+        repeat(3) { service.checkAppLimits("com.amazon.mShop.android.shopping") }
+
+        // Simulate switching to Twitter for 2 seconds
+        simulateAccessibilityDetection("com.twitter.android")
+        repeat(2) { service.checkAppLimits("com.twitter.android") }
+
+        val updated = dao.getGroup(1)!!
+        val usage = updated.perAppUsage.associate { it.appPackage to it.usedMillis }
+        assertEquals(
+            "Amazon should have 3 seconds of usage",
+            3_000L, usage["com.amazon.mShop.android.shopping"]
+        )
+        assertEquals(
+            "Twitter should have 2 seconds of usage",
+            2_000L, usage["com.twitter.android"]
+        )
+    }
+
+    // ── Fallback behavior ─────────────────────────────────────────────────
+
+    @Test
+    fun testTrackingWorksWithoutAccessibilityService() = runTest {
+        // Do NOT call simulateAccessibilityDetection — service is "not running"
+        // This tests that the existing UsageStats fallback path still works
+
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Fallback Test",
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            timeRemaining = 300_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        // checkAppLimits is called with the foreground app directly,
+        // so tracking should work regardless of accessibility state
+        repeat(10) { service.checkAppLimits("com.instagram.android") }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(
+            "Time should decrement even without accessibility service",
+            290_000L, updated.timeRemaining
+        )
+    }
+
+    @Test
+    fun testBlockingWorksWithoutAccessibilityService() = runTest {
+        // Accessibility service NOT running — should still block via UsageStats path
+
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Fallback Block",
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            timeRemaining = 1_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(2_000L)
+
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(BlockWindowActivity::class.java.name, null, false)
+        try {
+            service.checkAppLimits("com.instagram.android")
+
+            val blockedActivity = instrumentation.waitForMonitorWithTimeout(monitor, 3_000L)
+            assertNotNull("BlockWindowActivity should launch even without accessibility", blockedActivity)
+            blockedActivity?.finish()
+        } finally {
+            instrumentation.removeMonitor(monitor)
+        }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(0L, updated.timeRemaining)
+    }
+
+    // ── Paused group should not track ─────────────────────────────────────
+
+    @Test
+    fun testPausedGroupDoesNotTrackTimeWithAccessibility() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Paused Group",
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            timeRemaining = 300_000L,
+            paused = true,
+            apps = listOf(AppInGroup("Amazon", "com.amazon.mShop.android.shopping", "com.amazon.mShop.android.shopping"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        simulateAccessibilityDetection("com.amazon.mShop.android.shopping")
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        repeat(5) { service.checkAppLimits("com.amazon.mShop.android.shopping") }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(
+            "Paused group should not have its time decremented",
+            300_000L, updated.timeRemaining
+        )
+    }
+
+    // ── Helper methods ────────────────────────────────────────────────────
+
+    private suspend fun clearAllGroups() {
+        dao.getAllAppLimitGroupsImmediate().forEach { dao.deleteAppLimitGroup(it) }
+    }
+
+    /**
+     * Simulates the AccessibilityService detecting a foreground app.
+     * Mimics what onAccessibilityEvent(TYPE_WINDOW_STATE_CHANGED) would do.
+     */
+    private fun simulateAccessibilityDetection(packageName: String) {
+        AppTickAccessibilityService.simulateForTesting(packageName, running = true)
+    }
+
+    /**
+     * Resets accessibility service companion state to defaults (not running).
+     */
+    private fun resetAccessibilityState() {
+        AppTickAccessibilityService.resetForTesting()
+    }
+}

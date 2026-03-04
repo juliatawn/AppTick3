@@ -303,7 +303,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                 }
 
                 val photoResIds = featurePhotoResIds()
-                val needsPermissions = !hasAllPermissions()
+                // Show onboarding if missing required permissions OR if user hasn't seen the accessibility step yet
+                val needsPermissions = !hasAllPermissions() ||
+                    !prefs.getBoolean("accessibility_onboarding_seen", false)
                 val shouldShowFeaturePhotos = shouldShowFeaturePhotosOnLaunch(
                     prefs = prefs,
                     versionCode = appVersionCode,
@@ -319,7 +321,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     composable(STARTUP_ROUTE_FEATURE_PHOTOS) {
                         val onFeaturePhotosFinished = {
                             markFeaturePhotosSeen(prefs, appVersionCode)
-                            val nextRoute = postFeaturePhotosRoute(needsPermissions = !hasAllPermissions())
+                            val nextRoute = postFeaturePhotosRoute(
+                                needsPermissions = !hasAllPermissions() ||
+                                    !prefs.getBoolean("accessibility_onboarding_seen", false)
+                            )
                             navController.navigate(nextRoute) {
                                 popUpTo(STARTUP_ROUTE_FEATURE_PHOTOS) { inclusive = true }
                             }
@@ -335,6 +340,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     composable(STARTUP_ROUTE_PERMISSION_ONBOARDING) {
                         PermissionOnboardingScreen(
                             onAllGranted = {
+                                prefs.edit { putBoolean("accessibility_onboarding_seen", true) }
                                 navController.navigate(STARTUP_ROUTE_MAIN) {
                                     popUpTo(STARTUP_ROUTE_PERMISSION_ONBOARDING) { inclusive = true }
                                 }

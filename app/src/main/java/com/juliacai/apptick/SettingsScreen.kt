@@ -3,6 +3,7 @@ package com.juliacai.apptick
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -34,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,11 +52,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.content.edit
+import com.juliacai.apptick.backgroundProcesses.AppTickAccessibilityService
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppLimitBackupManager
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.permissions.BatteryOptimizationHelper
+import com.juliacai.apptick.permissions.rememberResumeTrigger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -81,6 +85,12 @@ fun SettingsScreen(
     var isCustomColorMode by remember { mutableStateOf(ThemeModeManager.isCustomColorModeEnabled(context)) }
     var showTimeLeft by remember { mutableStateOf(groupPrefs.getBoolean("showTimeLeft", true)) }
     var floatingBubbleEnabled by remember { mutableStateOf(groupPrefs.getBoolean("floatingBubbleEnabled", false)) }
+    // Re-check accessibility state when returning from system settings
+    val resumeCounter = rememberResumeTrigger()
+    var accessibilityEnabled by remember { mutableStateOf(AppTickAccessibilityService.isAccessibilityServiceEnabled(context)) }
+    LaunchedEffect(resumeCounter) {
+        accessibilityEnabled = AppTickAccessibilityService.isAccessibilityServiceEnabled(context)
+    }
     var premiumFeatureDialogFor by remember { mutableStateOf<String?>(null) }
     var batteryStatus by remember { mutableStateOf(BatteryOptimizationHelper.getStatus(context)) }
     var showBatteryDialog by remember { mutableStateOf(false) }
@@ -209,6 +219,27 @@ fun SettingsScreen(
                             if (it) {
                                 groupPrefs.edit { putBoolean("bubbleDismissed", false) }
                             }
+                        }
+                    )
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Enhanced App Detection")
+                        Text(
+                            "Uses accessibility service for more reliable app detection. Recommended if time limits are not triggering correctly.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = accessibilityEnabled,
+                        onCheckedChange = {
+                            // Open system accessibility settings — user must enable/disable there
+                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
                         }
                     )
                 }
