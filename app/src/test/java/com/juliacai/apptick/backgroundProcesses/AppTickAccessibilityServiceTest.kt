@@ -183,6 +183,46 @@ class AppTickAccessibilityServiceTest {
         )
     }
 
+    // ── isCurrentAppFloating state tests ────────────────────────────────────
+
+    @Test
+    fun `isCurrentAppFloating defaults to false`() {
+        assertFalse(
+            "isCurrentAppFloating should default to false",
+            AppTickAccessibilityService.isCurrentAppFloating
+        )
+    }
+
+    @Test
+    fun `isCurrentAppFloating is true when simulated as floating`() {
+        AppTickAccessibilityService.simulateForTesting("com.example.app", running = true, floating = true)
+        assertTrue(
+            "isCurrentAppFloating should be true when simulated as floating",
+            AppTickAccessibilityService.isCurrentAppFloating
+        )
+    }
+
+    @Test
+    fun `isCurrentAppFloating is false when simulated as fullscreen`() {
+        AppTickAccessibilityService.simulateForTesting("com.example.app", running = true, floating = false)
+        assertFalse(
+            "isCurrentAppFloating should be false for fullscreen apps",
+            AppTickAccessibilityService.isCurrentAppFloating
+        )
+    }
+
+    @Test
+    fun `isCurrentAppFloating resets to false on resetForTesting`() {
+        AppTickAccessibilityService.simulateForTesting("com.example.app", running = true, floating = true)
+        assertTrue(AppTickAccessibilityService.isCurrentAppFloating)
+
+        AppTickAccessibilityService.resetForTesting()
+        assertFalse(
+            "isCurrentAppFloating should be false after reset",
+            AppTickAccessibilityService.isCurrentAppFloating
+        )
+    }
+
     // ── Fallback scenario tests ─────────────────────────────────────────────
 
     @Test
