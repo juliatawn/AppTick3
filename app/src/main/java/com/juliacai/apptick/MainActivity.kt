@@ -390,6 +390,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     add("OEM startup controls:" to "Detected")
                                 }
                             },
+                            hasOemRestrictions = batteryStatus.hasAdditionalOemRestrictions,
                             onFabClick = {
                                 if (isLimitEditingLocked() && !canAddWhileLocked) {
                                     launchUnlockFlow()
@@ -466,6 +467,15 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     Toast.makeText(
                                         this@MainActivity,
                                         "Unable to open dontkillmyapp.com",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            onOpenOemStartupSettings = {
+                                if (!BatteryOptimizationHelper.openManufacturerBackgroundSettings(this@MainActivity)) {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        "Unable to open OEM startup settings",
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 }
