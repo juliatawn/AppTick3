@@ -46,8 +46,9 @@ fun MainScreen(
     showGroupDetailsHint: Boolean,
     showBatteryWarning: Boolean,
     batteryWarningDismissable: Boolean,
-    batteryWarningText: String,
+    showStandardBatteryWarning: Boolean,
     batteryWarningDetails: List<Pair<String, String>>,
+    oemGuidance: String?,
     hasOemRestrictions: Boolean,
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
@@ -131,15 +132,17 @@ fun MainScreen(
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
                         Text(
-                            "Background Reliability Warning",
+                            "Battery Reliability",
                             style = MaterialTheme.typography.titleMedium
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            batteryWarningText,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (showStandardBatteryWarning) {
+                            Text(
+                                "Set AppTick to Unrestricted battery mode for stronger blocking reliability.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         if (batteryWarningDetails.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             batteryWarningDetails.forEach { (label, value) ->
@@ -157,6 +160,20 @@ fun MainScreen(
                                 Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
+                        if (oemGuidance != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                oemGuidance,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Some manufacturers aggressively kill apps in the background. If reliability issues continue, review device-specific steps at dontkillmyapp.com.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                         Spacer(modifier = Modifier.height(10.dp))
                         Button(
                             onClick = onOpenAppBatterySettings,
@@ -269,8 +286,9 @@ fun MainScreenPreview() {
             showGroupDetailsHint = true,
             showBatteryWarning = true,
             batteryWarningDismissable = true,
-            batteryWarningText = "Battery warning text",
+            showStandardBatteryWarning = true,
             batteryWarningDetails = listOf("Detail 1" to "Value 1", "Detail 2" to "Value 2"),
+            oemGuidance = "Also allow AppTick in App launch settings.",
             hasOemRestrictions = true,
             onFabClick = {},
             onSettingsClick = {},

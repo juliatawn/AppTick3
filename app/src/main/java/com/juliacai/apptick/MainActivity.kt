@@ -412,16 +412,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             showGroupDetailsHint = showGroupDetailsHint && orderedGroups.isNotEmpty(),
                             showBatteryWarning = standardBatteryIssue || (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed),
                             batteryWarningDismissable = !standardBatteryIssue && batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed,
-                            batteryWarningText = buildString {
-                                if (standardBatteryIssue) {
-                                    append("AppTick may not block reliably until battery mode is set to Unrestricted.")
-                                }
-                                if (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed) {
-                                    if (standardBatteryIssue) append(" ")
-                                    append(batteryStatus.oemGuidance ?: "Enable AppTick auto-start in system manager.")
-                                    append(" Some manufacturers aggressively kill apps in the background; if reliability issues continue, check dontkillmyapp.com suggestions.")
-                                }
-                            },
+                            showStandardBatteryWarning = standardBatteryIssue,
                             batteryWarningDetails = buildList {
                                 add("Ignore battery optimizations:" to if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
                                 add("Background restricted:" to if (batteryStatus.backgroundRestricted) "Yes" else "No")
@@ -429,6 +420,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                     add("OEM startup controls:" to "Detected")
                                 }
                             },
+                            oemGuidance = if (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed) {
+                                batteryStatus.oemGuidance ?: "Enable AppTick auto-start in system manager."
+                            } else null,
                             hasOemRestrictions = batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed,
                             onFabClick = {
                                 if (isLimitEditingLocked() && !canAddWhileLocked) {
