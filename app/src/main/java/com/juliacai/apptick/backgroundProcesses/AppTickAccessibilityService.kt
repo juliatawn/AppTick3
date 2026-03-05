@@ -189,54 +189,48 @@ class AppTickAccessibilityService : AccessibilityService() {
     /**
      * Closes a floating window by sending accessibility actions.
      *
-     * For PiP windows: tries to dismiss via the accessibility node tree first,
-     * which is more reliable than BACK for picture-in-picture.
+     * Strategy order is intentional — confirmed working on Honor Magic V2,
+     * Samsung Galaxy S23, and Pixel Fold:
      *
-     * For other floating windows (freeform): sends BACK twice for robustness.
+     * 1. Cross-window close button search (OEMs put the X in a separate systemui window)
+     * 2. ACTION_DISMISS on the app's floating window node (standard PiP)
+     * 3. BACK x2 (last resort — confirmed working on Honor/EMUI freeform windows)
      *
-     * Returns a [FloatingCloseResult] indicating what happened:
-     * - NOT_FLOATING: app wasn't floating, no action taken
-     * - CLOSED_INSTANTLY: close button clicked, block screen can show immediately
-     * - NEEDS_DELAY: BACK/HOME sent, block screen should wait for actions to take effect
+     * Returns [FloatingCloseResult.NOT_FLOATING] for fullscreen apps (no action taken).
      */
     fun closeFloatingWindow(blockedPackage: String): FloatingCloseResult {
-        // Also re-check live window state in case the initial detection was stale
+        // Live re-check — don't trust the cached flag alone
         val isFloatingNow = isCurrentAppFloating || checkIfWindowIsFloating(-1)
         if (!isFloatingNow) {
-            Log.d(TAG, "App $blockedPackage is fullscreen, skipping close actions")
+            Log.d(TAG, "closeFloatingWindow: $blockedPackage is FULLSCREEN, skipping")
             return FloatingCloseResult.NOT_FLOATING
         }
 
-        // Log all windows for debugging (helps identify OEM title bar windows)
+        Log.d(TAG, "closeFloatingWindow: $blockedPackage is FLOATING — attempting to close")
         logAllWindows()
 
-        // Strategy 1: Dismiss via accessibility node tree (ACTION_DISMISS + labeled close button)
-        // within the blocked app's own window.
-        if (tryDismissFloatingWindowNode(blockedPackage)) {
-            Log.i(TAG, "Dismissed floating window for $blockedPackage via node action")
-            return FloatingCloseResult.CLOSED_INSTANTLY
-        }
-
-        // Strategy 2: Search ALL window types for close buttons near the floating window.
-        // OEMs like Honor draw the title bar (with X button) in a separate TYPE_SYSTEM
-        // window from com.android.systemui, not inside the app's own window.
+        // Strategy 1: Find and click the close button in nearby non-fullscreen windows.
+        // On Honor/EMUI, the title bar (with the X button) lives in a separate
+        // TYPE_SYSTEM window from com.android.systemui — not in the app's own window.
         if (tryClickCloseInAllWindows(blockedPackage)) {
-            Log.i(TAG, "Clicked close for $blockedPackage via cross-window search")
+            Log.d(TAG, "Strategy 1 SUCCESS: clicked close button for $blockedPackage")
             return FloatingCloseResult.CLOSED_INSTANTLY
         }
+        Log.d(TAG, "Strategy 1 FAILED: no close button found")
 
-        // Strategy 3: Click unlabeled close button by position in the app's node tree.
-        if (tryClickCloseByPosition(blockedPackage)) {
-            Log.i(TAG, "Clicked close for $blockedPackage via position-based detection")
+        // Strategy 2: ACTION_DISMISS on the app's floating window node (works for PiP)
+        if (tryActionDismiss(blockedPackage)) {
+            Log.d(TAG, "Strategy 2 SUCCESS: ACTION_DISMISS for $blockedPackage")
             return FloatingCloseResult.CLOSED_INSTANTLY
         }
+        Log.d(TAG, "Strategy 2 FAILED: ACTION_DISMISS didn't work")
 
-        // Strategy 4: BACK x2 — no HOME (HOME creates a thumbnail on Honor/EMUI
+        // Strategy 3: BACK x2 — no HOME (HOME creates a thumbnail on Honor/EMUI
         // instead of closing the floating window).
-        Log.d(TAG, "Strategy 4: sending BACK x2 for $blockedPackage")
+        Log.d(TAG, "Strategy 3: sending BACK x2 for $blockedPackage")
         performGlobalAction(GLOBAL_ACTION_BACK)
         performGlobalAction(GLOBAL_ACTION_BACK)
-        return FloatingCloseResult.NEEDS_DELAY
+        return FloatingCloseResult.NOT_FLOATING // Return NOT_FLOATING so caller shows block screen immediately
     }
 
     enum class FloatingCloseResult {
@@ -405,6 +399,44 @@ class AppTickAccessibilityService : AccessibilityService() {
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error trying to dismiss floating window node for $targetPackage", e)
+        }
+        return false
+    }
+
+    /**
+     * Tries ACTION_DISMISS on the floating app window (works for standard PiP).
+     * Does NOT search the app's node tree for close buttons — that can cause
+     * false positives by clicking unrelated app UI elements.
+     */
+    private fun tryActionDismiss(targetPackage: String): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return false
+        try {
+            val windowList = windows ?: return false
+            val display = resources.displayMetrics
+            val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
+
+            for (window in windowList) {
+                if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                val bounds = android.graphics.Rect()
+                window.getBoundsInScreen(bounds)
+                val windowArea = bounds.width().toLong() * bounds.height().toLong()
+                if (screenArea <= 0 || windowArea >= screenArea * 85 / 100) continue
+
+                val root = try { window.getRoot() } catch (_: Exception) { null } ?: continue
+                val pkg = root.packageName?.toString()
+                if (pkg != targetPackage) {
+                    root.recycle()
+                    continue
+                }
+
+                val dismissed = root.performAction(
+                    AccessibilityNodeInfo.AccessibilityAction.ACTION_DISMISS.id
+                )
+                root.recycle()
+                if (dismissed) return true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error trying ACTION_DISMISS for $targetPackage", e)
         }
         return false
     }

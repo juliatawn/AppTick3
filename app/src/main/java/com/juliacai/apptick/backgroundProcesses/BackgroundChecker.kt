@@ -259,14 +259,12 @@ class BackgroundChecker : Service() {
     // ── Launch / dismiss block screen ───────────────────────────────────────────
 
     /**
-     * Launches (or re-uses) the block screen for the given package.
+     * Launches the block screen and attempts to close any floating window.
      *
-     * On the FIRST block for a new package, attempts to close any floating window
-     * via the accessibility service. If the window was floating, a short delay is
-     * inserted so the HOME action takes effect before the block screen appears.
-     *
-     * On subsequent loop iterations for the SAME package, the block screen is
-     * already showing — SINGLE_TOP flag triggers onNewIntent() with no flash.
+     * tryCloseFloatingWindow is called every iteration — not just on the first
+     * block — because it self-limits via a live floating-check: once the window
+     * is actually closed it returns NOT_FLOATING immediately with no side effects.
+     * This ensures retries if a previous close attempt didn't fully succeed.
      */
     private fun launchBlockScreen(blockedPackage: String?) {
         navigateHomeCallCount++ // keep counter for test compatibility
@@ -276,35 +274,14 @@ class BackgroundChecker : Service() {
             startService(FloatingBubbleService.hideIntent(this))
         } catch (_: Exception) {}
 
-        // Only attempt to close floating windows on the FIRST block for a package.
-        // On subsequent loops the block screen is already up — no need to re-close.
-        val isNewBlock = blockedPackage != lastBlockedForPackage
-        if (isNewBlock && blockedPackage != null && AppTickAccessibilityService.isRunning) {
-            val closeResult = AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
-            lastBlockedForPackage = blockedPackage
-            when (closeResult) {
-                AppTickAccessibilityService.FloatingCloseResult.CLOSED_INSTANTLY -> {
-                    // Close button was clicked — window is closing, show block screen now
-                    startActivity(blockIntent)
-                    return
-                }
-                AppTickAccessibilityService.FloatingCloseResult.NEEDS_DELAY -> {
-                    // BACK/HOME sent — need delay for actions to take effect
-                    serviceScope.launch {
-                        delay(FLOATING_CLOSE_DELAY_MS)
-                        startActivity(blockIntent)
-                    }
-                    return
-                }
-                AppTickAccessibilityService.FloatingCloseResult.NOT_FLOATING -> {
-                    // Not floating — fall through to launch immediately
-                }
-            }
+        // Try to close floating windows. The live checkIfWindowIsFloating()
+        // inside closeFloatingWindow() returns NOT_FLOATING immediately for
+        // fullscreen apps and for already-closed windows — no side effects.
+        if (blockedPackage != null && AppTickAccessibilityService.isRunning) {
+            AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
         }
         lastBlockedForPackage = blockedPackage
 
-        // SINGLE_TOP flag means if the block screen is already on top, onNewIntent()
-        // is called instead of destroying/recreating it — no visual flash.
         startActivity(blockIntent)
     }
 
