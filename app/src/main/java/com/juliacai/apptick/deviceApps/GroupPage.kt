@@ -523,7 +523,10 @@ fun GroupDetails(
                                 AssistChip(
                                     onClick = {},
                                     enabled = false,
-                                    label = { Text("${group.timeHrLimit}h ${group.timeMinLimit}m Limit") },
+                                    label = {
+                                        val totalMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+                                        Text(if (totalMinutes == 0) "Blocks" else "${group.timeHrLimit}h ${group.timeMinLimit}m Limit")
+                                    },
                                     colors = AssistChipDefaults.assistChipColors(
                                         disabledContainerColor = MaterialTheme.colorScheme.secondaryContainer,
                                         disabledLabelColor = MaterialTheme.colorScheme.onSecondaryContainer

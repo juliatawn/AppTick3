@@ -64,7 +64,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * Unified permission onboarding screen that presents required and optional permissions
- * (Overlay, Accessibility [optional], Usage Stats, Notifications) as steps in a single
+ * (Overlay, Accessibility [optional], Usage Stats, Notifications) as steps in a siaaaaaangle
  * flow with animated transitions and a progress indicator.
  *
  * Auto-advances past already-granted permissions on each resume.
@@ -96,7 +96,7 @@ private val steps = listOf(
     ),
     PermissionStepData(
         title = "Usage Access Permission",
-        description = "AppTick needs to track app usage so it can enforce the time limits you set.",
+        description = "AppTick needs to track app usage so it can enforce the time limits you set. Data stays on your device and is not shared.",
         whyNeeded = "• Track time spent in apps\n• Set and enforce time limits\n• Show usage for time limit\n• Block apps when limits are reached",
         howToSteps = listOf(
             "Tap the button below to open Settings",
@@ -117,8 +117,8 @@ private val steps = listOf(
     ),
     PermissionStepData(
         title = "Accessibility Permission",
-        description = "AppTick can use an accessibility service to more reliably detect which app you are using. This helps ensure time limits work correctly on all devices.",
-        whyNeeded = "• Instantly detect which app is in the foreground\n• More reliable than standard detection on some devices\n• Ensures time limits are enforced without gaps\n• Does not read any content from your apps",
+        description = "AppTick can use an accessibility service to more reliably detect which app you are using. This helps ensure time limits work correctly on all devices. Data stays on your device and is not shared.",
+        whyNeeded = "• Instantly detect which app is in the foreground\n• More reliable than standard detection on some devices - including for split screen, floating windows, notification shade\n• Ensures time limits are enforced without gaps\n• Does not read any content from your apps",
         howToSteps = listOf(
             "Tap the button below to open Accessibility Settings",
             "Find 'AppTick' under Downloaded/Installed services",

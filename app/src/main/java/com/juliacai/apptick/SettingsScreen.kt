@@ -75,7 +75,8 @@ fun SettingsScreen(
     onUpgradeToPremium: () -> Unit,
     onOpenPremiumModeInfo: () -> Unit,
     onOpenAppLimitBackup: () -> Unit,
-    onOpenChangelog: () -> Unit
+    onOpenChangelog: () -> Unit,
+    onOpenAccessibilityOnboarding: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
@@ -238,8 +239,13 @@ fun SettingsScreen(
                     Switch(
                         checked = accessibilityEnabled,
                         onCheckedChange = {
-                            // Open system accessibility settings — user must enable/disable there
-                            context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            if (!accessibilityEnabled) {
+                                // User wants to turn ON — show accessibility onboarding
+                                onOpenAccessibilityOnboarding()
+                            } else {
+                                // User wants to turn OFF — open system settings to disable
+                                context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                            }
                         }
                     )
                 }

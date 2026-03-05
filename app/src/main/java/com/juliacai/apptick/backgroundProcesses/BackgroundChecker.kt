@@ -47,7 +47,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -90,6 +92,7 @@ class BackgroundChecker : Service() {
     @VisibleForTesting
     var navigateHomeCallCount = 0
         private set
+    private var lastBlockedForPackage: String? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): BackgroundChecker = this@BackgroundChecker
@@ -127,7 +130,7 @@ class BackgroundChecker : Service() {
         }
 
         blockIntent = Intent(this, BlockWindowActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
 
         mReceiver = ScreenStateReceiver()
@@ -246,38 +249,76 @@ class BackgroundChecker : Service() {
                         }
                     }
                 }
-                delay(loopDelayMs)
+                // Wait for the normal interval OR wake up early when AccessibilityService
+                // detects a new foreground app, so blocking happens instantly.
+                withTimeoutOrNull(loopDelayMs) { wakeUpChannel.receive() }
             }
         }
     }
 
-    // ── Dismiss floating windows before blocking ───────────────────────────────
+    // ── Launch / dismiss block screen ───────────────────────────────────────────
 
     /**
-     * Called before launching the block screen.
+     * Launches (or re-uses) the block screen for the given package.
      *
-     * When the accessibility service is running:
-     * - Floating windows: sends BACK to close them (no HOME — that would dismiss the block screen).
-     * - Fullscreen apps: does nothing — block screen overlays directly.
+     * On the FIRST block for a new package, attempts to close any floating window
+     * via the accessibility service. If the window was floating, a short delay is
+     * inserted so the HOME action takes effect before the block screen appears.
      *
-     * When accessibility is NOT running, navigates HOME as a best-effort fallback.
+     * On subsequent loop iterations for the SAME package, the block screen is
+     * already showing — SINGLE_TOP flag triggers onNewIntent() with no flash.
      */
-    private fun dismissFloatingWindow(blockedPackage: String?) {
+    private fun launchBlockScreen(blockedPackage: String?) {
         navigateHomeCallCount++ // keep counter for test compatibility
-        if (blockedPackage != null && AppTickAccessibilityService.isRunning) {
-            // tryCloseFloatingWindow sends BACK only for actual floating windows
-            // (using 85% area threshold to avoid false positives on fullscreen apps).
-            // For fullscreen apps it returns false and we do nothing — block screen overlays directly.
-            // NOTE: closeFloatingWindow no longer sends HOME, so the block screen always shows.
-            AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
-            return
+
+        // Hide the floating time-remaining bubble
+        try {
+            startService(FloatingBubbleService.hideIntent(this))
+        } catch (_: Exception) {}
+
+        // Only attempt to close floating windows on the FIRST block for a package.
+        // On subsequent loops the block screen is already up — no need to re-close.
+        val isNewBlock = blockedPackage != lastBlockedForPackage
+        if (isNewBlock && blockedPackage != null && AppTickAccessibilityService.isRunning) {
+            val closeResult = AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
+            lastBlockedForPackage = blockedPackage
+            when (closeResult) {
+                AppTickAccessibilityService.FloatingCloseResult.CLOSED_INSTANTLY -> {
+                    // Close button was clicked — window is closing, show block screen now
+                    startActivity(blockIntent)
+                    return
+                }
+                AppTickAccessibilityService.FloatingCloseResult.NEEDS_DELAY -> {
+                    // BACK/HOME sent — need delay for actions to take effect
+                    serviceScope.launch {
+                        delay(FLOATING_CLOSE_DELAY_MS)
+                        startActivity(blockIntent)
+                    }
+                    return
+                }
+                AppTickAccessibilityService.FloatingCloseResult.NOT_FLOATING -> {
+                    // Not floating — fall through to launch immediately
+                }
+            }
         }
-        // Fallback: accessibility service not available, navigate home as best-effort
-        val homeIntent = Intent(Intent.ACTION_MAIN).apply {
-            addCategory(Intent.CATEGORY_HOME)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        lastBlockedForPackage = blockedPackage
+
+        // SINGLE_TOP flag means if the block screen is already on top, onNewIntent()
+        // is called instead of destroying/recreating it — no visual flash.
+        startActivity(blockIntent)
+    }
+
+    /**
+     * Dismisses the block screen (if showing) by broadcasting ACTION_DISMISS_BLOCK.
+     * Called only from onDestroy when the service is shutting down.
+     */
+    private fun dismissBlockScreen() {
+        if (lastBlockedForPackage != null) {
+            lastBlockedForPackage = null
+            sendBroadcast(
+                Intent(BlockWindowActivity.ACTION_DISMISS_BLOCK).setPackage(packageName)
+            )
         }
-        startActivity(homeIntent)
     }
 
     // ── Core limit checking ───────────────────────────────────────────────────
@@ -305,8 +346,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", false)
                 blockIntent.putExtra("next_reset_time", 0L)
                 blockIntent.putExtra("block_reason", "Used up time limit")
-                startActivity(blockIntent)
-                dismissFloatingWindow(foregroundApp)
+                launchBlockScreen(foregroundApp)
                 return true
             }
             SettingsProtectionAction.REQUEST_PASSWORD -> {
@@ -404,8 +444,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("blocked_for_outside_range", true)
                 blockIntent.putExtra("next_reset_time", group.nextResetTime)
                 blockIntent.putExtra("block_reason", "Outside configured time range")
-                startActivity(blockIntent)
-                dismissFloatingWindow(appInGroup.appPackage)
+                launchBlockScreen(appInGroup.appPackage)
                 didBlock = true
                 continue
             }
@@ -429,8 +468,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Used up time limit")
-                    startActivity(blockIntent)
-                    dismissFloatingWindow(appInGroup.appPackage)
+                    launchBlockScreen(appInGroup.appPackage)
                     didBlock = true
                     continue
                 }
@@ -477,8 +515,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("blocked_for_outside_range", false)
                     blockIntent.putExtra("next_reset_time", group.nextResetTime)
                     blockIntent.putExtra("block_reason", "Out of Time")
-                    startActivity(blockIntent)
-                    dismissFloatingWindow(appInGroup.appPackage)
+                    launchBlockScreen(appInGroup.appPackage)
                     didBlock = true
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage
@@ -696,6 +733,7 @@ class BackgroundChecker : Service() {
             @Suppress("UNUSED_PARAMETER") appTickPackage: String
         ): Boolean = currentApp == null
 
+        private const val FLOATING_CLOSE_DELAY_MS = 700L
         private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
         private const val SETTINGS_PROTECTION_BURST_CHECK_INTERVAL = 100L // rapid checks while Settings/uninstall flow stays open
         private const val SETTINGS_UNLOCK_PROMPT_MIN_INTERVAL_MS = 800L
@@ -811,6 +849,14 @@ class BackgroundChecker : Service() {
                     pendingIntent
                 )
             }
+        }
+
+        /** Channel to wake the polling loop when the accessibility service detects a new app. */
+        private val wakeUpChannel = Channel<Unit>(Channel.CONFLATED)
+
+        /** Signal the loop to check immediately (called by AccessibilityService on new app). */
+        fun requestImmediateCheck() {
+            wakeUpChannel.trySend(Unit)
         }
 
         /** Broadcast action for the "Show Bubble" notification button. */
@@ -932,14 +978,23 @@ class BackgroundChecker : Service() {
     // ── Foreground app detection ──────────────────────────────────────────────
 
     private fun getForegroundApp(): String? {
-        // Primary: AccessibilityService provides instant, event-driven detection
+        // ── Source 1: AccessibilityService (instant, event-driven) ──
         val accessibilityApp = AppTickAccessibilityService.getForegroundPackage()
-        if (accessibilityApp != null) return accessibilityApp
+        val accessibilityTimestamp = if (accessibilityApp != null) {
+            AppTickAccessibilityService.lastUpdateTimeMillis
+        } else {
+            0L
+        }
 
-        // Fallback: UsageStatsManager polling (when accessibility service is not enabled)
+        // ── Source 2: UsageStats events (OS ground truth) ──
+        // Always queried as a cross-check — on some OEM skins (Honor/EMUI)
+        // accessibility can report a stale/wrong package (missed events, launcher
+        // transitions, etc.). The UsageStats cross-check catches these cases.
+        // Speed comes from requestImmediateCheck() waking the loop, not from
+        // skipping this query.
         val time = System.currentTimeMillis()
         val events = usageStatsManager.queryEvents(time - FOREGROUND_EVENT_LOOKBACK_MS, time)
-        var foregroundApp: String? = null
+        var usageStatsApp: String? = null
         var latestForegroundEventTime = 0L
         val event = UsageEvents.Event()
         while (events.hasNextEvent()) {
@@ -950,14 +1005,25 @@ class BackgroundChecker : Service() {
             if (isForegroundEvent && !event.packageName.isNullOrBlank()) {
                 if (event.timeStamp >= latestForegroundEventTime) {
                     latestForegroundEventTime = event.timeStamp
-                    foregroundApp = event.packageName
+                    usageStatsApp = event.packageName
                 }
             }
         }
-        if (!foregroundApp.isNullOrBlank()) return foregroundApp
 
-        // Service can restart while user stays in one app; no new foreground event fires.
-        // Fall back to most recently used package so checks resume immediately.
+        // ── Pick whichever source has the most recent foreground transition ──
+        if (accessibilityApp != null && !usageStatsApp.isNullOrBlank()) {
+            return if (latestForegroundEventTime > accessibilityTimestamp) {
+                usageStatsApp
+            } else {
+                accessibilityApp
+            }
+        }
+
+        if (accessibilityApp != null) return accessibilityApp
+        if (!usageStatsApp.isNullOrBlank()) return usageStatsApp
+
+        // Neither source has recent events — fall back to most recently used package.
+        // This covers service restarts where user stays in one app with no new events.
         return usageStatsManager.queryUsageStats(
             UsageStatsManager.INTERVAL_DAILY,
             time - FOREGROUND_USAGE_LOOKBACK_MS,
@@ -984,6 +1050,7 @@ class BackgroundChecker : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        dismissBlockScreen()
         serviceJob.cancel()
         unregisterReceiver(mReceiver)
         try { unregisterReceiver(bubbleShowReceiver) } catch (_: Exception) {}
@@ -1009,6 +1076,8 @@ class BackgroundChecker : Service() {
                     isScreenOn = false
                     // Screen-off/lock periods must not be counted as app usage.
                     lastCheckElapsed = SystemClock.elapsedRealtime()
+                    // Reset so block screen re-triggers on next unlock if needed
+                    lastBlockedForPackage = null
                 }
             }
         }

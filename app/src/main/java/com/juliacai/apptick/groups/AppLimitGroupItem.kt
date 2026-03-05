@@ -256,7 +256,7 @@ fun AppLimitGroupItem(
 private fun formatConfiguredTimeLimit(group: AppLimitGroup): String {
     val totalMinutes = (group.timeHrLimit * 60 + group.timeMinLimit).coerceAtLeast(0)
     if (totalMinutes == 0) {
-        return "No limit"
+        return "Blocks"
     }
 
     val hours = totalMinutes / 60

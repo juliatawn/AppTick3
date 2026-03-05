@@ -36,8 +36,7 @@
         <activity
             android:name=".block.BlockWindowActivity"
             android:taskAffinity="com.juliacai.apptick.block"
-            android:excludeFromRecents="true"
-            android:noHistory="true" />
+            android:excludeFromRecents="true" />
         <activity android:name=".deviceApps.AppSearchActivity" />
         <activity android:name=".lockModes.EnterPasswordActivity" />
         <activity android:name=".lockModes.EnterSecurityKeyActivity" />

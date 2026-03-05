@@ -1,6 +1,9 @@
 package com.juliacai.apptick.block
 
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
@@ -19,7 +22,17 @@ import com.juliacai.apptick.backgroundProcesses.FloatingBubbleService
 
 class BlockWindowActivity : AppCompatActivity() {
 
+    companion object {
+        const val ACTION_DISMISS_BLOCK = "com.juliacai.apptick.DISMISS_BLOCK_SCREEN"
+    }
+
     private lateinit var prefs: SharedPreferences
+
+    private val dismissReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            finish()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -32,6 +45,12 @@ class BlockWindowActivity : AppCompatActivity() {
                 // Do nothing — block screen should not be dismissible via back
             }
         })
+
+        registerReceiver(
+            dismissReceiver,
+            IntentFilter(ACTION_DISMISS_BLOCK),
+            Context.RECEIVER_NOT_EXPORTED
+        )
 
         hideFloatingBubble()
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
@@ -100,6 +119,11 @@ class BlockWindowActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    override fun onDestroy() {
+        try { unregisterReceiver(dismissReceiver) } catch (_: Exception) {}
+        super.onDestroy()
     }
 
     private fun getAppIcon(packageName: String): Drawable? {

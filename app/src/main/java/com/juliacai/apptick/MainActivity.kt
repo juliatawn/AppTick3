@@ -167,6 +167,16 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         appVersionCode = readAppVersionCode()
+
+        // On app update, re-show accessibility onboarding if the service isn't enabled
+        val lastAccessibilityPromptVersion = prefs.getLong("accessibility_prompt_version", -1L)
+        if (lastAccessibilityPromptVersion != appVersionCode &&
+            !com.juliacai.apptick.backgroundProcesses.AppTickAccessibilityService
+                .isAccessibilityServiceEnabled(this)
+        ) {
+            prefs.edit { putBoolean("accessibility_onboarding_seen", false) }
+        }
+
         LegacyLockPrefsMigrator.migrate(prefs)
         maybeAutoUnlockExpiredLockdown()
         refreshLockUiState()
@@ -208,7 +218,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             val batteryStatus =
                 batteryOptimizationStatusState.value ?: BatteryOptimizationHelper.getStatus(applicationContext)
             val standardBatteryIssue = !batteryStatus.ignoringBatteryOptimizations || batteryStatus.backgroundRestricted
-            val oemOnlyBatteryRisk = !standardBatteryIssue && batteryStatus.hasAdditionalOemRestrictions
+
             var oemBatteryWarningDismissed by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(
                     prefs.getBoolean(PREF_BATTERY_OEM_WARNING_DISMISSED, false)
@@ -364,7 +374,10 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                     composable(STARTUP_ROUTE_PERMISSION_ONBOARDING) {
                         PermissionOnboardingScreen(
                             onAllGranted = {
-                                prefs.edit { putBoolean("accessibility_onboarding_seen", true) }
+                                prefs.edit {
+                                    putBoolean("accessibility_onboarding_seen", true)
+                                    putLong("accessibility_prompt_version", appVersionCode)
+                                }
                                 navController.navigate(STARTUP_ROUTE_MAIN) {
                                     popUpTo(STARTUP_ROUTE_PERMISSION_ONBOARDING) { inclusive = true }
                                 }
@@ -398,11 +411,13 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             showLockedIcon = isLockModesLocked,
                             showGroupDetailsHint = showGroupDetailsHint && orderedGroups.isNotEmpty(),
                             showBatteryWarning = standardBatteryIssue || (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed),
-                            batteryWarningDismissable = oemOnlyBatteryRisk,
+                            batteryWarningDismissable = !standardBatteryIssue && batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed,
                             batteryWarningText = buildString {
-                                append("AppTick may not block reliably until battery mode is set to Unrestricted.")
-                                if (batteryStatus.hasAdditionalOemRestrictions) {
-                                    append(" ")
+                                if (standardBatteryIssue) {
+                                    append("AppTick may not block reliably until battery mode is set to Unrestricted.")
+                                }
+                                if (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed) {
+                                    if (standardBatteryIssue) append(" ")
                                     append(batteryStatus.oemGuidance ?: "Enable AppTick auto-start in system manager.")
                                     append(" Some manufacturers aggressively kill apps in the background; if reliability issues continue, check dontkillmyapp.com suggestions.")
                                 }
@@ -410,11 +425,11 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             batteryWarningDetails = buildList {
                                 add("Ignore battery optimizations:" to if (batteryStatus.ignoringBatteryOptimizations) "On" else "Off")
                                 add("Background restricted:" to if (batteryStatus.backgroundRestricted) "Yes" else "No")
-                                if (batteryStatus.hasAdditionalOemRestrictions) {
+                                if (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed) {
                                     add("OEM startup controls:" to "Detected")
                                 }
                             },
-                            hasOemRestrictions = batteryStatus.hasAdditionalOemRestrictions,
+                            hasOemRestrictions = batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed,
                             onFabClick = {
                                 if (isLimitEditingLocked() && !canAddWhileLocked) {
                                     launchUnlockFlow()
@@ -745,7 +760,14 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             onUpgradeToPremium = { navController.safeNav("premium") },
                             onOpenPremiumModeInfo = { navController.safeNav("premiumModeInfo") },
                             onOpenAppLimitBackup = { navController.safeNav("appLimitBackup") },
-                            onOpenChangelog = { showChangelogDialog = true }
+                            onOpenChangelog = { showChangelogDialog = true },
+                            onOpenAccessibilityOnboarding = { navController.safeNav("accessibilityOnboarding") }
+                        )
+                    }
+
+                    composable("accessibilityOnboarding") {
+                        PermissionOnboardingScreen(
+                            onAllGranted = { navController.safePop() }
                         )
                     }
 

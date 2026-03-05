@@ -37,12 +37,17 @@ class AppTickAccessibilityService : AccessibilityService() {
                     // Refresh the visible-apps set so split-screen detection works
                     // even when TYPE_WINDOWS_CHANGED doesn't fire (or fires late).
                     refreshVisibleApps()
+                    // Wake the background loop immediately so blocking is instant
+                    // instead of waiting up to 2s for the next polling cycle.
+                    BackgroundChecker.requestImmediateCheck()
                 }
             }
             AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
                 refreshVisibleApps()
                 // Also check if focused app changed (split-screen pane switch)
                 updateFocusedApp()
+                // Wake the background loop on window changes too (split-screen focus)
+                BackgroundChecker.requestImmediateCheck()
             }
         }
     }
@@ -189,31 +194,163 @@ class AppTickAccessibilityService : AccessibilityService() {
      *
      * For other floating windows (freeform): sends BACK twice for robustness.
      *
-     * Returns true if actions were dispatched (app was floating).
-     * Returns false for fullscreen apps — no action is sent.
+     * Returns a [FloatingCloseResult] indicating what happened:
+     * - NOT_FLOATING: app wasn't floating, no action taken
+     * - CLOSED_INSTANTLY: close button clicked, block screen can show immediately
+     * - NEEDS_DELAY: BACK/HOME sent, block screen should wait for actions to take effect
      */
-    fun closeFloatingWindow(blockedPackage: String): Boolean {
+    fun closeFloatingWindow(blockedPackage: String): FloatingCloseResult {
         // Also re-check live window state in case the initial detection was stale
         val isFloatingNow = isCurrentAppFloating || checkIfWindowIsFloating(-1)
         if (!isFloatingNow) {
             Log.d(TAG, "App $blockedPackage is fullscreen, skipping close actions")
-            return false
+            return FloatingCloseResult.NOT_FLOATING
         }
 
-        // Try to dismiss PiP/floating windows via accessibility node actions first.
-        // This is more reliable than BACK for PiP windows which don't respond to BACK.
+        // Log all windows for debugging (helps identify OEM title bar windows)
+        logAllWindows()
+
+        // Strategy 1: Dismiss via accessibility node tree (ACTION_DISMISS + labeled close button)
+        // within the blocked app's own window.
         if (tryDismissFloatingWindowNode(blockedPackage)) {
             Log.i(TAG, "Dismissed floating window for $blockedPackage via node action")
+            return FloatingCloseResult.CLOSED_INSTANTLY
         }
 
-        // Also send BACK as fallback for freeform/floating windows that
-        // don't support node-level dismiss (e.g. Honor floating capsule).
-        Log.i(TAG, "App $blockedPackage is floating, sending BACK to close it")
+        // Strategy 2: Search ALL window types for close buttons near the floating window.
+        // OEMs like Honor draw the title bar (with X button) in a separate TYPE_SYSTEM
+        // window from com.android.systemui, not inside the app's own window.
+        if (tryClickCloseInAllWindows(blockedPackage)) {
+            Log.i(TAG, "Clicked close for $blockedPackage via cross-window search")
+            return FloatingCloseResult.CLOSED_INSTANTLY
+        }
+
+        // Strategy 3: Click unlabeled close button by position in the app's node tree.
+        if (tryClickCloseByPosition(blockedPackage)) {
+            Log.i(TAG, "Clicked close for $blockedPackage via position-based detection")
+            return FloatingCloseResult.CLOSED_INSTANTLY
+        }
+
+        // Strategy 4: BACK x2 — no HOME (HOME creates a thumbnail on Honor/EMUI
+        // instead of closing the floating window).
+        Log.d(TAG, "Strategy 4: sending BACK x2 for $blockedPackage")
         performGlobalAction(GLOBAL_ACTION_BACK)
         performGlobalAction(GLOBAL_ACTION_BACK)
-        // NOTE: Do NOT send HOME here — the block screen activity is launched
-        // immediately after this method returns, and HOME would dismiss it.
-        return true
+        return FloatingCloseResult.NEEDS_DELAY
+    }
+
+    enum class FloatingCloseResult {
+        NOT_FLOATING,      // App wasn't floating — no action taken
+        CLOSED_INSTANTLY,  // Close button clicked — block screen can show immediately
+        NEEDS_DELAY        // BACK/HOME sent — need delay before block screen
+    }
+
+    /**
+     * Logs all current accessibility windows for debugging OEM floating window layouts.
+     * Shows window type, package, bounds, and screen area percentage.
+     */
+    private fun logAllWindows() {
+        try {
+            val windowList = windows ?: return
+            val display = resources.displayMetrics
+            val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
+            Log.d(TAG, "=== All windows (${windowList.size}) ===")
+            for (window in windowList) {
+                val bounds = android.graphics.Rect()
+                window.getBoundsInScreen(bounds)
+                val area = bounds.width().toLong() * bounds.height().toLong()
+                val pct = if (screenArea > 0) area * 100 / screenArea else 0
+                val typeName = when (window.type) {
+                    AccessibilityWindowInfo.TYPE_APPLICATION -> "APP"
+                    AccessibilityWindowInfo.TYPE_SYSTEM -> "SYSTEM"
+                    AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "IME"
+                    AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "A11Y_OVERLAY"
+                    else -> "TYPE_${window.type}"
+                }
+                val pkg = try {
+                    window.getRoot()?.let { r -> r.packageName?.toString().also { r.recycle() } }
+                } catch (_: Exception) { null }
+                Log.d(TAG, "  $typeName — pkg=$pkg bounds=$bounds area=$pct%")
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error logging windows", e)
+        }
+    }
+
+    /**
+     * Searches ALL window types (system, app, overlay) for close buttons near the
+     * floating window. OEMs like Honor draw the floating window title bar in a
+     * separate TYPE_SYSTEM window from com.android.systemui.
+     *
+     * Only searches windows that:
+     * 1. Are not fullscreen (< 85% screen area) — skips status bar, nav bar, launcher
+     * 2. Horizontally overlap the floating window bounds
+     * 3. Are within ~60dp above the floating window (where the title bar would be)
+     */
+    private fun tryClickCloseInAllWindows(targetPackage: String): Boolean {
+        try {
+            val windowList = windows ?: return false
+            val display = resources.displayMetrics
+            val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
+            val density = display.density
+            val titleBarMargin = (60 * density).toInt() // 60dp above floating window
+
+            // First, find the floating app window to get its bounds
+            var floatingBounds: android.graphics.Rect? = null
+            for (window in windowList) {
+                if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                val bounds = android.graphics.Rect()
+                window.getBoundsInScreen(bounds)
+                val area = bounds.width().toLong() * bounds.height().toLong()
+                if (screenArea > 0 && area < screenArea * 85 / 100) {
+                    val root = try { window.getRoot() } catch (_: Exception) { null }
+                    val pkg = root?.packageName?.toString()
+                    root?.recycle()
+                    if (pkg == targetPackage) {
+                        floatingBounds = bounds
+                        break
+                    }
+                }
+            }
+
+            if (floatingBounds == null) {
+                Log.d(TAG, "tryClickCloseInAllWindows: no floating window found for $targetPackage")
+                return false
+            }
+
+            // Now search ALL windows for close buttons
+            for (window in windowList) {
+                val bounds = android.graphics.Rect()
+                window.getBoundsInScreen(bounds)
+                val area = bounds.width().toLong() * bounds.height().toLong()
+
+                // Skip fullscreen windows (launcher, status bar, nav bar)
+                if (screenArea > 0 && area >= screenArea * 85 / 100) continue
+
+                // Must horizontally overlap the floating window
+                if (bounds.right < floatingBounds.left || bounds.left > floatingBounds.right) continue
+
+                // Must be within title bar range (at or above the floating window top)
+                if (bounds.top > floatingBounds.top + titleBarMargin) continue
+
+                val root = try { window.getRoot() } catch (_: Exception) { null } ?: continue
+                val typeName = when (window.type) {
+                    AccessibilityWindowInfo.TYPE_APPLICATION -> "APP"
+                    AccessibilityWindowInfo.TYPE_SYSTEM -> "SYSTEM"
+                    else -> "TYPE_${window.type}"
+                }
+                Log.d(TAG, "Searching $typeName window at $bounds for close buttons")
+                val closed = findAndClickClose(root)
+                root.recycle()
+                if (closed) {
+                    Log.d(TAG, "Found close button in $typeName window at $bounds")
+                    return true
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error in tryClickCloseInAllWindows for $targetPackage", e)
+        }
+        return false
     }
 
     /**
@@ -274,21 +411,119 @@ class AppTickAccessibilityService : AccessibilityService() {
 
     /**
      * Recursively searches for a close/dismiss button in the node tree and clicks it.
-     * Looks for common close button patterns in PiP controls.
+     * Checks English, Chinese, Korean close terms, Unicode symbols, and view IDs
+     * so it works universally across Samsung, Honor/EMUI, and other OEM devices.
      */
     private fun findAndClickClose(node: AccessibilityNodeInfo): Boolean {
         val desc = node.contentDescription?.toString()?.lowercase() ?: ""
         val text = node.text?.toString()?.lowercase() ?: ""
-        val isCloseButton = (desc.contains("close") || desc.contains("dismiss") ||
-                text.contains("close") || text.contains("dismiss"))
+        val viewId = node.viewIdResourceName?.lowercase() ?: ""
+
+        val isCloseButton =
+            // English
+            desc.contains("close") || desc.contains("dismiss") ||
+            text.contains("close") || text.contains("dismiss") ||
+            // Chinese: 关闭 (close), 退出 (exit/quit)
+            desc.contains("关闭") || text.contains("关闭") ||
+            desc.contains("退出") || text.contains("退出") ||
+            // Korean: 닫기 (close)
+            desc.contains("닫기") || text.contains("닫기") ||
+            // Unicode close/X symbols (works regardless of locale)
+            CLOSE_SYMBOLS.any { sym -> desc.contains(sym) || text.contains(sym) } ||
+            // View ID patterns (e.g. "btn_close", "iv_dismiss")
+            viewId.contains("close") || viewId.contains("dismiss") || viewId.contains("exit")
 
         if (isCloseButton && node.isClickable) {
+            Log.d(TAG, "Clicking close button: desc='$desc' text='$text' viewId='$viewId'")
             return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
 
         for (i in 0 until node.childCount) {
             val child = node.getChild(i) ?: continue
             if (findAndClickClose(child)) {
+                child.recycle()
+                return true
+            }
+            child.recycle()
+        }
+        return false
+    }
+
+    /**
+     * Last-resort close strategy: find small clickable buttons near the top-right
+     * corner of the floating window. Many OEM floating windows (Honor/EMUI, Samsung
+     * DeX) have an unlabeled "X" icon (ImageView with no text/contentDescription).
+     */
+    private fun tryClickCloseByPosition(targetPackage: String): Boolean {
+        try {
+            val windowList = windows ?: return false
+            val display = resources.displayMetrics
+            val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
+
+            for (window in windowList) {
+                if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+
+                val windowBounds = android.graphics.Rect()
+                window.getBoundsInScreen(windowBounds)
+                val windowArea = windowBounds.width().toLong() * windowBounds.height().toLong()
+
+                if (screenArea <= 0 || windowArea >= screenArea * 85 / 100) continue
+
+                val root = try { window.getRoot() } catch (_: Exception) { null } ?: continue
+                val pkg = root.packageName?.toString()
+                if (pkg != targetPackage) {
+                    root.recycle()
+                    continue
+                }
+
+                val clicked = findClickableNearTopRight(root, windowBounds)
+                root.recycle()
+                if (clicked) return true
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error in position-based close for $targetPackage", e)
+        }
+        return false
+    }
+
+    /**
+     * Recursively searches for a small clickable button/image near the top-right
+     * corner of the given window bounds. Returns true if one was found and clicked.
+     */
+    private fun findClickableNearTopRight(
+        node: AccessibilityNodeInfo,
+        windowBounds: android.graphics.Rect
+    ): Boolean {
+        if (node.isClickable) {
+            val className = node.className?.toString() ?: ""
+            val isButtonLike = className.contains("Button") ||
+                className.contains("ImageView") || className.contains("Image")
+
+            if (isButtonLike) {
+                val nodeBounds = android.graphics.Rect()
+                node.getBoundsInScreen(nodeBounds)
+                val windowW = windowBounds.width()
+                val windowH = windowBounds.height()
+
+                // Small relative to the window (< 25% each dimension)
+                val isSmall = nodeBounds.width() > 0 && nodeBounds.height() > 0 &&
+                    nodeBounds.width() < windowW / 4 && nodeBounds.height() < windowH / 4
+
+                // Near top-right corner (within right 20% and top ~16%)
+                val isNearTopRight = nodeBounds.right >= windowBounds.right - windowW / 5 &&
+                    nodeBounds.top <= windowBounds.top + windowH / 6
+
+                if (isSmall && isNearTopRight) {
+                    Log.d(TAG, "Position-based close click at $nodeBounds " +
+                            "(window=$windowBounds, class=$className)")
+                    return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+                }
+            }
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            if (findClickableNearTopRight(child, windowBounds)) {
                 child.recycle()
                 return true
             }
@@ -321,16 +556,19 @@ class AppTickAccessibilityService : AccessibilityService() {
         /** Max age before accessibility data is considered stale. */
         private const val MAX_STALENESS_MS = 10_000L
 
+        /** Unicode symbols commonly used as close/dismiss buttons across locales. */
+        private val CLOSE_SYMBOLS = setOf("✕", "×", "✖", "╳", "✗", "❌")
+
         /** Live reference to the service instance for calling instance methods. */
         @Volatile
         private var instance: AppTickAccessibilityService? = null
 
         /**
          * Attempts to close any floating window for the given package.
-         * Returns true if a BACK action was dispatched.
+         * Returns [FloatingCloseResult] indicating what happened.
          */
-        fun tryCloseFloatingWindow(blockedPackage: String): Boolean {
-            val svc = instance ?: return false
+        fun tryCloseFloatingWindow(blockedPackage: String): FloatingCloseResult {
+            val svc = instance ?: return FloatingCloseResult.NOT_FLOATING
             return svc.closeFloatingWindow(blockedPackage)
         }
 
