@@ -297,15 +297,17 @@ Lightweight AccessibilityService for instant foreground app detection and floati
 - `isAccessibilityServiceEnabled(ctx)` → checks system Settings
 
 **Floating window detection:**
-- `checkIfWindowIsFloating(windowId)` → returns true if ANY visible app window covers < 85% of screen area
-- Handles Honor freeform, PiP, Samsung split-screen
+- `checkIfWindowIsFloating(windowId)` → returns true only when a small window (< 85% of screen area) exists AND a fullscreen window (>= 85%) is behind it
+- Distinguishes floating/PiP (small window over fullscreen app) from split-screen (multiple medium windows, no fullscreen behind)
+- Handles Honor freeform, PiP; correctly skips close strategies for split-screen
 
 **Floating window close strategies (CLAUDE.md #3):**
 
 ```
 closeFloatingWindow(blockedPackage) → FloatingCloseResult
-  1. Live re-check: isCurrentAppFloating || checkIfWindowIsFloating(-1)
-     → If NOT floating: return NOT_FLOATING (no action)
+  1. Live re-check: checkIfWindowIsFloating(-1)
+     (uses only the live window check — not the cached isCurrentAppFloating flag)
+     → If NOT floating (fullscreen or split-screen): return NOT_FLOATING (no action)
 
   2. Strategy 1: tryClickCloseInAllWindows(pkg)
      → Searches non-fullscreen windows overlapping floating window bounds

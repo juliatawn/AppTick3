@@ -129,17 +129,24 @@ class AppTickAccessibilityService : AccessibilityService() {
     }
 
     /**
-     * Checks if ANY visible application window is significantly smaller than
-     * the screen, indicating a floating/freeform/PiP window.
+     * Checks if any visible application window is a true floating/freeform/PiP window.
      *
-     * Uses an 85% area threshold to avoid false positives from fullscreen apps
-     * whose window bounds exclude system bars (status bar, navigation bar).
+     * A window is considered floating only when it is small (< 85% of screen area) AND
+     * there is at least one fullscreen app window (>= 85%) behind it. This distinguishes:
+     * - **Floating/PiP**: small window over a fullscreen app → returns true (close strategies apply)
+     * - **Split-screen**: multiple medium windows, no fullscreen behind → returns false
+     *   (block screen activity just covers the blocked pane; no close action needed)
      */
     private fun checkIfWindowIsFloating(@Suppress("UNUSED_PARAMETER") windowId: Int): Boolean {
         try {
             val windowList = windows ?: return false
             val display = resources.displayMetrics
             val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
+            if (screenArea <= 0) return false
+
+            var hasSmallWindow = false
+            var hasFullscreenWindow = false
+
             for (window in windowList) {
                 if (window.type == AccessibilityWindowInfo.TYPE_APPLICATION) {
                     val bounds = android.graphics.Rect()
@@ -147,13 +154,25 @@ class AppTickAccessibilityService : AccessibilityService() {
                     val windowArea = bounds.width().toLong() * bounds.height().toLong()
                     // A fullscreen app with system bars excluded still covers ~90%+ of the screen.
                     // Only flag windows covering less than 85% as floating (PiP, freeform, etc.).
-                    if (screenArea > 0 && windowArea < screenArea * 85 / 100) {
-                        Log.d(TAG, "Floating window detected (${bounds.width()}x${bounds.height()} " +
+                    if (windowArea < screenArea * 85 / 100) {
+                        hasSmallWindow = true
+                        Log.d(TAG, "Small window detected (${bounds.width()}x${bounds.height()} " +
                                 "area=$windowArea vs screen ${display.widthPixels}x${display.heightPixels} " +
                                 "area=$screenArea, ratio=${windowArea * 100 / screenArea}%)")
-                        return true
+                    } else {
+                        hasFullscreenWindow = true
                     }
                 }
+            }
+
+            // True floating/PiP: small window over a fullscreen window.
+            // Split-screen: multiple small windows with no fullscreen behind → not floating.
+            if (hasSmallWindow && hasFullscreenWindow) {
+                Log.d(TAG, "Floating window confirmed (small window over fullscreen)")
+                return true
+            }
+            if (hasSmallWindow) {
+                Log.d(TAG, "Small windows detected but no fullscreen behind — likely split-screen, not floating")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error checking window floating state", e)
@@ -199,8 +218,10 @@ class AppTickAccessibilityService : AccessibilityService() {
      * Returns [FloatingCloseResult.NOT_FLOATING] for fullscreen apps (no action taken).
      */
     fun closeFloatingWindow(blockedPackage: String): FloatingCloseResult {
-        // Live re-check — don't trust the cached flag alone
-        val isFloatingNow = isCurrentAppFloating || checkIfWindowIsFloating(-1)
+        // Always use the live window check — the cached isCurrentAppFloating flag
+        // can be stale (e.g., floating window already closed, or split-screen transitioned
+        // to fullscreen) and would cause BACK x2 to fire on fullscreen apps.
+        val isFloatingNow = checkIfWindowIsFloating(-1)
         if (!isFloatingNow) {
             Log.d(TAG, "closeFloatingWindow: $blockedPackage is FULLSCREEN, skipping")
             return FloatingCloseResult.NOT_FLOATING
