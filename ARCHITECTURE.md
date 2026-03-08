@@ -555,6 +555,15 @@ LazyColumn with long-press drag-and-drop reordering:
 - `getTimeRemaining()` → converts hours+minutes to milliseconds
 - `getNextResetTime()` → periodic (now + resetMinutes) or daily (next midnight)
 - `nextMidnight(nowMillis)` → 00:00:00 tomorrow in device timezone
+- `computeNextUnblockTime(group, nowMillis, blockedForOutsideRange)` → computes when the app will next be unblocked:
+  - **Blocked outside time range:** returns next time range start (on an active day)
+  - **Zero limit with time range (no blockOutside):** returns current time range end
+  - **Zero limit, no time range or blockOutside:** returns 0L ("Not scheduled")
+  - **Limit reached with time range (no blockOutside):** returns `min(nextResetTime, rangeEnd)`
+  - **Limit reached, no time range:** returns `nextResetTime`
+- `nextTimeRangeEntry(ranges, nowMillis, weekDays)` → finds soonest future range start on an active day
+- `currentTimeRangeEnd(ranges, nowMillis)` → finds when the currently active time range ends (handles overnight)
+- `nextOccurrenceOfTime(hour, minute, nowMillis, weekDays)` → next occurrence of a specific time on an active day
 
 ### Day-of-week convention
 
@@ -620,7 +629,7 @@ BackgroundChecker.applyDesiredServiceState()
 - Shows app icon, name, group name
 - Block reason text
 - Usage statistics
-- Next reset time
+- "Available At" time — shows when the app will next be unblocked (computed by `TimeManager.computeNextUnblockTime()`)
 
 ### MainScreen.kt
 
@@ -767,6 +776,7 @@ Located in `app/src/test/java/com/juliacai/apptick/`
 | `LockPolicyTest.kt` | 11 | All lock modes, auto-relock, one-time/recurring lockdown, day consumption |
 | `MainViewModelTest.kt` | 5 | Group loading, pause/delete, premium status |
 | `TimeManagerTest.kt` | 7 | Time remaining calc, midnight boundaries, periodic vs daily reset |
+| `NextUnblockTimeTest.kt` | 19 | Next unblock time: outside range, zero limit, limit reached, overnight ranges, active days, helper methods |
 | `AppLimitEvaluatorTest.kt` | 9 | Day filtering, time ranges (incl. overnight), pause, outside-range blocking |
 | `AppTickAccessibilityServiceTest.kt` | 21 | Staleness boundary (9s ok, 10.001s stale), service lifecycle, floating detection, split-screen |
 | `BackgroundCheckerBubbleCountdownTest.kt` | 4 | Bubble format (MM:SS under 1min, HH:MM over), hide logic |
@@ -787,6 +797,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 |------|-------|------------------|
 | `AccessibilityBlockingIntegrationTest.kt` | 13 | **End-to-end blocking flow**: time decrement with/without accessibility, per-app tracking, floating window handling, PiP, re-launch on each cycle |
 | `BackgroundCheckerTest.kt` | 14 | **Service time tracking**: decrement, blocking, reset (daily/periodic/cumulative), per-app usage, zero limits, outside time range, cross-expiry in single tick |
+| `NextUnblockTimeIntegrationTest.kt` | 3 | **Next unblock time intent extra**: outside range shows range start, zero limit shows range end, limit reached shows reset time |
 | `MainActivityTest.kt` | 4 | MainScreen rendering, empty state, callbacks, lock icon |
 | `MainActivityDuplicateGroupIntegrationTest.kt` | 2 | Duplication flow: free→premium dialog, premium→new group |
 | `MainActivityEditGroupSelectionIntegrationTest.kt` | 1 | Edit group: pre-selection in app picker |

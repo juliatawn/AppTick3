@@ -419,7 +419,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("use_time_range", group.useTimeRange)
                 blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                 blockIntent.putExtra("blocked_for_outside_range", true)
-                blockIntent.putExtra("next_reset_time", group.nextResetTime)
+                blockIntent.putExtra("next_reset_time", TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = true))
                 blockIntent.putExtra("block_reason", "Outside configured time range")
                 launchBlockScreen(appInGroup.appPackage)
                 didBlock = true
@@ -443,7 +443,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
-                    blockIntent.putExtra("next_reset_time", group.nextResetTime)
+                    blockIntent.putExtra("next_reset_time", TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false))
                     blockIntent.putExtra("block_reason", "Used up time limit")
                     launchBlockScreen(appInGroup.appPackage)
                     didBlock = true
@@ -490,7 +490,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
-                    blockIntent.putExtra("next_reset_time", group.nextResetTime)
+                    blockIntent.putExtra("next_reset_time", TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false))
                     blockIntent.putExtra("block_reason", "Out of Time")
                     launchBlockScreen(appInGroup.appPackage)
                     didBlock = true
