@@ -569,6 +569,21 @@ class AppTickAccessibilityService : AccessibilityService() {
         instance = this
         isRunning = true
         Log.i(TAG, "AccessibilityService connected")
+
+        // Immediately scan windows so BackgroundChecker has accurate data
+        // from the very first loop iteration instead of waiting for the next
+        // TYPE_WINDOW_STATE_CHANGED event (which could be seconds away if
+        // the user is already sitting in an app).
+        try {
+            refreshVisibleApps()
+            updateFocusedApp()
+        } catch (e: Exception) {
+            Log.w(TAG, "Initial window scan failed (expected if windows not yet available)", e)
+        }
+
+        // Wake the background loop so it picks up the fresh accessibility
+        // data immediately instead of waiting up to 2s for the next poll.
+        BackgroundChecker.requestImmediateCheck()
     }
 
     override fun onDestroy() {
@@ -576,10 +591,17 @@ class AppTickAccessibilityService : AccessibilityService() {
         instance = null
         isRunning = false
         currentForegroundPackage = null
+        lastUpdateTimeMillis = 0L
         isCurrentAppFloating = false
         visibleAppPackages = emptySet()
         windowPackageMap.clear()
         Log.i(TAG, "AccessibilityService destroyed")
+
+        // Wake the background loop so it immediately falls back to
+        // UsageStats-only detection instead of waiting up to 2s with no
+        // accessibility data. This also triggers a bubble refresh so the
+        // Floating Time Left bubble stays accurate during the transition.
+        BackgroundChecker.requestImmediateCheck()
     }
 
     companion object {

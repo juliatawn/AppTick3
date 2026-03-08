@@ -270,9 +270,20 @@ Draws draggable semi-transparent bubbles showing time remaining.
 
 ### `AppTickAccessibilityService.kt`
 
-**File:** `backgroundProcesses/AppTickAccessibilityService.kt` (~727 lines)
+**File:** `backgroundProcesses/AppTickAccessibilityService.kt` (~740 lines)
 
 Lightweight AccessibilityService for instant foreground app detection and floating window management.
+
+**Service lifecycle:**
+
+| Lifecycle Event | Actions Taken |
+|-----------------|---------------|
+| `onServiceConnected()` | Sets `instance`/`isRunning`, performs initial window scan (`refreshVisibleApps` + `updateFocusedApp`) to immediately populate foreground/visible state, wakes BackgroundChecker via `requestImmediateCheck()` |
+| `onDestroy()` | Clears all companion state (package, timestamp, floating flag, visible set, window map), resets `lastUpdateTimeMillis` to 0 so `getForegroundPackage()` returns null instantly, wakes BackgroundChecker so it falls back to UsageStats within one loop cycle |
+
+**Why the initial window scan matters:** Without it, there's a gap between toggle-on and the first `TYPE_WINDOW_STATE_CHANGED` event (which only fires on the *next* app switch). If the user is already sitting in a blocked app, accessibility would contribute nothing until they switch away and back. The scan ensures BackgroundChecker has accurate data from the very first iteration.
+
+**Why waking on destroy matters:** Without it, BackgroundChecker could run for up to 2 seconds with `isRunning=false` and stale `lastForegroundApp`, causing the Floating Time Left bubble to show outdated data. The wakeup forces an immediate UsageStats-based refresh.
 
 **Event handling:**
 - `TYPE_WINDOW_STATE_CHANGED` → updates `currentForegroundPackage`, `lastUpdateTimeMillis`, `isCurrentAppFloating`, refreshes visible apps, wakes BackgroundChecker
