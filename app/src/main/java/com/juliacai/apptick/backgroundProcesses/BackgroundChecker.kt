@@ -429,7 +429,10 @@ class BackgroundChecker : Service() {
             if (!AppLimitEvaluator.shouldCheckLimit(group, now)) continue
 
             val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
-            if (appInGroup != null) {
+            // Defense-in-depth: skip timer decrement when screen is off.
+            // The main loop already gates on shouldTrackUsageNow(), but this
+            // prevents accidental charging if checkAppLimits is ever called directly.
+            if (appInGroup != null && isScreenOn) {
                 if (limitInMinutes <= 0) {
                     val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }
                     blockIntent.putExtra("app_name", appInGroup.appName)
@@ -1111,6 +1114,11 @@ class BackgroundChecker : Service() {
     fun setFixedElapsedForTesting(elapsedMs: Long?) {
         fixedElapsedForTestingMs = elapsedMs?.coerceAtLeast(0L)
         lastCheckElapsed = SystemClock.elapsedRealtime()
+    }
+
+    @VisibleForTesting
+    fun setScreenOnForTesting(on: Boolean) {
+        isScreenOn = on
     }
 
     // ── Settings/uninstall protection ─────────────────────────────────────────

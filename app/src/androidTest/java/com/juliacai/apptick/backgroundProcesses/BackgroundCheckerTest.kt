@@ -455,6 +455,132 @@ class BackgroundCheckerTest {
         )
     }
 
+    // ── Screen-off tests ──────────────────────────────────────────────────
+
+    @Test
+    @Throws(Exception::class)
+    fun testScreenOffDoesNotDecrementTimerWithoutAccessibility() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Screen Off Test",
+            timeHrLimit = 1,
+            timeRemaining = 3_600_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+        service.setScreenOnForTesting(false)
+
+        repeat(5) { service.checkAppLimits("com.instagram.android") }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(
+            "Timer must not decrement when screen is off (no accessibility)",
+            3_600_000L, updated.timeRemaining
+        )
+
+        service.setScreenOnForTesting(true)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testScreenOffDoesNotDecrementTimerWithAccessibility() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Screen Off Accessibility Test",
+            timeHrLimit = 1,
+            timeRemaining = 3_600_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        // Simulate accessibility detecting the app
+        AppTickAccessibilityService.simulateForTesting("com.instagram.android", running = true)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+        service.setScreenOnForTesting(false)
+
+        repeat(5) { service.checkAppLimits("com.instagram.android") }
+
+        val updated = dao.getGroup(1)!!
+        assertEquals(
+            "Timer must not decrement when screen is off (with accessibility)",
+            3_600_000L, updated.timeRemaining
+        )
+
+        service.setScreenOnForTesting(true)
+        AppTickAccessibilityService.resetForTesting()
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testScreenOffDoesNotAccumulatePerAppUsage() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Screen Off Usage Test",
+            timeHrLimit = 0,
+            timeMinLimit = 10,
+            limitEach = true,
+            timeRemaining = 600_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android")),
+            perAppUsage = listOf(
+                com.juliacai.apptick.groups.AppUsageStat("com.instagram.android", 0L)
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+        service.setScreenOnForTesting(false)
+
+        repeat(5) { service.checkAppLimits("com.instagram.android") }
+
+        val updated = dao.getGroup(1)!!
+        val usage = updated.perAppUsage.firstOrNull { it.appPackage == "com.instagram.android" }
+        assertEquals(
+            "perAppUsage must not accumulate when screen is off",
+            0L, usage?.usedMillis ?: -1L
+        )
+
+        service.setScreenOnForTesting(true)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testTimerResumesWhenScreenTurnsBackOn() = runTest {
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Screen Resume Test",
+            timeHrLimit = 1,
+            timeRemaining = 3_600_000L,
+            apps = listOf(AppInGroup("Instagram", "com.instagram.android", "com.instagram.android"))
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val service = bindService()
+        service.setFixedElapsedForTesting(1_000L)
+
+        // Screen off: no decrement
+        service.setScreenOnForTesting(false)
+        repeat(5) { service.checkAppLimits("com.instagram.android") }
+
+        val afterOff = dao.getGroup(1)!!
+        assertEquals(3_600_000L, afterOff.timeRemaining)
+
+        // Screen on: decrement resumes
+        service.setScreenOnForTesting(true)
+        repeat(3) { service.checkAppLimits("com.instagram.android") }
+
+        val afterOn = dao.getGroup(1)!!
+        assertEquals(
+            "Timer should decrement by 3s after screen turns back on",
+            3_597_000L, afterOn.timeRemaining
+        )
+    }
+
     // ── Daily / Periodic reset integration tests ─────────────────────────
 
     @Test
