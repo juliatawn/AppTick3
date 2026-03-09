@@ -93,6 +93,7 @@ class BackgroundChecker : Service() {
     var navigateHomeCallCount = 0
         private set
     private var lastBlockedForPackage: String? = null
+    private var lastNotificationText: String? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): BackgroundChecker = this@BackgroundChecker
@@ -582,6 +583,9 @@ class BackgroundChecker : Service() {
         } else {
             "AppTick is running..."
         }
+        // Skip the expensive NotificationManager.notify() call when content hasn't changed.
+        if (contentText == lastNotificationText) return
+        lastNotificationText = contentText
         mBuilder.setContentText(contentText)
         mBuilder.setStyle(NotificationCompat.BigTextStyle().bigText(contentText))
         mNotificationManager.notify(notifId, mBuilder.build())
@@ -634,8 +638,10 @@ class BackgroundChecker : Service() {
 
         val resolvedForegroundApp = foregroundApp ?: return
 
-        // Read fresh data from DB to avoid stale cachedGroups lag
-        val freshGroups = appLimitGroupDao.getAllAppLimitGroupsImmediate()
+        // Use cached groups for bubble display — the bubble is cosmetic and the
+        // independent 1-second countdown in FloatingBubbleService handles precision.
+        // This avoids an expensive suspend DB query every loop iteration.
+        val freshGroups = cachedGroups
 
         // Collect ALL visible apps that should show a bubble
         val appsToShow = mutableMapOf<String, Pair<Long, String>>() // package -> (timeRemaining, text)
@@ -711,7 +717,8 @@ class BackgroundChecker : Service() {
         ): Boolean = currentApp == null
 
         private const val FLOATING_CLOSE_DELAY_MS = 700L
-        private const val CHECK_INTERVAL = 2000L // 2 seconds — balanced battery/responsiveness
+        private const val CHECK_INTERVAL = 2000L // 2 seconds — used when a tracked app is in foreground
+        private const val IDLE_CHECK_INTERVAL = 4000L // 4 seconds — used when foreground app is NOT in any group
         private const val SETTINGS_PROTECTION_BURST_CHECK_INTERVAL = 100L // rapid checks while Settings/uninstall flow stays open
         private const val SETTINGS_UNLOCK_PROMPT_MIN_INTERVAL_MS = 800L
         private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
@@ -790,7 +797,7 @@ class BackgroundChecker : Service() {
 
         fun startServiceIfNotRunning(context: Context) {
             if (isRunning) {
-                scheduleServiceWatchdog(context)
+                // Service is already running — skip redundant AlarmManager reschedule.
                 return
             }
 
@@ -1238,14 +1245,19 @@ class BackgroundChecker : Service() {
     }
 
     private fun currentCheckIntervalMs(foregroundApp: String?): Long {
-        val packageName = foregroundApp ?: return CHECK_INTERVAL
+        val packageName = foregroundApp ?: return IDLE_CHECK_INTERVAL
         val isSettingsProtectionContext =
             packageName == "com.android.settings" || isUninstallFlowPackage(packageName)
-        if (!isSettingsProtectionContext) {
-            settingsSessionUnlockedMode = null
-            return CHECK_INTERVAL
+        if (isSettingsProtectionContext) {
+            return SETTINGS_PROTECTION_BURST_CHECK_INTERVAL
         }
-        return SETTINGS_PROTECTION_BURST_CHECK_INTERVAL
+        settingsSessionUnlockedMode = null
+        // Use faster polling when the foreground app is in a tracked group,
+        // slower polling otherwise to conserve battery.
+        val isTracked = cachedGroups.any { entity ->
+            !entity.paused && entity.apps.any { it.appPackage == packageName }
+        }
+        return if (isTracked) CHECK_INTERVAL else IDLE_CHECK_INTERVAL
     }
 
     private fun maybeLaunchSettingsUnlockActivity(mode: LockMode) {

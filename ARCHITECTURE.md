@@ -185,7 +185,8 @@ This is the most critical flow in the app. Changes here require extreme care.
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `CHECK_INTERVAL` | 2000ms | Normal polling interval |
+| `CHECK_INTERVAL` | 2000ms | Active polling — foreground app is in a tracked group |
+| `IDLE_CHECK_INTERVAL` | 4000ms | Idle polling — foreground app is NOT in any group (battery saver) |
 | `MAX_ELAPSED` | 10,000ms | Cap on elapsed delta per tick |
 | `MAX_STALENESS_MS` | 10,000ms | Accessibility data expiry (in `AppTickAccessibilityService`) |
 | `FOREGROUND_EVENT_LOOKBACK_MS` | 15,000ms | UsageEvents query window |
@@ -263,6 +264,42 @@ Draws draggable semi-transparent bubbles showing time remaining.
 - `hideIntent(ctx)`
 - `showIntent(ctx, text, timeMillis, appPackage)`
 - `removeAppIntent(ctx, appPackage)`
+
+---
+
+## 4b. Power & Battery Optimization
+
+AppTick balances fast blocking responsiveness with battery conservation through several strategies:
+
+### Adaptive Polling Interval
+
+The unified loop dynamically adjusts its polling interval based on context:
+
+| Context | Interval | Rationale |
+|---------|----------|-----------|
+| Tracked app in foreground | 2000ms | Fast enforcement — user is actively using a limited app |
+| Untracked app in foreground | 4000ms | No limits to enforce — halves CPU wakeups for the common case |
+| Settings/uninstall flow open | 100ms | Rapid detection for uninstall protection |
+| Screen off or device locked | 2000ms (idle) | Loop runs but `shouldTrackUsageNow()` returns false — no app detection, no DB writes, just baseline reset |
+
+The `requestImmediateCheck()` wakeup from AccessibilityService overrides the interval entirely, ensuring instant blocking regardless of which interval is active.
+
+### Notification Deduplication
+
+`updateNotification()` caches the last notification text and skips the `NotificationManager.notify()` call when content hasn't changed. Building and posting a notification involves IPC to the system server, so avoiding redundant posts reduces CPU and binder overhead — particularly when the user stays on the same untracked app for extended periods.
+
+### Bubble Display Uses Cached Groups
+
+The floating bubble countdown display uses the in-memory `cachedGroups` (populated by Room Flow) instead of issuing a fresh suspend DB query every loop iteration. Since the bubble has its own independent 1-second countdown timer in `FloatingBubbleService`, the slight lag in cached data is imperceptible.
+
+### Watchdog Scheduling
+
+The AlarmManager watchdog (45-second interval) is only scheduled when the service starts or restarts. When `startServiceIfNotRunning()` is called while the service is already running, the redundant AlarmManager reschedule is skipped to avoid unnecessary system calls.
+
+### Screen & Lock Awareness
+
+- `shouldTrackUsageNow()` returns `false` when the screen is off (`!powerManager.isInteractive`) or the device is locked (`keyguardManager.isDeviceLocked`). The loop still runs at its normal interval but performs no work beyond resetting the elapsed baseline.
+- `ScreenStateReceiver` updates `lastCheckElapsed` on both screen-on and screen-off transitions to prevent charging sleep/lock time as app usage.
 
 ---
 
