@@ -398,6 +398,8 @@ Room entity with `@SerializedName` annotations using single-char alternates (a-v
 | `insertAppLimitGroup(entity)` | suspend | REPLACE on conflict |
 | `updateAppLimitGroup(entity)` | suspend | Standard update |
 | `updateTimeRemaining(id, ms)` | suspend | Single-column update |
+| `updateTimeAndUsage(id, ms, usage)` | suspend | Timer + perAppUsage only (no overwrite of paused/config) |
+| `updateResetState(id, ms, usage, reset, add)` | suspend | Reset columns only (no overwrite of paused/config) |
 | `updateGroupExpanded(id, bool)` | suspend | Single-column update |
 | `deleteAppLimitGroup(entity)` | suspend | Standard delete |
 | `deleteAllAppLimitGroups()` | suspend | Truncate |
@@ -786,7 +788,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | File | Tests | What it verifies |
 |------|-------|------------------|
 | `AccessibilityBlockingIntegrationTest.kt` | 13 | **End-to-end blocking flow**: time decrement with/without accessibility, per-app tracking, floating window handling, PiP, re-launch on each cycle |
-| `BackgroundCheckerTest.kt` | 14 | **Service time tracking**: decrement, blocking, reset (daily/periodic/cumulative), per-app usage, zero limits, outside time range, cross-expiry in single tick |
+| `BackgroundCheckerTest.kt` | 17 | **Service time tracking**: decrement, blocking, paused group timer/usage/race-condition, reset (daily/periodic/cumulative), per-app usage, zero limits, outside time range, cross-expiry in single tick |
 | `MainActivityTest.kt` | 4 | MainScreen rendering, empty state, callbacks, lock icon |
 | `MainActivityDuplicateGroupIntegrationTest.kt` | 2 | Duplication flow: free→premium dialog, premium→new group |
 | `MainActivityEditGroupSelectionIntegrationTest.kt` | 1 | Edit group: pre-selection in app picker |
@@ -813,6 +815,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | #3: closeFloatingWindow strategy order | AppTickAccessibilityServiceTest |
 | MAX_STALENESS_MS = 10s boundary | AppTickAccessibilityServiceTest (tests 5-6: 9s✓, 10.001s✗) |
 | Paused groups skip checking | AccessibilityBlockingIntegrationTest (test 6), AppLimitEvaluatorTest (test 8) |
+| Paused groups don't decrement timer | BackgroundCheckerTest (paused timer/usage/race tests) |
 | Block screen re-launches each cycle | AccessibilityBlockingIntegrationTest (tests 10-11) |
 | Time tracking accuracy | BackgroundCheckerTest (tests 1-5, 11-13) |
 | Reset logic (daily/periodic/cumulative) | BackgroundCheckerTest (tests 11-13) |

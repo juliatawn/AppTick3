@@ -388,13 +388,12 @@ class BackgroundChecker : Service() {
                     fullLimitMillis
                 }
 
-                appLimitGroupDao.updateAppLimitGroup(
-                    entity.copy(
-                        timeRemaining = newTimeRemaining,
-                        nextResetTime = newNextReset,
-                        nextAddTime = if (isPeriodicCumulative) newNextReset else 0L,
-                        perAppUsage = clearedUsage
-                    )
+                appLimitGroupDao.updateResetState(
+                    groupId = entity.id,
+                    timeRemaining = newTimeRemaining,
+                    perAppUsage = clearedUsage,
+                    nextResetTime = newNextReset,
+                    nextAddTime = if (isPeriodicCumulative) newNextReset else 0L
                 )
                 // Skip further processing this tick — fresh data will be seen next loop
                 continue
@@ -471,11 +470,10 @@ class BackgroundChecker : Service() {
                 if (isReached) {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
-                    appLimitGroupDao.updateAppLimitGroup(
-                        entity.copy(
-                            timeRemaining = newTimeRemaining,
-                            perAppUsage = updatedUsage
-                        )
+                    appLimitGroupDao.updateTimeAndUsage(
+                        groupId = entity.id,
+                        timeRemaining = newTimeRemaining,
+                        perAppUsage = updatedUsage
                     )
 
                     val appTimeSpent = newAppUsage
@@ -497,11 +495,10 @@ class BackgroundChecker : Service() {
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
-                    appLimitGroupDao.updateAppLimitGroup(
-                        entity.copy(
-                            timeRemaining = newTimeRemaining,
-                            perAppUsage = updatedUsage
-                        )
+                    appLimitGroupDao.updateTimeAndUsage(
+                        groupId = entity.id,
+                        timeRemaining = newTimeRemaining,
+                        perAppUsage = updatedUsage
                     )
                 }
             }
