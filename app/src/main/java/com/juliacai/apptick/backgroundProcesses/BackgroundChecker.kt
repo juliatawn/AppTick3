@@ -264,6 +264,22 @@ class BackgroundChecker : Service() {
         if (blockedPackage != null && AppTickAccessibilityService.isRunning) {
             AppTickAccessibilityService.tryCloseFloatingWindow(blockedPackage)
         }
+
+        // Split-screen bypass: if the block screen is already showing but its
+        // window is less than fullscreen (split-screen), dismiss it so
+        // split-screen collapses. The blocked app goes fullscreen, and the
+        // next loop iteration (triggered via requestImmediateCheck from the
+        // accessibility event) relaunches the block screen fullscreen on top.
+        if (BlockWindowActivity.isActive &&
+            AppTickAccessibilityService.isRunning &&
+            AppTickAccessibilityService.isBlockScreenInSplitScreen()) {
+            sendBroadcast(Intent(BlockWindowActivity.ACTION_DISMISS_BLOCK).apply {
+                setPackage(packageName)
+            })
+            lastBlockedForPackage = blockedPackage
+            return
+        }
+
         lastBlockedForPackage = blockedPackage
 
         startActivity(blockIntent)

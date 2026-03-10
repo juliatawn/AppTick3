@@ -93,6 +93,30 @@ These methods exist in the codebase but must **NOT** be called from `closeFloati
 
 These are dead code from previous iterations. If they are removed, that is fine.
 
+### 5. BlockWindowActivity Must NOT Use TYPE_APPLICATION_OVERLAY
+
+**File:** `BlockWindowActivity.kt`
+
+The block screen must **never** use `TYPE_APPLICATION_OVERLAY` (system overlay windows) to cover
+split-screen panes. Split-screen bypass is handled by BACK x2 via the accessibility service —
+the same approach used for floating window close (strategy 3).
+
+**DO NOT** add overlay code like:
+```kotlin
+// BAD — overlays must not be used for the block screen
+val params = WindowManager.LayoutParams(
+    ..., WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, ...
+)
+windowManager.addView(overlayView, params)
+```
+
+The correct pattern for split-screen bypass:
+```kotlin
+// GOOD — BACK x2 closes the blocked app from split-screen
+// Block screen's OnBackPressedCallback absorbs BACKs safely
+AppTickAccessibilityService.requestExitMultiWindow()
+```
+
 ---
 
 ## Key Architecture Details

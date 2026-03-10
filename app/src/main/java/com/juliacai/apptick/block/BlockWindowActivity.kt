@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
+import android.content.res.Configuration
 import android.graphics.drawable.Drawable
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
@@ -18,12 +19,23 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.core.graphics.drawable.toBitmap
 import com.juliacai.apptick.AppTheme
+import com.juliacai.apptick.backgroundProcesses.AppTickAccessibilityService
 import com.juliacai.apptick.backgroundProcesses.FloatingBubbleService
 
 class BlockWindowActivity : AppCompatActivity() {
 
     companion object {
         const val ACTION_DISMISS_BLOCK = "com.juliacai.apptick.DISMISS_BLOCK_SCREEN"
+
+        /** True while any BlockWindowActivity instance is alive. */
+        @Volatile
+        var isActive = false
+            private set
+
+        /** True while the block screen is in multi-window (split-screen) mode. */
+        @Volatile
+        var isInMultiWindow = false
+            private set
     }
 
     private lateinit var prefs: SharedPreferences
@@ -38,8 +50,11 @@ class BlockWindowActivity : AppCompatActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        isActive = true
+
         // Block back press so the user can't dismiss the block screen
-        // and so async BACK actions from floating window dismissal don't close it.
+        // and so async BACK actions from split-screen / floating window
+        // dismissal don't close it.
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 // Do nothing — block screen should not be dismissible via back
@@ -62,6 +77,21 @@ class BlockWindowActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         hideFloatingBubble()
         updateContent(intent)
+    }
+
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        isInMultiWindow = isInMultiWindowMode
+        if (isInMultiWindowMode) {
+            // The user placed the block screen in split-screen alongside the
+            // blocked app. Finish this instance so split-screen collapses and
+            // the blocked app goes fullscreen. The accessibility service fires
+            // a foreground-change event, which wakes BackgroundChecker via
+            // requestImmediateCheck(). BackgroundChecker detects the blocked
+            // app and relaunches the block screen fullscreen on top — the new
+            // instance lands on top of the blocked app, not beside it.
+            finish()
+        }
     }
 
     private fun hideFloatingBubble() {
@@ -122,6 +152,8 @@ class BlockWindowActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        isActive = false
+        isInMultiWindow = false
         try { unregisterReceiver(dismissReceiver) } catch (_: Exception) {}
         super.onDestroy()
     }

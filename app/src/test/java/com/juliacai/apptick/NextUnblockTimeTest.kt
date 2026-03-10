@@ -246,9 +246,11 @@ class NextUnblockTimeTest {
     }
 
     @Test
-    fun `limit reached with blockOutsideTimeRange true ignores range end`() {
-        // blockOutsideTimeRange=true means leaving the range doesn't help.
-        // Time range 6am-6pm, limit used up at 5:30pm, reset at midnight.
+    fun `limit reached with blockOutsideTimeRange true - reset outside range shows next range start`() {
+        // blockOutsideTimeRange=true means user needs BOTH reset AND to be in range.
+        // Time range 6am-6pm, limit used up at 5:30pm, daily reset at midnight.
+        // Midnight is outside 6am-6pm, so user can't use at midnight.
+        // Show 6am tomorrow (reset already occurred, range starts).
         val now = calendarAt(17, 30).timeInMillis
         val nextReset = TimeManager.nextMidnight(now)
         val group = AppLimitGroup(
@@ -262,7 +264,108 @@ class NextUnblockTimeTest {
             timeRanges = listOf(TimeRange(startHour = 6, startMinute = 0, endHour = 18, endMinute = 0))
         )
         val result = TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false)
+
+        // Midnight reset is outside 6am-6pm. Next range start after midnight = 6am tomorrow.
+        val expected = calendarAt(6, 0, dayOffset = 1).timeInMillis
+        assertThat(result).isEqualTo(expected)
+    }
+
+    // ── Limit reached + blockOutsideTimeRange: reset must be within range ──
+
+    @Test
+    fun `limit reached blockOutside - reset outside range shows next range start`() {
+        // Time range 6am-6pm, blockOutsideTimeRange=true.
+        // Limit used up, next reset at 11pm (outside range).
+        // User can't use at 11pm (outside range), so show 6am tomorrow.
+        val now = calendarAt(16, 0).timeInMillis
+        val nextReset = calendarAt(23, 0).timeInMillis  // 11pm today
+        val group = AppLimitGroup(
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            resetMinutes = 150,  // 2hr 30min
+            timeRemaining = 0,
+            nextResetTime = nextReset,
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            timeRanges = listOf(TimeRange(startHour = 6, startMinute = 0, endHour = 18, endMinute = 0))
+        )
+        val result = TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false)
+
+        // Next range start after 11pm = 6am tomorrow
+        val expected = calendarAt(6, 0, dayOffset = 1).timeInMillis
+        assertThat(result).isEqualTo(expected)
+    }
+
+    @Test
+    fun `limit reached blockOutside - reset inside range shows reset time`() {
+        // Time range 6am-6pm, blockOutsideTimeRange=true.
+        // Limit used up at 10am, next reset at 12:30pm (inside range).
+        // User can use at 12:30pm, so show 12:30pm.
+        val now = calendarAt(10, 0).timeInMillis
+        val nextReset = now + 150 * 60 * 1000L  // 12:30pm
+        val group = AppLimitGroup(
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            resetMinutes = 150,
+            timeRemaining = 0,
+            nextResetTime = nextReset,
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            timeRanges = listOf(TimeRange(startHour = 6, startMinute = 0, endHour = 18, endMinute = 0))
+        )
+        val result = TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false)
         assertThat(result).isEqualTo(nextReset)
+    }
+
+    @Test
+    fun `limit reached blockOutside - reset at 8pm outside 6am-6pm shows 6am next day`() {
+        // Exact user scenario: 6am-6pm range, reset every 2hr30min.
+        // Reset falls at 8pm — outside range, so show 6am next day.
+        val now = calendarAt(17, 30).timeInMillis
+        val nextReset = calendarAt(20, 0).timeInMillis  // 8pm
+        val group = AppLimitGroup(
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            resetMinutes = 150,
+            timeRemaining = 0,
+            nextResetTime = nextReset,
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            timeRanges = listOf(TimeRange(startHour = 6, startMinute = 0, endHour = 18, endMinute = 0))
+        )
+        val result = TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false)
+
+        val expected = calendarAt(6, 0, dayOffset = 1).timeInMillis
+        assertThat(result).isEqualTo(expected)
+    }
+
+    @Test
+    fun `limit reached blockOutside - respects active days for next range`() {
+        // Reset at 11pm, next range 6am. But if tomorrow isn't active, skip to next active day.
+        val today = todayIso()
+        // Make day-after-tomorrow the only active day
+        val activeDayAfterTomorrow = ((today + 2 - 1) % 7) + 1
+
+        val now = calendarAt(16, 0).timeInMillis
+        val nextReset = calendarAt(23, 0).timeInMillis  // 11pm
+        val group = AppLimitGroup(
+            timeHrLimit = 0,
+            timeMinLimit = 1,
+            resetMinutes = 150,
+            timeRemaining = 0,
+            nextResetTime = nextReset,
+            useTimeRange = true,
+            blockOutsideTimeRange = true,
+            weekDays = listOf(activeDayAfterTomorrow),
+            timeRanges = listOf(TimeRange(startHour = 6, startMinute = 0, endHour = 18, endMinute = 0))
+        )
+        val result = TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false)
+
+        // Should be 6am on the active day (day after tomorrow)
+        val resultCal = Calendar.getInstance().apply { timeInMillis = result }
+        val resultDay = ((resultCal.get(Calendar.DAY_OF_WEEK) + 5) % 7) + 1
+        assertThat(resultDay).isEqualTo(activeDayAfterTomorrow)
+        assertThat(resultCal.get(Calendar.HOUR_OF_DAY)).isEqualTo(6)
     }
 
     // ── Helper method tests ─────────────────────────────────────────────────

@@ -85,6 +85,22 @@ class TimeManager(private val group: AppLimitGroup) {
                 return if (rangeEnd in 1 until group.nextResetTime) rangeEnd else group.nextResetTime
             }
 
+            if (hasTimeRange && group.blockOutsideTimeRange) {
+                // User needs BOTH: limit reset AND to be within the time range.
+                val nextReset = group.nextResetTime
+                if (nextReset <= 0L) return 0L
+
+                // If the reset happens while inside a time range, user is unblocked at reset.
+                if (currentTimeRangeEnd(ranges, nextReset) > 0L) {
+                    return nextReset
+                }
+
+                // Reset occurs outside the range. The reset will have already fired by
+                // the time the next range starts, so the user is unblocked at range start.
+                val nextEntry = nextTimeRangeEntry(ranges, nextReset, group.weekDays)
+                return if (nextEntry > 0L) nextEntry else 0L
+            }
+
             return group.nextResetTime
         }
 

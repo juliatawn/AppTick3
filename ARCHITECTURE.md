@@ -343,6 +343,7 @@ Lightweight AccessibilityService for instant foreground app detection and floati
 - `getForegroundPackage()` → returns package if running + fresh, else null
 - `getVisiblePackages()` → returns visible set if running + fresh, else empty
 - `tryCloseFloatingWindow(pkg)` → delegates to instance.closeFloatingWindow()
+- `requestExitMultiWindow()` → performs GLOBAL_ACTION_BACK x2 to close the blocked app from split-screen (similar to floating window close strategy 3)
 - `isAccessibilityServiceEnabled(ctx)` → checks system Settings
 
 **Floating window detection (`checkIfWindowIsFloating`):**
@@ -613,6 +614,7 @@ LazyColumn with long-press drag-and-drop reordering:
   - **Zero limit with time range (no blockOutside):** returns current time range end
   - **Zero limit, no time range or blockOutside:** returns 0L ("Not scheduled")
   - **Limit reached with time range (no blockOutside):** returns `min(nextResetTime, rangeEnd)`
+  - **Limit reached with time range + blockOutside:** user needs BOTH reset AND to be in range. If `nextResetTime` falls within a time range, returns `nextResetTime`. Otherwise returns the next range start after the reset (reset will have already fired by then).
   - **Limit reached, no time range:** returns `nextResetTime`
 - `nextTimeRangeEntry(ranges, nowMillis, weekDays)` → finds soonest future range start on an active day
 - `currentTimeRangeEnd(ranges, nowMillis)` → finds when the currently active time range ends (handles overnight)
@@ -686,6 +688,11 @@ BackgroundChecker.applyDesiredServiceState()
 - Back press blocked (OnBackPressedCallback)
 - Dismissible only via `ACTION_DISMISS_BLOCK` broadcast
 - Receives data via Intent extras: app_name, app_package, group_name, block_reason, times, etc.
+- **Split-screen bypass prevention (dismiss + relaunch):**
+  1. **Manifest:** `android:resizeableActivity="false"` prevents split-screen on regular phones (API 27+). Ignored on large-screen foldables (API 31+, sw >= 600dp).
+  2. **Activity callback:** `onMultiWindowModeChanged(true)` calls `finish()` to collapse split-screen. Works on devices where the callback fires.
+  3. **BackgroundChecker fallback (primary on Samsung foldables):** `launchBlockScreen()` calls `AppTickAccessibilityService.isBlockScreenInSplitScreen()` which checks whether AppTick's own window covers less than 85% of the screen (same threshold as floating window detection). If so, it dismisses the block screen via `ACTION_DISMISS_BLOCK` broadcast and returns early. Split-screen collapses, the blocked app goes fullscreen, the accessibility service fires a foreground event waking BackgroundChecker, and the next iteration relaunches the block screen fullscreen on top. This works even when `onMultiWindowModeChanged` is suppressed (Samsung foldables with `resizeableActivity="false"`).
+  - **DO NOT use TYPE_APPLICATION_OVERLAY for the block screen.** Overlays must not be used to cover split-screen panes.
 
 **`BlockWindowScreen.kt`:**
 - Shows app icon, name, group name

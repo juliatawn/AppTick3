@@ -39,6 +39,7 @@ import androidx.core.content.edit
 import kotlinx.coroutines.launch
 
 private const val PREF_LAST_SEEN_FEATURE_PHOTOS_VERSION = "last_seen_feature_photos_version"
+private const val PREF_HAS_SEEN_FEATURE_PHOTOS = "has_seen_feature_photos"
 const val STARTUP_ROUTE_FEATURE_PHOTOS = "featurePhotos"
 const val STARTUP_ROUTE_PERMISSION_ONBOARDING = "permissionOnboarding"
 const val STARTUP_ROUTE_MAIN = "main"
@@ -80,12 +81,19 @@ fun shouldShowFeaturePhotosOnLaunch(
     photoResIds: List<Int>
 ): Boolean {
     if (photoResIds.isEmpty()) return false
+    // Show only for users who have never seen the carousel.
+    // Check both the new boolean flag and the legacy version-based flag
+    // so existing users who already saw it won't see it again.
+    val hasSeenPhotos = prefs.getBoolean(PREF_HAS_SEEN_FEATURE_PHOTOS, false)
     val lastSeenVersion = prefs.getLong(PREF_LAST_SEEN_FEATURE_PHOTOS_VERSION, -1L)
-    return lastSeenVersion != versionCode
+    return !hasSeenPhotos && lastSeenVersion == -1L
 }
 
 fun markFeaturePhotosSeen(prefs: SharedPreferences, versionCode: Long) {
-    prefs.edit { putLong(PREF_LAST_SEEN_FEATURE_PHOTOS_VERSION, versionCode) }
+    prefs.edit {
+        putBoolean(PREF_HAS_SEEN_FEATURE_PHOTOS, true)
+        putLong(PREF_LAST_SEEN_FEATURE_PHOTOS_VERSION, versionCode)
+    }
 }
 
 @Composable

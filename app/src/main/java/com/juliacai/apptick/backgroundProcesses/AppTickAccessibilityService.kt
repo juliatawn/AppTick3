@@ -656,6 +656,61 @@ class AppTickAccessibilityService : AccessibilityService() {
             return svc.closeFloatingWindow(blockedPackage)
         }
 
+        /**
+         * Exits multi-window (split-screen) mode by performing BACK x2.
+         *
+         * Similar to the floating window close strategy (strategy 3): BACK
+         * navigates the blocked app backward. When the blocked app reaches its
+         * root activity, the next BACK closes it from split-screen and the
+         * block screen fills the display.
+         *
+         * Safe for the block screen: its [OnBackPressedCallback] absorbs any
+         * BACK that lands on it with no side effects.
+         */
+        fun requestExitMultiWindow() {
+            val svc = instance ?: return
+            Log.d(TAG, "Exiting multi-window: performing BACK x2 (split-screen bypass prevention)")
+            svc.performGlobalAction(GLOBAL_ACTION_BACK)
+            svc.performGlobalAction(GLOBAL_ACTION_BACK)
+        }
+
+        /**
+         * Checks whether the block screen (AppTick's own window) is currently
+         * in split-screen — i.e., its window covers less than 85% of the
+         * display area. Uses the same 85% threshold as [checkIfWindowIsFloating].
+         *
+         * This works even when [BlockWindowActivity.onMultiWindowModeChanged]
+         * doesn't fire (Samsung foldables with `resizeableActivity="false"`
+         * may suppress the callback while still allowing split-screen).
+         */
+        fun isBlockScreenInSplitScreen(): Boolean {
+            val svc = instance ?: return false
+            val windowList = svc.windows ?: return false
+            val display = svc.resources.displayMetrics
+            val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
+            if (screenArea <= 0) return false
+
+            for (window in windowList) {
+                if (window.type != AccessibilityWindowInfo.TYPE_APPLICATION) continue
+                val root = window.root ?: continue
+                val pkg = root.packageName?.toString()
+                root.recycle()
+                if (pkg == svc.packageName) {
+                    val bounds = android.graphics.Rect()
+                    window.getBoundsInScreen(bounds)
+                    val windowArea = bounds.width().toLong() * bounds.height().toLong()
+                    val isSmall = windowArea < screenArea * 85 / 100
+                    if (isSmall) {
+                        Log.d(TAG, "Block screen is in split-screen " +
+                                "(${bounds.width()}x${bounds.height()} = " +
+                                "${windowArea * 100 / screenArea}% of screen)")
+                    }
+                    return isSmall
+                }
+            }
+            return false
+        }
+
         /** Keyboard packages that are passive overlays and should not replace the foreground app. */
         private val KNOWN_SYSTEM_PACKAGES = setOf(
             "com.google.android.inputmethod.latin",  // Gboard
