@@ -388,13 +388,12 @@ class BackgroundChecker : Service() {
                     fullLimitMillis
                 }
 
-                appLimitGroupDao.updateAppLimitGroup(
-                    entity.copy(
-                        timeRemaining = newTimeRemaining,
-                        nextResetTime = newNextReset,
-                        nextAddTime = if (isPeriodicCumulative) newNextReset else 0L,
-                        perAppUsage = clearedUsage
-                    )
+                appLimitGroupDao.updateResetState(
+                    groupId = entity.id,
+                    timeRemaining = newTimeRemaining,
+                    perAppUsage = clearedUsage,
+                    nextResetTime = newNextReset,
+                    nextAddTime = if (isPeriodicCumulative) newNextReset else 0L
                 )
                 // Skip further processing this tick — fresh data will be seen next loop
                 continue
@@ -430,7 +429,10 @@ class BackgroundChecker : Service() {
             if (!AppLimitEvaluator.shouldCheckLimit(group, now)) continue
 
             val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
-            if (appInGroup != null) {
+            // Defense-in-depth: skip timer decrement when screen is off.
+            // The main loop already gates on shouldTrackUsageNow(), but this
+            // prevents accidental charging if checkAppLimits is ever called directly.
+            if (appInGroup != null && isScreenOn) {
                 if (limitInMinutes <= 0) {
                     val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }
                     blockIntent.putExtra("app_name", appInGroup.appName)
@@ -471,11 +473,10 @@ class BackgroundChecker : Service() {
                 if (isReached) {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
-                    appLimitGroupDao.updateAppLimitGroup(
-                        entity.copy(
-                            timeRemaining = newTimeRemaining,
-                            perAppUsage = updatedUsage
-                        )
+                    appLimitGroupDao.updateTimeAndUsage(
+                        groupId = entity.id,
+                        timeRemaining = newTimeRemaining,
+                        perAppUsage = updatedUsage
                     )
 
                     val appTimeSpent = newAppUsage
@@ -497,11 +498,10 @@ class BackgroundChecker : Service() {
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
-                    appLimitGroupDao.updateAppLimitGroup(
-                        entity.copy(
-                            timeRemaining = newTimeRemaining,
-                            perAppUsage = updatedUsage
-                        )
+                    appLimitGroupDao.updateTimeAndUsage(
+                        groupId = entity.id,
+                        timeRemaining = newTimeRemaining,
+                        perAppUsage = updatedUsage
                     )
                 }
             }
@@ -1114,6 +1114,11 @@ class BackgroundChecker : Service() {
     fun setFixedElapsedForTesting(elapsedMs: Long?) {
         fixedElapsedForTestingMs = elapsedMs?.coerceAtLeast(0L)
         lastCheckElapsed = SystemClock.elapsedRealtime()
+    }
+
+    @VisibleForTesting
+    fun setScreenOnForTesting(on: Boolean) {
+        isScreenOn = on
     }
 
     // ── Settings/uninstall protection ─────────────────────────────────────────

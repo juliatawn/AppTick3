@@ -2,6 +2,7 @@ package com.juliacai.apptick.data
 
 import androidx.lifecycle.LiveData
 import androidx.room.*
+import com.juliacai.apptick.groups.AppUsageStat
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -42,6 +43,12 @@ interface AppLimitGroupDao {
 
     @Query("UPDATE app_limit_groups SET timeRemaining = :timeRemaining WHERE id = :groupId")
     suspend fun updateTimeRemaining(groupId: Long, timeRemaining: Long)
+
+    @Query("UPDATE app_limit_groups SET timeRemaining = :timeRemaining, perAppUsage = :perAppUsage WHERE id = :groupId")
+    suspend fun updateTimeAndUsage(groupId: Long, timeRemaining: Long, perAppUsage: List<AppUsageStat>)
+
+    @Query("UPDATE app_limit_groups SET timeRemaining = :timeRemaining, perAppUsage = :perAppUsage, nextResetTime = :nextResetTime, nextAddTime = :nextAddTime WHERE id = :groupId")
+    suspend fun updateResetState(groupId: Long, timeRemaining: Long, perAppUsage: List<AppUsageStat>, nextResetTime: Long, nextAddTime: Long)
 
     @Query("UPDATE app_limit_groups SET isExpanded = :isExpanded WHERE id = :groupId")
     suspend fun updateGroupExpanded(groupId: Long, isExpanded: Boolean)
