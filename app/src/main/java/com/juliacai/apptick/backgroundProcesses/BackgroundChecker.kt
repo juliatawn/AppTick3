@@ -688,8 +688,8 @@ class BackgroundChecker : Service() {
         ): Boolean = currentApp == null
 
         private const val FLOATING_CLOSE_DELAY_MS = 700L
-        private const val CHECK_INTERVAL = 2000L // 2 seconds — used when a tracked app is in foreground
-        private const val IDLE_CHECK_INTERVAL = 4000L // 4 seconds — used when foreground app is NOT in any group
+        private const val CHECK_INTERVAL = 2000L // 2 seconds
+        private const val IDLE_CHECK_INTERVAL = 2000L // 2 seconds — same as CHECK_INTERVAL to ensure responsive blocking when accessibility is off
         private const val MAX_ELAPSED = 10_000L // Cap to prevent huge jumps after long delays
         private const val FOREGROUND_EVENT_LOOKBACK_MS = 15_000L
         private const val FOREGROUND_USAGE_LOOKBACK_MS = 2 * 60_000L
@@ -1090,6 +1090,10 @@ class BackgroundChecker : Service() {
     fun setFixedElapsedForTesting(elapsedMs: Long?) {
         fixedElapsedForTestingMs = elapsedMs?.coerceAtLeast(0L)
         lastCheckElapsed = SystemClock.elapsedRealtime()
+        // Default to screen-on in test mode so tests don't fail when the
+        // physical device screen is off.  Explicit screen-off tests call
+        // setScreenOnForTesting(false) after this method.
+        if (elapsedMs != null) isScreenOn = true
     }
 
     @VisibleForTesting

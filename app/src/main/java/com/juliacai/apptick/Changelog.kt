@@ -21,8 +21,9 @@ private const val CHANGELOG_TITLE = "CHANGELOG\n2026.4.10v44"
 
 private const val CHANGELOG_BODY = """
 2026.4.10v44
-More reliable app limits with Accessibility Service optional toggle, improves notification shade, split screen, and floating window app limiting.
-Fixed bugs
+
+- More reliable app limits with Accessibility Service optional toggle (Enhanced App Detection), improves notification shade, split screen, and floating window app limiting.
+- Fixed bugs
 
 ---
 

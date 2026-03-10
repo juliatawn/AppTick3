@@ -183,8 +183,8 @@ This is the most critical flow in the app. Changes here require extreme care.
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `CHECK_INTERVAL` | 2000ms | Active polling — foreground app is in a tracked group |
-| `IDLE_CHECK_INTERVAL` | 4000ms | Idle polling — foreground app is NOT in any group (battery saver) |
+| `CHECK_INTERVAL` | 2000ms | Polling interval for all foreground apps |
+| `IDLE_CHECK_INTERVAL` | 2000ms | Same as CHECK_INTERVAL — uniform 2s polling ensures responsive blocking even without accessibility |
 | `MAX_ELAPSED` | 10,000ms | Cap on elapsed delta per tick |
 | `MAX_STALENESS_MS` | 10,000ms | Accessibility data expiry (in `AppTickAccessibilityService`) |
 | `FOREGROUND_EVENT_LOOKBACK_MS` | 15,000ms | UsageEvents query window |
@@ -279,11 +279,10 @@ The unified loop dynamically adjusts its polling interval based on context:
 
 | Context | Interval | Rationale |
 |---------|----------|-----------|
-| Tracked app in foreground | 2000ms | Fast enforcement — user is actively using a limited app |
-| Untracked app in foreground | 4000ms | No limits to enforce — halves CPU wakeups for the common case |
+| Any app in foreground | 2000ms | Uniform 2s polling — ensures responsive blocking even when accessibility ("Enhanced App Detection") is off |
 | Screen off or device locked | 2000ms (idle) | Loop runs but `shouldTrackUsageNow()` returns false — no app detection, no DB writes, just baseline reset |
 
-The `requestImmediateCheck()` wakeup from AccessibilityService overrides the interval entirely, ensuring instant blocking regardless of which interval is active.
+When accessibility is enabled, `requestImmediateCheck()` wakeup overrides the interval entirely for instant blocking. When accessibility is off (UsageStats-only mode), the uniform 2s interval ensures worst-case detection is 2 seconds, not 4.
 
 ### Notification Deduplication
 
