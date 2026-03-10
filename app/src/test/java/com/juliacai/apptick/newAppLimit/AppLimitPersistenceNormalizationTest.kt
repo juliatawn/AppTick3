@@ -188,4 +188,180 @@ class AppLimitPersistenceNormalizationTest {
 
         assertTrue(normalized.nextResetTime > System.currentTimeMillis())
     }
+
+    // ── Limit-edit time balance sync tests ────────────────────────────────
+
+    @Test
+    fun editLimit_increasingLimit_resetsTimeRemainingToNewLimit() {
+        // User had 1 min left on a 2-min limit, edits to 30 min → time left = 30 min
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 2,
+            timeRemaining = 60_000L,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 60_000L))
+        )
+        val edited = previous.copy(
+            timeHrLimit = 0,
+            timeMinLimit = 30
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertEquals(1_800_000L, normalized.timeRemaining) // 30 min in millis
+    }
+
+    @Test
+    fun editLimit_decreasingLimit_resetsTimeRemainingToNewLimit() {
+        // User had 50 min left on a 1-hr limit, edits down to 10 min → time left = 10 min
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            timeRemaining = 3_000_000L,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 600_000L))
+        )
+        val edited = previous.copy(
+            timeHrLimit = 0,
+            timeMinLimit = 10
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertEquals(600_000L, normalized.timeRemaining) // 10 min in millis
+    }
+
+    @Test
+    fun editLimit_clearsPerAppUsageOnLimitChange() {
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            limitEach = true,
+            timeRemaining = 60_000L,
+            perAppUsage = listOf(
+                AppUsageStat("com.app1", 120_000L),
+                AppUsageStat("com.app2", 60_000L)
+            ),
+            apps = listOf(
+                AppInGroup("App1", "com.app1", "com.app1"),
+                AppInGroup("App2", "com.app2", "com.app2")
+            )
+        )
+        val edited = previous.copy(
+            timeHrLimit = 0,
+            timeMinLimit = 30
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertTrue(normalized.perAppUsage.isEmpty())
+    }
+
+    @Test
+    fun editLimit_periodicReset_recalculatesNextResetTimeFromNow() {
+        val futureReset = System.currentTimeMillis() + 7_200_000L // 2 hours from now
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 10,
+            resetMinutes = 120,
+            timeRemaining = 60_000L,
+            nextResetTime = futureReset
+        )
+        val edited = previous.copy(
+            timeHrLimit = 0,
+            timeMinLimit = 30
+        )
+
+        val before = System.currentTimeMillis()
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+        val after = System.currentTimeMillis()
+
+        // nextResetTime should be recalculated from now, NOT the old future value
+        val twoHoursMs = 120 * 60 * 1000L
+        assertTrue(normalized.nextResetTime >= before + twoHoursMs - 100)
+        assertTrue(normalized.nextResetTime <= after + twoHoursMs + 100)
+    }
+
+    @Test
+    fun editLimit_dailyReset_preservesFutureNextResetTime() {
+        val futureReset = System.currentTimeMillis() + 3_600_000L // 1 hour from now
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 10,
+            resetMinutes = 0, // daily mode
+            timeRemaining = 60_000L,
+            nextResetTime = futureReset
+        )
+        val edited = previous.copy(
+            timeHrLimit = 0,
+            timeMinLimit = 30
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        // Daily reset: nextResetTime stays as-is if still in the future
+        assertEquals(futureReset, normalized.nextResetTime)
+    }
+
+    @Test
+    fun editLimit_sameLimit_preservesTimeRemaining() {
+        // Editing other fields (e.g., name) without changing the limit should NOT reset balance
+        val previous = AppLimitGroup(
+            id = 42L,
+            name = "Old Name",
+            timeHrLimit = 0,
+            timeMinLimit = 10,
+            timeRemaining = 300_000L,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 300_000L))
+        )
+        val edited = previous.copy(
+            name = "New Name"
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertEquals(300_000L, normalized.timeRemaining)
+        assertEquals(1, normalized.perAppUsage.size)
+    }
+
+    @Test
+    fun editLimit_noPreviousGroup_behavesAsBeforeForNewGroup() {
+        // When no previousGroup is supplied (new group), no limit-change detection
+        val group = AppLimitGroup(
+            id = 0L,
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            timeRemaining = 0L,
+            perAppUsage = emptyList()
+        )
+
+        val normalized = normalizeGroupForPersistence(group, previousGroup = null)
+
+        assertEquals(300_000L, normalized.timeRemaining) // 5 min = full limit for new group
+    }
+
+    @Test
+    fun editLimit_limitEach_resetsTimeRemainingToNewLimitOnChange() {
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            limitEach = true,
+            timeRemaining = 120_000L,
+            apps = listOf(AppInGroup("App1", "com.app1", "com.app1")),
+            perAppUsage = listOf(AppUsageStat("com.app1", 180_000L))
+        )
+        val edited = previous.copy(
+            timeHrLimit = 0,
+            timeMinLimit = 20
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertEquals(1_200_000L, normalized.timeRemaining) // 20 min in millis
+        assertTrue(normalized.perAppUsage.isEmpty())
+    }
 }

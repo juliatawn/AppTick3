@@ -344,13 +344,12 @@ class BackgroundChecker : Service() {
                     fullLimitMillis
                 }
 
-                appLimitGroupDao.updateAppLimitGroup(
-                    entity.copy(
-                        timeRemaining = newTimeRemaining,
-                        nextResetTime = newNextReset,
-                        nextAddTime = if (isPeriodicCumulative) newNextReset else 0L,
-                        perAppUsage = clearedUsage
-                    )
+                appLimitGroupDao.updateResetState(
+                    groupId = entity.id,
+                    timeRemaining = newTimeRemaining,
+                    perAppUsage = clearedUsage,
+                    nextResetTime = newNextReset,
+                    nextAddTime = if (isPeriodicCumulative) newNextReset else 0L
                 )
                 // Skip further processing this tick — fresh data will be seen next loop
                 continue
@@ -375,7 +374,7 @@ class BackgroundChecker : Service() {
                 blockIntent.putExtra("use_time_range", group.useTimeRange)
                 blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                 blockIntent.putExtra("blocked_for_outside_range", true)
-                blockIntent.putExtra("next_reset_time", group.nextResetTime)
+                blockIntent.putExtra("next_reset_time", TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = true))
                 blockIntent.putExtra("block_reason", "Outside configured time range")
                 launchBlockScreen(appInGroup.appPackage)
                 didBlock = true
@@ -386,7 +385,10 @@ class BackgroundChecker : Service() {
             if (!AppLimitEvaluator.shouldCheckLimit(group, now)) continue
 
             val limitInMinutes = group.timeHrLimit * 60 + group.timeMinLimit
-            if (appInGroup != null) {
+            // Defense-in-depth: skip timer decrement when screen is off.
+            // The main loop already gates on shouldTrackUsageNow(), but this
+            // prevents accidental charging if checkAppLimits is ever called directly.
+            if (appInGroup != null && isScreenOn) {
                 if (limitInMinutes <= 0) {
                     val usageMap = group.perAppUsage.associate { it.appPackage to it.usedMillis }
                     blockIntent.putExtra("app_name", appInGroup.appName)
@@ -399,7 +401,7 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
-                    blockIntent.putExtra("next_reset_time", group.nextResetTime)
+                    blockIntent.putExtra("next_reset_time", TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false))
                     blockIntent.putExtra("block_reason", "Used up time limit")
                     launchBlockScreen(appInGroup.appPackage)
                     didBlock = true
@@ -427,11 +429,10 @@ class BackgroundChecker : Service() {
                 if (isReached) {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
-                    appLimitGroupDao.updateAppLimitGroup(
-                        entity.copy(
-                            timeRemaining = newTimeRemaining,
-                            perAppUsage = updatedUsage
-                        )
+                    appLimitGroupDao.updateTimeAndUsage(
+                        groupId = entity.id,
+                        timeRemaining = newTimeRemaining,
+                        perAppUsage = updatedUsage
                     )
 
                     val appTimeSpent = newAppUsage
@@ -446,18 +447,17 @@ class BackgroundChecker : Service() {
                     blockIntent.putExtra("use_time_range", group.useTimeRange)
                     blockIntent.putExtra("block_outside_time_range", group.blockOutsideTimeRange)
                     blockIntent.putExtra("blocked_for_outside_range", false)
-                    blockIntent.putExtra("next_reset_time", group.nextResetTime)
+                    blockIntent.putExtra("next_reset_time", TimeManager.computeNextUnblockTime(group, now, blockedForOutsideRange = false))
                     blockIntent.putExtra("block_reason", "Out of Time")
                     launchBlockScreen(appInGroup.appPackage)
                     didBlock = true
                 } else {
                     usageMap[appInGroup.appPackage] = newAppUsage
                     val updatedUsage = usageMap.entries.map { (pkg, millis) -> AppUsageStat(pkg, millis) }
-                    appLimitGroupDao.updateAppLimitGroup(
-                        entity.copy(
-                            timeRemaining = newTimeRemaining,
-                            perAppUsage = updatedUsage
-                        )
+                    appLimitGroupDao.updateTimeAndUsage(
+                        groupId = entity.id,
+                        timeRemaining = newTimeRemaining,
+                        perAppUsage = updatedUsage
                     )
                 }
             }
@@ -1076,6 +1076,10 @@ class BackgroundChecker : Service() {
         lastCheckElapsed = SystemClock.elapsedRealtime()
     }
 
+    @VisibleForTesting
+    fun setScreenOnForTesting(on: Boolean) {
+        isScreenOn = on
+    }
 
     private fun currentCheckIntervalMs(foregroundApp: String?): Long {
         val packageName = foregroundApp ?: return IDLE_CHECK_INTERVAL
