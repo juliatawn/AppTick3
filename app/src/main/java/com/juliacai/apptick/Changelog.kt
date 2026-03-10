@@ -17,9 +17,17 @@ import androidx.core.content.edit
 
 private const val PREF_LAST_SEEN_CHANGELOG_VERSION = "last_seen_changelog_version"
 
-private const val CHANGELOG_TITLE = "CHANGELOG\n2026.3.10v3 - MAJOR UPDATES"
+private const val CHANGELOG_TITLE = "CHANGELOG\nv2026.4.10v44"
 
 private const val CHANGELOG_BODY = """
+v2026.4.10v44
+More reliable app limits with Accessibility Service optional toggle, improves notification shade, split screen, and floating window app limiting.
+Fixed bugs
+
+---
+
+2026.3.10v3 - MAJOR UPDATES
+
 New premium features:
 - Floating Time Left Bubble -- it remembers where you placed it per app. Draggable, shows time left in hours and minutes.
 - Time Range -- set the time range your app limits are active, then choose when the app limit you specified isn't active to either block the app completely unless during the time range OR to have no app limits so freely use the app.
