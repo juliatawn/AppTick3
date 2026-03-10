@@ -226,7 +226,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             }
             var showGroupDetailsHint by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(
-                    prefs.getLong(PREF_GROUP_DETAILS_HINT_SEEN_VERSION, -1L) != appVersionCode
+                    !prefs.getBoolean(PREF_GROUP_DETAILS_HINT_DISMISSED, false)
                 )
             }
             val lockState = lockStateUi
@@ -401,7 +401,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             if (showGroupDetailsHint) {
                                 showGroupDetailsHint = false
                                 prefs.edit {
-                                    putLong(PREF_GROUP_DETAILS_HINT_SEEN_VERSION, appVersionCode)
+                                    putBoolean(PREF_GROUP_DETAILS_HINT_DISMISSED, true)
                                 }
                             }
                         }
@@ -1268,6 +1268,6 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         const val EXTRA_OPEN_LOCK_MODES = "extra_open_lock_modes"
         private const val PREF_PREMIUM_DEFAULTS_APPLIED = "premiumDefaultsApplied"
         private const val PREF_BATTERY_OEM_WARNING_DISMISSED = "batteryOemWarningDismissed"
-        private const val PREF_GROUP_DETAILS_HINT_SEEN_VERSION = "groupDetailsHintSeenVersion"
+        private const val PREF_GROUP_DETAILS_HINT_DISMISSED = "groupDetailsHintDismissed"
     }
 }
