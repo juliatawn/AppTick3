@@ -131,11 +131,14 @@ class AppTickAccessibilityService : AccessibilityService() {
     /**
      * Checks if any visible application window is a true floating/freeform/PiP window.
      *
-     * A window is considered floating only when it is small (< 85% of screen area) AND
-     * there is at least one fullscreen app window (>= 85%) behind it. This distinguishes:
-     * - **Floating/PiP**: small window over a fullscreen app → returns true (close strategies apply)
-     * - **Split-screen**: multiple medium windows, no fullscreen behind → returns false
-     *   (block screen activity just covers the blocked pane; no close action needed)
+     * A window is considered floating when:
+     * 1. A small window (< 85% of screen area) exists over a fullscreen window (>= 85%), OR
+     * 2. Exactly one small app window exists with no other app windows (floating over
+     *    the home screen — the launcher may not always appear as a TYPE_APPLICATION window
+     *    on some OEM skins)
+     *
+     * NOT floating (split-screen): multiple small/medium windows with no fullscreen behind.
+     * Block screen activity just covers the blocked pane; no close action needed.
      */
     private fun checkIfWindowIsFloating(@Suppress("UNUSED_PARAMETER") windowId: Int): Boolean {
         try {
@@ -144,7 +147,7 @@ class AppTickAccessibilityService : AccessibilityService() {
             val screenArea = display.widthPixels.toLong() * display.heightPixels.toLong()
             if (screenArea <= 0) return false
 
-            var hasSmallWindow = false
+            var smallWindowCount = 0
             var hasFullscreenWindow = false
 
             for (window in windowList) {
@@ -155,7 +158,7 @@ class AppTickAccessibilityService : AccessibilityService() {
                     // A fullscreen app with system bars excluded still covers ~90%+ of the screen.
                     // Only flag windows covering less than 85% as floating (PiP, freeform, etc.).
                     if (windowArea < screenArea * 85 / 100) {
-                        hasSmallWindow = true
+                        smallWindowCount++
                         Log.d(TAG, "Small window detected (${bounds.width()}x${bounds.height()} " +
                                 "area=$windowArea vs screen ${display.widthPixels}x${display.heightPixels} " +
                                 "area=$screenArea, ratio=${windowArea * 100 / screenArea}%)")
@@ -165,14 +168,20 @@ class AppTickAccessibilityService : AccessibilityService() {
                 }
             }
 
-            // True floating/PiP: small window over a fullscreen window.
-            // Split-screen: multiple small windows with no fullscreen behind → not floating.
-            if (hasSmallWindow && hasFullscreenWindow) {
+            // Case 1: small window over a fullscreen app (typical floating/PiP)
+            if (smallWindowCount > 0 && hasFullscreenWindow) {
                 Log.d(TAG, "Floating window confirmed (small window over fullscreen)")
                 return true
             }
-            if (hasSmallWindow) {
-                Log.d(TAG, "Small windows detected but no fullscreen behind — likely split-screen, not floating")
+            // Case 2: lone small window, no other app windows — floating over home screen
+            // (launcher may not appear as TYPE_APPLICATION on some OEM skins)
+            if (smallWindowCount == 1 && !hasFullscreenWindow) {
+                Log.d(TAG, "Floating window confirmed (lone small window, likely over home screen)")
+                return true
+            }
+            // Case 3: multiple small windows, no fullscreen — split-screen
+            if (smallWindowCount > 1 && !hasFullscreenWindow) {
+                Log.d(TAG, "Multiple small windows, no fullscreen behind — split-screen, not floating")
             }
         } catch (e: Exception) {
             Log.w(TAG, "Error checking window floating state", e)
