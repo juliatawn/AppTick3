@@ -609,7 +609,9 @@ AppSelectScreen (pick apps)
 SetTimeLimitsScreen (configure limits)
     ↓ AppLimitGroup
 AppLimitViewModel.saveGroup()
-    ↓ normalizeGroupForPersistence()
+    ↓ fetch previousGroup from DB (for edits)
+    ↓ normalizeGroupForPersistence(previousGroup)
+    ↓   → if limit changed: reset balance to new limit, clear usage, refresh reset time
     ↓ DAO.insert/update
 BackgroundChecker.applyDesiredServiceState()
 ```
@@ -626,6 +628,13 @@ BackgroundChecker.applyDesiredServiceState()
 ### `AppLimitViewModel.kt`
 
 - `normalizeGroupForPersistence()` → sets timeRemaining, nextResetTime, validates usage stats
+  - Accepts optional `previousGroup` to detect limit edits
+  - **When the time limit changes** (timeHrLimit or timeMinLimit differ from previous):
+    - `timeRemaining` is reset to the full new limit (e.g., 1min left → edit to 30min → 30min left)
+    - `perAppUsage` is cleared (all app usage tracking reset)
+    - For periodic reset groups (`resetMinutes > 0`), `nextResetTime` is recalculated from now
+    - For daily reset groups, `nextResetTime` is preserved if still in the future
+- `saveGroup()` → fetches the previous group from DB (for edits) to pass to normalization
 - `duplicateGroupForCreation()` → clears ID/state for new group
 - `SetTimeLimitDraft` → intermediate form state for cancel-safe editing
 
