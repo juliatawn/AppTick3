@@ -1018,12 +1018,6 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         return "Lockdown mode is active. Editing is allowed on: $readableDays."
     }
 
-    private fun shouldKeepServiceForSettingsProtection(): Boolean {
-        val shouldProtect = prefs.getBoolean("useDeviceAdminUninstallProtection", false)
-        if (!shouldProtect) return false
-        return LockPolicy.hasAnyConfiguredLockMode(readLockState())
-    }
-
     private fun shouldShowLockdownRelockPrompt(nowMillis: Long = System.currentTimeMillis()): Boolean {
         if (prefs.getBoolean("lockdown_prompt_after_unlock", false)) return true
         val state = readLockState()
@@ -1115,7 +1109,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
         lifecycleScope.launch(Dispatchers.IO) {
             val activeGroupCount =
                 AppTickDatabase.getDatabase(applicationContext).appLimitGroupDao().getActiveGroupCountSync()
-            val shouldRun = activeGroupCount > 0 || shouldKeepServiceForSettingsProtection()
+            val shouldRun = activeGroupCount > 0
             BackgroundChecker.applyDesiredServiceState(applicationContext, shouldRun)
         }
     }

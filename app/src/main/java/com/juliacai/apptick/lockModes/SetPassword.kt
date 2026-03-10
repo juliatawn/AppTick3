@@ -164,7 +164,7 @@ class SetPassword : AppCompatActivity() {
             putString("password", passFirst)
             putString("active_lock_mode", "PASSWORD")
             putBoolean("security_key_enabled", false)
-            putBoolean("useDeviceAdminUninstallProtection", false)
+
             putBoolean("password_biometric_enabled", enableBiometric)
             putBoolean("usb_key_enabled", enableUsbKey)
             putBoolean("blockMain", true)
@@ -191,7 +191,7 @@ class SetPassword : AppCompatActivity() {
             putBoolean("passUnlocked", true)
             putBoolean("password_biometric_enabled", false)
             putBoolean("usb_key_enabled", false)
-            putBoolean("useDeviceAdminUninstallProtection", false)
+
             putBoolean(PREF_PASSWORD_MODE_CONFIGURED, false)
         }
         hasSavedConfiguration = false

@@ -45,9 +45,7 @@
     </string>
     <string name="add_app_limit">Add a new app limit group +</string>
     <string name="time_limit_reached">Time\'s Up for %1$s!</string>
-    <string name="device_admin_enabled">Device admin enabled</string>
-    <string name="device_admin_disabled">Device admin disabled</string>
-    <string name="channel_name">AppTick Notifications</string>
+<string name="channel_name">AppTick Notifications</string>
     <string name="channel_description">Notifications for app usage limits and alerts</string>
     <string name="group_name">Group: %1$s</string>
     <string name="time_spent">Time Spent: %1$dh %2$dm</string>
