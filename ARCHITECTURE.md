@@ -973,7 +973,8 @@ All stored in `"groupPrefs"` (Context.MODE_PRIVATE).
 | Key | Type | Purpose |
 |-----|------|---------|
 | `batteryOemWarningDismissed` | Boolean | Battery warning dismissed |
-| `groupDetailsHintSeenVersion` | Int | Group hint shown for version |
+| `groupDetailsHintDismissed` | Boolean | Group reorder hint dismissed permanently |
+| `appsReorderedHintDismissed` | Boolean | App reorder hint dismissed permanently |
 | `has_seen_launch_loading` | Boolean | Loading screen shown |
 | `lastSeenChangelogVersionCode` | Long | Changelog version tracking |
 | `lastSeenFeaturePhotosVersionCode` | Long | Carousel version tracking |
