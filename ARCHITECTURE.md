@@ -276,9 +276,20 @@ Draws draggable semi-transparent bubbles showing time remaining.
 
 ### `AppTickAccessibilityService.kt`
 
-**File:** `backgroundProcesses/AppTickAccessibilityService.kt` (~727 lines)
+**File:** `backgroundProcesses/AppTickAccessibilityService.kt` (~740 lines)
 
 Lightweight AccessibilityService for instant foreground app detection and floating window management.
+
+**Service lifecycle:**
+
+| Lifecycle Event | Actions Taken |
+|-----------------|---------------|
+| `onServiceConnected()` | Sets `instance`/`isRunning`, performs initial window scan (`refreshVisibleApps` + `updateFocusedApp`) to immediately populate foreground/visible state, wakes BackgroundChecker via `requestImmediateCheck()` |
+| `onDestroy()` | Clears all companion state (package, timestamp, floating flag, visible set, window map), resets `lastUpdateTimeMillis` to 0 so `getForegroundPackage()` returns null instantly, wakes BackgroundChecker so it falls back to UsageStats within one loop cycle |
+
+**Why the initial window scan matters:** Without it, there's a gap between toggle-on and the first `TYPE_WINDOW_STATE_CHANGED` event (which only fires on the *next* app switch). If the user is already sitting in a blocked app, accessibility would contribute nothing until they switch away and back. The scan ensures BackgroundChecker has accurate data from the very first iteration.
+
+**Why waking on destroy matters:** Without it, BackgroundChecker could run for up to 2 seconds with `isRunning=false` and stale `lastForegroundApp`, causing the Floating Time Left bubble to show outdated data. The wakeup forces an immediate UsageStats-based refresh.
 
 **Event handling:**
 - `TYPE_WINDOW_STATE_CHANGED` → updates `currentForegroundPackage`, `lastUpdateTimeMillis`, `isCurrentAppFloating`, refreshes visible apps, wakes BackgroundChecker
@@ -302,16 +313,18 @@ Lightweight AccessibilityService for instant foreground app detection and floati
 - `tryCloseFloatingWindow(pkg)` → delegates to instance.closeFloatingWindow()
 - `isAccessibilityServiceEnabled(ctx)` → checks system Settings
 
-**Floating window detection:**
-- `checkIfWindowIsFloating(windowId)` → returns true if ANY visible app window covers < 85% of screen area
-- Handles Honor freeform, PiP, Samsung split-screen
+**Floating window detection (`checkIfWindowIsFloating`):**
+- Returns true when: (a) small window (< 85%) over a fullscreen window (>= 85%), OR (b) exactly one small window with no other app windows (floating over home screen — launcher may use a non-TYPE_APPLICATION window on some OEMs)
+- Returns false for split-screen: multiple small/medium windows with no fullscreen behind
+- Handles Honor freeform, PiP; correctly skips close strategies for split-screen
 
 **Floating window close strategies (CLAUDE.md #3):**
 
 ```
 closeFloatingWindow(blockedPackage) → FloatingCloseResult
-  1. Live re-check: isCurrentAppFloating || checkIfWindowIsFloating(-1)
-     → If NOT floating: return NOT_FLOATING (no action)
+  1. Live re-check: checkIfWindowIsFloating(-1)
+     (uses only the live window check — not the cached isCurrentAppFloating flag)
+     → If NOT floating (fullscreen or split-screen): return NOT_FLOATING (no action)
 
   2. Strategy 1: tryClickCloseInAllWindows(pkg)
      → Searches non-fullscreen windows overlapping floating window bounds
@@ -563,6 +576,15 @@ LazyColumn with long-press drag-and-drop reordering:
 - `getTimeRemaining()` → converts hours+minutes to milliseconds
 - `getNextResetTime()` → periodic (now + resetMinutes) or daily (next midnight)
 - `nextMidnight(nowMillis)` → 00:00:00 tomorrow in device timezone
+- `computeNextUnblockTime(group, nowMillis, blockedForOutsideRange)` → computes when the app will next be unblocked:
+  - **Blocked outside time range:** returns next time range start (on an active day)
+  - **Zero limit with time range (no blockOutside):** returns current time range end
+  - **Zero limit, no time range or blockOutside:** returns 0L ("Not scheduled")
+  - **Limit reached with time range (no blockOutside):** returns `min(nextResetTime, rangeEnd)`
+  - **Limit reached, no time range:** returns `nextResetTime`
+- `nextTimeRangeEntry(ranges, nowMillis, weekDays)` → finds soonest future range start on an active day
+- `currentTimeRangeEnd(ranges, nowMillis)` → finds when the currently active time range ends (handles overnight)
+- `nextOccurrenceOfTime(hour, minute, nowMillis, weekDays)` → next occurrence of a specific time on an active day
 
 ### Day-of-week convention
 
@@ -595,7 +617,9 @@ AppSelectScreen (pick apps)
 SetTimeLimitsScreen (configure limits)
     ↓ AppLimitGroup
 AppLimitViewModel.saveGroup()
-    ↓ normalizeGroupForPersistence()
+    ↓ fetch previousGroup from DB (for edits)
+    ↓ normalizeGroupForPersistence(previousGroup)
+    ↓   → if limit changed: reset balance to new limit, clear usage, refresh reset time
     ↓ DAO.insert/update
 BackgroundChecker.applyDesiredServiceState()
 ```
@@ -612,6 +636,13 @@ BackgroundChecker.applyDesiredServiceState()
 ### `AppLimitViewModel.kt`
 
 - `normalizeGroupForPersistence()` → sets timeRemaining, nextResetTime, validates usage stats
+  - Accepts optional `previousGroup` to detect limit edits
+  - **When the time limit changes** (timeHrLimit or timeMinLimit differ from previous):
+    - `timeRemaining` is reset to the full new limit (e.g., 1min left → edit to 30min → 30min left)
+    - `perAppUsage` is cleared (all app usage tracking reset)
+    - For periodic reset groups (`resetMinutes > 0`), `nextResetTime` is recalculated from now
+    - For daily reset groups, `nextResetTime` is preserved if still in the future
+- `saveGroup()` → fetches the previous group from DB (for edits) to pass to normalization
 - `duplicateGroupForCreation()` → clears ID/state for new group
 - `SetTimeLimitDraft` → intermediate form state for cancel-safe editing
 
@@ -628,7 +659,7 @@ BackgroundChecker.applyDesiredServiceState()
 - Shows app icon, name, group name
 - Block reason text
 - Usage statistics
-- Next reset time
+- "Available At" time — shows when the app will next be unblocked (computed by `TimeManager.computeNextUnblockTime()`)
 
 ### MainScreen.kt
 
@@ -775,6 +806,7 @@ Located in `app/src/test/java/com/juliacai/apptick/`
 | `LockPolicyTest.kt` | 11 | All lock modes, auto-relock, one-time/recurring lockdown, day consumption |
 | `MainViewModelTest.kt` | 5 | Group loading, pause/delete, premium status |
 | `TimeManagerTest.kt` | 7 | Time remaining calc, midnight boundaries, periodic vs daily reset |
+| `NextUnblockTimeTest.kt` | 19 | Next unblock time: outside range, zero limit, limit reached, overnight ranges, active days, helper methods |
 | `AppLimitEvaluatorTest.kt` | 9 | Day filtering, time ranges (incl. overnight), pause, outside-range blocking |
 | `AppTickAccessibilityServiceTest.kt` | 21 | Staleness boundary (9s ok, 10.001s stale), service lifecycle, floating detection, split-screen |
 | `BackgroundCheckerBubbleCountdownTest.kt` | 4 | Bubble format (MM:SS under 1min, HH:MM over), hide logic |
@@ -795,6 +827,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 |------|-------|------------------|
 | `AccessibilityBlockingIntegrationTest.kt` | 13 | **End-to-end blocking flow**: time decrement with/without accessibility, per-app tracking, floating window handling, PiP, re-launch on each cycle |
 | `BackgroundCheckerTest.kt` | 21 | **Service time tracking**: decrement, blocking, paused group timer/usage/race-condition, screen-off timer protection (with/without accessibility, per-app usage, resume), reset (daily/periodic/cumulative), per-app usage, zero limits, outside time range, cross-expiry in single tick |
+| `NextUnblockTimeIntegrationTest.kt` | 3 | **Next unblock time intent extra**: outside range shows range start, zero limit shows range end, limit reached shows reset time |
 | `MainActivityTest.kt` | 4 | MainScreen rendering, empty state, callbacks, lock icon |
 | `MainActivityDuplicateGroupIntegrationTest.kt` | 2 | Duplication flow: free→premium dialog, premium→new group |
 | `MainActivityEditGroupSelectionIntegrationTest.kt` | 1 | Edit group: pre-selection in app picker |

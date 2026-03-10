@@ -102,9 +102,16 @@ class AppLimitViewModel(application: Application) : AndroidViewModel(application
             val normalizedUsage = group.perAppUsage
                 .filter { it.appPackage in allowedPackages }
                 .map { it.copy(usedMillis = max(0L, it.usedMillis)) }
+
+            // Fetch the previous version of this group to detect limit changes.
+            val previousGroup = if (group.id != 0L) {
+                appLimitGroupDao.getGroup(group.id)?.toDomainModel()
+            } else null
+
             val normalizedGroup = normalizeGroupForPersistence(
                 group = group,
-                normalizedUsage = normalizedUsage
+                normalizedUsage = normalizedUsage,
+                previousGroup = previousGroup
             )
 
             if (group.id == 0L) {
@@ -137,7 +144,8 @@ internal fun duplicateGroupForCreation(group: AppLimitGroup): AppLimitGroup {
 
 internal fun normalizeGroupForPersistence(
     group: AppLimitGroup,
-    normalizedUsage: List<AppUsageStat> = group.perAppUsage
+    normalizedUsage: List<AppUsageStat> = group.perAppUsage,
+    previousGroup: AppLimitGroup? = null
 ): AppLimitGroup {
     val limitInMillis = ((group.timeHrLimit * 60L) + group.timeMinLimit.toLong()).coerceAtLeast(0L) * 60_000L
     val usageTotal = normalizedUsage.sumOf { max(0L, it.usedMillis) }
@@ -146,8 +154,16 @@ internal fun normalizeGroupForPersistence(
     val hasConfiguredLimit = limitInMillis > 0L
     val isNewGroup = group.id == 0L
 
+    // Detect whether the time limit was changed during an edit.
+    val limitChanged = previousGroup != null &&
+        (group.timeHrLimit != previousGroup.timeHrLimit ||
+         group.timeMinLimit != previousGroup.timeMinLimit)
+
+    val effectiveUsage = if (limitChanged) emptyList() else normalizedUsage
+
     val normalizedTimeRemaining = when {
         !hasConfiguredLimit -> 0L
+        limitChanged -> limitInMillis
         group.limitEach -> if (isNewGroup && persistedRemaining == 0L) limitInMillis else persistedRemaining
         persistedRemaining > 0L -> persistedRemaining
         else -> remainingFromUsage
@@ -155,7 +171,9 @@ internal fun normalizeGroupForPersistence(
 
     // Set nextResetTime if unset (0) or already in the past.
     val now = System.currentTimeMillis()
-    val normalizedNextReset = if (group.nextResetTime > now) {
+    // For periodic reset groups, recalculate nextResetTime from now when limit changes.
+    val resetTimeNeedsRefresh = limitChanged && group.resetMinutes > 0
+    val normalizedNextReset = if (!resetTimeNeedsRefresh && group.nextResetTime > now) {
         // Already has a valid future reset time — keep it.
         group.nextResetTime
     } else if (group.resetMinutes > 0) {
@@ -172,7 +190,7 @@ internal fun normalizeGroupForPersistence(
     }
 
     return group.copy(
-        perAppUsage = normalizedUsage,
+        perAppUsage = effectiveUsage,
         timeRemaining = normalizedTimeRemaining,
         nextResetTime = normalizedNextReset,
         nextAddTime = normalizedNextAdd
