@@ -79,7 +79,7 @@ class LockdownModeActivity : AppCompatActivity() {
                             getSharedPreferences("groupPrefs", MODE_PRIVATE).edit {
                                 putString("active_lock_mode", LockMode.NONE.name)
                                 putBoolean("lockdown_prompt_after_unlock", false)
-                                putBoolean("useDeviceAdminUninstallProtection", false)
+        
                             }
                             refreshState()
                             Toast.makeText(this, "Lockdown Disabled.", Toast.LENGTH_SHORT).show()
@@ -149,7 +149,7 @@ class LockdownModeActivity : AppCompatActivity() {
                                         putString("lockdown_recurring_days", recurringDays.joinToString(","))
                                         remove("lockdown_end_time")
                                     }
-                                    putBoolean("useDeviceAdminUninstallProtection", false)
+            
                                     putBoolean("lockdown_prompt_after_unlock", false)
                                 }
                                 refreshState()

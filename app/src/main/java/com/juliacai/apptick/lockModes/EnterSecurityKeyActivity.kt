@@ -68,24 +68,6 @@ class EnterSecurityKeyActivity : AppCompatActivity() {
             return
         }
 
-        val isSettingsSessionUnlock = intent.getBooleanExtra(
-            SettingsUnlockSession.EXTRA_SETTINGS_SESSION_UNLOCK,
-            false
-        )
-        if (isSettingsSessionUnlock) {
-            sendBroadcast(
-                Intent(SettingsUnlockSession.ACTION_SETTINGS_SESSION_UNLOCKED).apply {
-                    setPackage(packageName)
-                    putExtra(
-                        SettingsUnlockSession.EXTRA_UNLOCK_MODE,
-                        SettingsUnlockSession.MODE_SECURITY_KEY
-                    )
-                }
-            )
-            finish()
-            return
-        }
-
         prefs.edit {
             putBoolean("securityKeyUnlocked", true)
             putBoolean("passUnlocked", false)

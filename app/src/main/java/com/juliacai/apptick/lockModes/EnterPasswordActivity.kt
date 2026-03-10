@@ -116,21 +116,6 @@ class EnterPasswordActivity : AppCompatActivity() {
     }
 
     private fun unlockAndFinish() {
-        val isSettingsSessionUnlock = intent.getBooleanExtra(
-            SettingsUnlockSession.EXTRA_SETTINGS_SESSION_UNLOCK,
-            false
-        )
-        if (isSettingsSessionUnlock) {
-            sendBroadcast(
-                Intent(SettingsUnlockSession.ACTION_SETTINGS_SESSION_UNLOCKED).apply {
-                    setPackage(packageName)
-                    putExtra(SettingsUnlockSession.EXTRA_UNLOCK_MODE, SettingsUnlockSession.MODE_PASSWORD)
-                }
-            )
-            finish()
-            return
-        }
-
         prefs.edit {
             putBoolean("passUnlocked", true)
             putBoolean("securityKeyUnlocked", false)

@@ -89,7 +89,6 @@ com.juliacai.apptick/
 │   ├── SecurityKeySettingsScreen.kt
 │   ├── UsbSecurityKey.kt           ← USB FIDO2 key logic
 │   ├── UsbSecurityKeySetupActivity.kt
-│   └── SettingsUnlockSession.kt    ← Manages temporary unlock for Settings protection
 ├── premiumMode/
 │   ├── PremiumModeScreen.kt        ← Compose: lock mode selector (premium)
 │   ├── PremiumModeInfoScreen.kt    ← Compose: premium features list
@@ -99,7 +98,6 @@ com.juliacai.apptick/
 │   ├── LockdownTimeActivity.kt     ← One-time lockdown date/time picker
 │   ├── LockdownTimeScreen.kt       ← Compose: lockdown time display
 │   ├── LockdownSummaryFormatter.kt ← Formats lockdown target dates
-│   ├── DeviceAdmin.kt              ← DeviceAdminReceiver for uninstall protection
 │   ├── LockModesBlockedScreen.kt   ← Compose: "editing is locked" message
 │   ├── PremiumModeFeatureInfoSection.kt
 │   └── FeatureDetailText.kt
@@ -192,7 +190,6 @@ This is the most critical flow in the app. Changes here require extreme care.
 | `FOREGROUND_EVENT_LOOKBACK_MS` | 15,000ms | UsageEvents query window |
 | `FOREGROUND_USAGE_LOOKBACK_MS` | 120,000ms | UsageStats fallback query window |
 | `FOREGROUND_USAGE_MAX_AGE_MS` | 15,000ms | Max age for UsageStats fallback |
-| `SETTINGS_PROTECTION_BURST_CHECK_INTERVAL` | 100ms | Fast checks when Settings is open |
 | `WATCHDOG_INTERVAL_MS` | 45,000ms | AlarmManager watchdog interval |
 
 ---
@@ -214,7 +211,6 @@ The heart of the app. Runs as a foreground service with a single unified corouti
 | `checkAppLimits(app, elapsed)` | Iterates groups, handles resets, decrements time, triggers blocking |
 | `launchBlockScreen(pkg)` | Launches BlockWindowActivity + calls tryCloseFloatingWindow. **See CLAUDE.md #2** |
 | `computeElapsedDelta()` | Computes real elapsed time since last check, capped at MAX_ELAPSED |
-| `evaluateSettingsProtectionAction(app)` | Checks if Settings/uninstall flow should be blocked |
 | `pickNotificationGroup(groups, app)` | Selects group with lowest remaining time for notification display |
 | `formatBubbleCountdown(ms)` | Formats MM:SS (under 1min) or HH:MM (over 1min) |
 | `updateFloatingBubble(app, fallback, visible)` | Manages per-app floating bubbles in split-screen |
@@ -279,7 +275,6 @@ The unified loop dynamically adjusts its polling interval based on context:
 |---------|----------|-----------|
 | Tracked app in foreground | 2000ms | Fast enforcement — user is actively using a limited app |
 | Untracked app in foreground | 4000ms | No limits to enforce — halves CPU wakeups for the common case |
-| Settings/uninstall flow open | 100ms | Rapid detection for uninstall protection |
 | Screen off or device locked | 2000ms (idle) | Loop runs but `shouldTrackUsageNow()` returns false — no app detection, no DB writes, just baseline reset |
 
 The `requestImmediateCheck()` wakeup from AccessibilityService overrides the interval entirely, ensuring instant blocking regardless of which interval is active.
@@ -704,13 +699,6 @@ data class LockDecision(
 
 **Auto-relock:** PASSWORD and SECURITY_KEY auto-relock when user leaves MainActivity (if unlocked).
 
-### Settings Protection
-
-BackgroundChecker blocks Settings and package installer apps when:
-- Device admin uninstall protection is enabled
-- Lock mode is PASSWORD or SECURITY_KEY → prompts for auth
-- Lock mode is LOCKDOWN + exhausted limit → shows block screen
-
 ### Premium Features
 
 Gated by `prefs.getBoolean("premium", false)`:
@@ -919,7 +907,6 @@ All stored in `"groupPrefs"` (Context.MODE_PRIVATE).
 | `lockdown_recurring_days` | String | "" | Comma-separated day numbers (1-7) |
 | `lockdown_weekly_used_key` | String | null | Date key for consumed recurring window |
 | `lockdown_prompt_after_unlock` | Boolean | — | Show relock prompt after expiry |
-| `useDeviceAdminUninstallProtection` | Boolean | false | Block Settings when locked |
 | `password` | String | — | Hashed password |
 | `recovery_email` | String | — | Recovery email address |
 | `force_recovery_email_setup` | Boolean | — | Force email setup on next unlock |

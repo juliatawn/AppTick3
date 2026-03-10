@@ -1,17 +1,10 @@
 package com.juliacai.apptick.lockModes
 
-import android.app.Activity
-import android.app.admin.DevicePolicyManager
-import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.hardware.usb.UsbManager
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,7 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -35,7 +27,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -46,8 +37,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.navigation.NavController
 import com.juliacai.apptick.LockMode
 import com.juliacai.apptick.safePop
-import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
-import com.juliacai.apptick.premiumMode.DeviceAdmin
 import com.juliacai.apptick.verticalScrollWithIndicator
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,15 +45,8 @@ fun SecurityKeySettingsScreen(navController: NavController) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val prefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
-    val activity = context as? Activity
     val usbManager = remember(context) {
         context.getSystemService(Context.USB_SERVICE) as UsbManager
-    }
-    val devicePolicyManager = remember(context) {
-        context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-    }
-    val adminComponentName = remember(context) {
-        ComponentName(context, DeviceAdmin::class.java)
     }
 
     var activeLockMode by remember {
@@ -77,27 +59,10 @@ fun SecurityKeySettingsScreen(navController: NavController) {
     var registeredKey by remember {
         mutableStateOf(UsbSecurityKey.readRegisteredKey(prefs))
     }
-    var lockSettingsApp by remember {
-        mutableStateOf(
-            if (activeLockMode == LockMode.SECURITY_KEY) {
-                prefs.getBoolean("useDeviceAdminUninstallProtection", false)
-            } else {
-                false
-            }
-        )
-    }
-    var isAdminGranted by remember { mutableStateOf(devicePolicyManager.isAdminActive(adminComponentName)) }
 
-    val deviceAdminLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        isAdminGranted = devicePolicyManager.isAdminActive(adminComponentName)
-        val message = if (isAdminGranted) "Device admin enabled" else "Device admin not enabled"
-        Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-    }
-
-    androidx.compose.runtime.DisposableEffect(lifecycleOwner, prefs, devicePolicyManager, adminComponentName) {
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, prefs) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                isAdminGranted = devicePolicyManager.isAdminActive(adminComponentName)
                 activeLockMode = runCatching {
                     LockMode.valueOf(prefs.getString("active_lock_mode", "NONE") ?: "NONE")
                 }.getOrDefault(LockMode.NONE)
@@ -191,37 +156,6 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                 Text("Register Connected USB Key")
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = lockSettingsApp, onCheckedChange = { lockSettingsApp = it })
-                Text("Lock Settings app to block AppTick uninstall attempts")
-            }
-            Text("Requires Device Admin when this option is enabled.")
-            Text("Device Admin: ${if (isAdminGranted) "Enabled" else "Not enabled"}")
-
-            Button(
-                onClick = {
-                    if (isAdminGranted) {
-                        Toast.makeText(context, "Device admin already enabled", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (activity == null) {
-                        Toast.makeText(context, "Unable to open Device Admin settings", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                        putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, adminComponentName)
-                        putExtra(
-                            DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                            "Granting this permission lets AppTick block Settings uninstall pages while lock mode is active."
-                        )
-                    }
-                    deviceAdminLauncher.launch(intent)
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Enable Device Admin")
-            }
-
             Spacer(modifier = Modifier.height(8.dp))
 
             Button(
@@ -238,27 +172,15 @@ fun SecurityKeySettingsScreen(navController: NavController) {
                         Toast.makeText(context, "Register a USB security key first", Toast.LENGTH_SHORT).show()
                         return@Button
                     }
-                    if (lockSettingsApp && !isAdminGranted) {
-                        Toast.makeText(
-                            context,
-                            "Enable Device Admin before locking the Settings app",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@Button
-                    }
 
                     prefs.edit {
                         putBoolean("security_key_enabled", true)
                         putString("active_lock_mode", "SECURITY_KEY")
                         remove("security_key_value")
                         putString("security_usb_key_fingerprint", registeredKey!!.toPersistedString())
-                        putBoolean("useDeviceAdminUninstallProtection", lockSettingsApp)
                         putBoolean("locked", true)
                         putBoolean("securityKeyUnlocked", false)
                         putBoolean("passUnlocked", false)
-                    }
-                    if (lockSettingsApp) {
-                        BackgroundChecker.startServiceIfNotRunning(context.applicationContext)
                     }
                     Toast.makeText(context, "Security key enabled", Toast.LENGTH_SHORT).show()
                     navController.safePop()
