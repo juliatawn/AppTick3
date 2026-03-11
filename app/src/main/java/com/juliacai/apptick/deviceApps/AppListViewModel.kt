@@ -26,7 +26,7 @@ class AppListViewModel(application: Application) : AndroidViewModel(application)
             if (term.isBlank()) {
                 apps
             } else {
-                apps.filter { it.appName?.contains(term, ignoreCase = true) == true }
+                apps.filter { it.appName?.contains(term.trim(), ignoreCase = true) == true }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

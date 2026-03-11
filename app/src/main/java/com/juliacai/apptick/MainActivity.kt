@@ -409,6 +409,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         MainScreen(
                             appLimitGroupCount = orderedGroups.size,
                             showLockedIcon = isLockModesLocked,
+                            showLockNowButton = lockState.activeLockMode == LockMode.LOCKDOWN && !isLockModesLocked,
                             showGroupDetailsHint = showGroupDetailsHint && orderedGroups.isNotEmpty(),
                             showBatteryWarning = standardBatteryIssue || (batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed),
                             batteryWarningDismissable = !standardBatteryIssue && batteryStatus.hasAdditionalOemRestrictions && !oemBatteryWarningDismissed,
@@ -468,6 +469,9 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                                         launchSingleTop = true
                                     }
                                 }
+                            },
+                            onLockNowClick = {
+                                shouldPromptRelock = true
                             },
                             onOpenAppBatterySettings = {
                                 if (!BatteryOptimizationHelper.openAppBatterySettings(this@MainActivity)) {

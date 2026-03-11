@@ -105,6 +105,56 @@ class TimeManager(private val group: AppLimitGroup) {
         }
 
         /**
+         * Computes the effective next reset/available time for display on the Group Details page.
+         *
+         * Handles two cases where the raw nextResetTime is misleading:
+         * 1. **Zero limit + time range + Allow No Limits:** Reset is meaningless (0 resets to 0).
+         *    Shows when the current range ends (when the app becomes available).
+         * 2. **Non-zero limit + time range + reset outside range:** Shows the next range start
+         *    after the reset, since the reset outside the active window isn't useful.
+         *
+         * @param group The limit group configuration.
+         * @param nowMillis Current time in epoch millis (for zero-limit range-end lookup).
+         * @return Epoch millis of the effective time, or the raw nextResetTime if no
+         *         adjustment is needed.
+         */
+        fun computeEffectiveNextReset(
+            group: AppLimitGroup,
+            nowMillis: Long = System.currentTimeMillis()
+        ): Long {
+            val nextReset = group.nextResetTime
+            val ranges = group.getConfiguredTimeRanges()
+            val hasTimeRange = group.useTimeRange && ranges.isNotEmpty()
+            val limitMinutes = group.timeHrLimit * 60 + group.timeMinLimit
+            val isZeroLimit = limitMinutes <= 0
+
+            // Zero limit: reset is meaningless (0 resets to 0).
+            if (isZeroLimit) {
+                if (hasTimeRange && !group.blockOutsideTimeRange) {
+                    // Blocked during range, free outside → show range end if in range.
+                    val rangeEnd = currentTimeRangeEnd(ranges, nowMillis)
+                    if (rangeEnd > 0L) return rangeEnd
+                    // Not in range: app is free right now, raw reset is harmless to show.
+                    return nextReset
+                }
+                // Always blocked (blockOutside or no range) → reset doesn't help.
+                return 0L
+            }
+
+            if (nextReset <= 0L) return nextReset
+            if (!hasTimeRange) return nextReset
+
+            // Check if the reset time falls within a time range
+            if (currentTimeRangeEnd(ranges, nextReset) > 0L) {
+                return nextReset // Reset happens inside a range — useful as-is
+            }
+
+            // Reset falls outside all ranges. Show when the next range starts instead.
+            val nextEntry = nextTimeRangeEntry(ranges, nextReset, group.weekDays)
+            return if (nextEntry > 0L) nextEntry else nextReset
+        }
+
+        /**
          * Finds the soonest future time when any of the configured time ranges starts,
          * considering active days. Searches up to 7 days ahead.
          *

@@ -615,6 +615,7 @@ LazyColumn with long-press drag-and-drop reordering:
   - **Limit reached with time range (no blockOutside):** returns `min(nextResetTime, rangeEnd)`
   - **Limit reached with time range + blockOutside:** user needs BOTH reset AND to be in range. If `nextResetTime` falls within a time range, returns `nextResetTime`. Otherwise returns the next range start after the reset (reset will have already fired by then).
   - **Limit reached, no time range:** returns `nextResetTime`
+- `computeEffectiveNextReset(group, nowMillis)` → adjusts `nextResetTime` for display on the Group Details page. Handles two cases: (1) **Zero limit + time range + Allow No Limits:** reset is meaningless (0→0), shows current range end instead; (2) **Non-zero limit + reset outside range:** shows next range start after reset. Returns `nextResetTime` unchanged when no adjustment needed. The Group Details label switches from "Next Reset:" to "Available At:" when the time is adjusted.
 - `nextTimeRangeEntry(ranges, nowMillis, weekDays)` → finds soonest future range start on an active day
 - `currentTimeRangeEnd(ranges, nowMillis)` → finds when the currently active time range ends (handles overnight)
 - `nextOccurrenceOfTime(hour, minute, nowMillis, weekDays)` → next occurrence of a specific time on an active day
@@ -702,7 +703,8 @@ BackgroundChecker.applyDesiredServiceState()
 ### MainScreen.kt
 
 Scaffold with:
-- TopAppBar (title, lock icon, settings)
+- TopAppBar (title, "LOCK NOW" button, lock icon, settings)
+  - "LOCK NOW" text button appears only when user is in Lockdown mode but currently unlocked; triggers the relock dialog
 - FAB (add new group)
 - Battery warning card (with system settings buttons)
 - Group details hint (one-time)

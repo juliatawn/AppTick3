@@ -87,6 +87,7 @@ import com.juliacai.apptick.LockPolicy
 import com.juliacai.apptick.LockState
 import com.juliacai.apptick.LockdownType
 import com.juliacai.apptick.MainActivity
+import com.juliacai.apptick.TimeManager
 import com.juliacai.apptick.formatTimeRanges
 import com.juliacai.apptick.lazyColumnScrollIndicator
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
@@ -489,11 +490,15 @@ fun GroupDetails(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        LabelValueText(
-                            label = "Next Reset:",
-                            value = formatNextReset(group.nextResetTime),
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                        run {
+                            val effectiveReset = TimeManager.computeEffectiveNextReset(group)
+                            val label = if (effectiveReset != group.nextResetTime) "Available At:" else "Next Reset:"
+                            LabelValueText(
+                                label = label,
+                                value = formatNextReset(effectiveReset),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
 
                         if (group.cumulativeTime && !group.limitEach) {
                             val limitInMillis = (group.timeHrLimit * 60 + group.timeMinLimit) * 60_000L

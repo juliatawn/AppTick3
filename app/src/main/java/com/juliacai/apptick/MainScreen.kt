@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 fun MainScreen(
     appLimitGroupCount: Int,
     showLockedIcon: Boolean,
+    showLockNowButton: Boolean,
     showGroupDetailsHint: Boolean,
     showBatteryWarning: Boolean,
     batteryWarningDismissable: Boolean,
@@ -53,6 +54,7 @@ fun MainScreen(
     onFabClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onPremiumClick: () -> Unit,
+    onLockNowClick: () -> Unit,
     onOpenAppBatterySettings: () -> Unit,
     onOpenGeneralBatterySettings: () -> Unit,
     onOpenDontKillMyApp: () -> Unit,
@@ -73,6 +75,15 @@ fun MainScreen(
                     )
                 },
                 actions = {
+                    if (showLockNowButton) {
+                        TextButton(onClick = onLockNowClick) {
+                            Text(
+                                text = "LOCK NOW",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
                     IconButton(
                         onClick = onPremiumClick,
                         modifier = Modifier.size(52.dp)
@@ -283,6 +294,7 @@ fun MainScreenPreview() {
         MainScreen(
             appLimitGroupCount = 1,
             showLockedIcon = true,
+            showLockNowButton = false,
             showGroupDetailsHint = true,
             showBatteryWarning = true,
             batteryWarningDismissable = true,
@@ -293,6 +305,7 @@ fun MainScreenPreview() {
             onFabClick = {},
             onSettingsClick = {},
             onPremiumClick = {},
+            onLockNowClick = {},
             onOpenAppBatterySettings = {},
             onOpenGeneralBatterySettings = {},
             onOpenDontKillMyApp = {},
