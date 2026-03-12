@@ -208,7 +208,7 @@ The heart of the app. Runs as a foreground service with a single unified corouti
 |--------|---------|
 | `startUnifiedLoop()` | Main loop: poll/wake, detect app, check limits, update notification/bubble |
 | `getForegroundApp()` | Queries both accessibility + UsageStats, picks newest timestamp. **See CLAUDE.md #1** |
-| `checkAppLimits(app, elapsed)` | Iterates groups, handles resets, decrements time, triggers blocking |
+| `checkAppLimits(app, elapsed)` | Iterates groups, handles resets (with midnight carryover guard), decrements time, triggers blocking |
 | `launchBlockScreen(pkg)` | Launches BlockWindowActivity + calls tryCloseFloatingWindow. **See CLAUDE.md #2** |
 | `computeElapsedDelta()` | Computes real elapsed time since last check, capped at MAX_ELAPSED |
 | `pickNotificationGroup(groups, app)` | Selects group with lowest remaining time for notification display |
@@ -756,6 +756,21 @@ Gated by `prefs.getBoolean("premium", false)`:
 - Periodic reset
 - Cumulative time
 - Backup/restore
+
+#### Cumulative Time — Reset & Midnight Carryover Rules
+
+When `cumulativeTime = true` and `resetMinutes > 0`, unused time carries over across periodic
+resets **within the same calendar day**:
+
+1. **Intra-day periodic reset:** `newTimeRemaining = currentRemaining + fullLimit`
+   (e.g., 10 min left + 30 min limit = 40 min after reset).
+2. **Midnight boundary:** If the previous reset occurred before today's start-of-day (00:00),
+   carryover is suppressed and `timeRemaining` resets to the base `fullLimit`. This prevents
+   yesterday's accumulated time from leaking into the next day.
+3. **Normalization:** `normalizeGroupForPersistence()` does **not** cap `timeRemaining` at
+   `limitInMillis` when cumulative mode is active, so carried-over time survives group edits.
+4. **`nextAddTime`:** Set to `nextResetTime` for cumulative periodic groups; used by UI to show
+   "Next time addition" countdown. Set to `0L` for non-cumulative groups.
 - Lockdown mode
 - Group duplication
 
@@ -852,14 +867,14 @@ Located in `app/src/test/java/com/juliacai/apptick/`
 | `LockdownSummaryFormatterTest.kt` | 4 | One-time date format, missing/past dates, recurring day sorting, invalid days |
 | `ExampleUnitTest.kt` | 1 | Template (2+2=4) |
 
-### Integration Tests (19 files, ~65 test methods)
+### Integration Tests (19 files, ~66 test methods)
 
 Located in `app/src/androidTest/java/com/juliacai/apptick/`
 
 | File | Tests | What it verifies |
 |------|-------|------------------|
 | `AccessibilityBlockingIntegrationTest.kt` | 13 | **End-to-end blocking flow**: time decrement with/without accessibility, per-app tracking, floating window handling, PiP, re-launch on each cycle |
-| `BackgroundCheckerTest.kt` | 21 | **Service time tracking**: decrement, blocking, paused group timer/usage/race-condition, screen-off timer protection (with/without accessibility, per-app usage, resume), reset (daily/periodic/cumulative), per-app usage, zero limits, outside time range, cross-expiry in single tick |
+| `BackgroundCheckerTest.kt` | 22 | **Service time tracking**: decrement, blocking, paused group timer/usage/race-condition, screen-off timer protection (with/without accessibility, per-app usage, resume), reset (daily/periodic/cumulative/midnight-boundary), per-app usage, zero limits, outside time range, cross-expiry in single tick |
 | `NextUnblockTimeIntegrationTest.kt` | 3 | **Next unblock time intent extra**: outside range shows range start, zero limit shows range end, limit reached shows reset time |
 | `MainActivityTest.kt` | 4 | MainScreen rendering, empty state, callbacks, lock icon |
 | `MainActivityDuplicateGroupIntegrationTest.kt` | 2 | Duplication flow: free→premium dialog, premium→new group |
@@ -891,7 +906,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | Screen-off doesn't decrement timer | BackgroundCheckerTest (screen-off tests: no accessibility, with accessibility, per-app usage, resume) |
 | Block screen re-launches each cycle | AccessibilityBlockingIntegrationTest (tests 10-11) |
 | Time tracking accuracy | BackgroundCheckerTest (tests 1-5, 11-13) |
-| Reset logic (daily/periodic/cumulative) | BackgroundCheckerTest (tests 11-13) |
+| Reset logic (daily/periodic/cumulative/midnight-boundary) | BackgroundCheckerTest (tests 11-14) |
 
 ### Test infrastructure patterns
 

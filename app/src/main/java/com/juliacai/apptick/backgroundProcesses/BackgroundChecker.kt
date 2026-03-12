@@ -46,6 +46,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class BackgroundChecker : Service() {
@@ -355,7 +356,23 @@ class BackgroundChecker : Service() {
                 // Zero out all per-app usage
                 val clearedUsage = group.perAppUsage.map { it.copy(usedMillis = 0L) }
                 val newTimeRemaining = if (isPeriodicCumulative) {
-                    (group.timeRemaining.coerceAtLeast(0L) + fullLimitMillis).coerceAtLeast(0L)
+                    // Carryover only within the same calendar day.
+                    // The previous reset fired at approximately nextResetTime − interval.
+                    val intervalMs = TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
+                    val prevResetApprox = group.nextResetTime - intervalMs
+                    val startOfToday = Calendar.getInstance().apply {
+                        timeInMillis = now
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                    val midnightCrossed = prevResetApprox < startOfToday
+                    if (midnightCrossed) {
+                        fullLimitMillis
+                    } else {
+                        (group.timeRemaining.coerceAtLeast(0L) + fullLimitMillis).coerceAtLeast(0L)
+                    }
                 } else {
                     fullLimitMillis
                 }

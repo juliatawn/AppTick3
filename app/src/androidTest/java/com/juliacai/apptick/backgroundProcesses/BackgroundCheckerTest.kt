@@ -697,6 +697,44 @@ class BackgroundCheckerTest {
 
     @Test
     @Throws(Exception::class)
+    fun testCumulativeCarryOverDoesNotCrossMidnight() = runTest {
+        val now = System.currentTimeMillis()
+        // Place nextResetTime yesterday so that midnight has crossed since the previous reset.
+        val yesterdayResetTime = now - 24 * 60 * 60 * 1000L // 24 hours ago
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Cumulative Midnight Reset Test",
+            timeHrLimit = 0,
+            timeMinLimit = 30,
+            timeRemaining = 600_000L, // 10 min carried over from yesterday
+            nextResetTime = yesterdayResetTime,
+            resetMinutes = 120,
+            cumulativeTime = true,
+            apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")),
+            perAppUsage = listOf(
+                com.juliacai.apptick.groups.AppUsageStat("com.google.android.youtube", 1_200_000L)
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
+
+        service.checkAppLimits("com.other.app")
+
+        val updated = dao.getGroup(1)!!
+        // Midnight crossed — carryover should NOT happen; reset to base limit of 30 min
+        assertEquals(1_800_000L, updated.timeRemaining)
+        // Per-app usage should still be cleared
+        val ytUsage = updated.perAppUsage.firstOrNull { it.appPackage == "com.google.android.youtube" }
+        assertEquals(0L, ytUsage?.usedMillis ?: -1L)
+        assertTrue(updated.nextAddTime > now)
+    }
+
+    @Test
+    @Throws(Exception::class)
     fun testCrossingExpiryInSingleTickBlocksImmediately() = runTest {
         val group = AppLimitGroup(
             id = 1,
