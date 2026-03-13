@@ -699,6 +699,9 @@ class BackgroundCheckerTest {
     @Throws(Exception::class)
     fun testCumulativeCarryOverDoesNotCrossMidnight() = runTest {
         val now = System.currentTimeMillis()
+        val intervalMs = 120L * 60_000L // 2 hours
+        val fullLimitMillis = 1_800_000L // 30 min
+
         // Place nextResetTime yesterday so that midnight has crossed since the previous reset.
         val yesterdayResetTime = now - 24 * 60 * 60 * 1000L // 24 hours ago
         val group = AppLimitGroup(
@@ -725,12 +728,84 @@ class BackgroundCheckerTest {
         service.checkAppLimits("com.other.app")
 
         val updated = dao.getGroup(1)!!
-        // Midnight crossed — carryover should NOT happen; reset to base limit of 30 min
-        assertEquals(1_800_000L, updated.timeRemaining)
+
+        // Midnight crossed — yesterday's 10 min carryover is discarded.
+        // All of today's elapsed resets should accumulate from a fresh base.
+        val startOfToday = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        var firstTodayReset = yesterdayResetTime
+        while (firstTodayReset < startOfToday) firstTodayReset += intervalMs
+        val todayResetCount = if (firstTodayReset <= now) {
+            ((now - firstTodayReset) / intervalMs) + 1
+        } else {
+            1L
+        }
+        assertEquals(todayResetCount * fullLimitMillis, updated.timeRemaining)
+
         // Per-app usage should still be cleared
         val ytUsage = updated.perAppUsage.firstOrNull { it.appPackage == "com.google.android.youtube" }
         assertEquals(0L, ytUsage?.usedMillis ?: -1L)
         assertTrue(updated.nextAddTime > now)
+    }
+
+    @Test
+    @Throws(Exception::class)
+    fun testCumulativeCarryOverMultipleMissedResetsWithinSameDay() = runTest {
+        val now = System.currentTimeMillis()
+        val intervalMs = 120L * 60_000L // 2 hours
+        val fullLimitMillis = 300_000L // 5 min
+
+        // Place nextResetTime 3 intervals ago (6 hours) — well within today for most test times.
+        // Use a time guaranteed to be today by clamping to max(startOfToday+1, now - 6h).
+        val startOfToday = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        // Ensure the overdue reset and its predecessor are both today.
+        val overdueResetTime = maxOf(startOfToday + intervalMs + 1, now - 3 * intervalMs)
+        val existingRemaining = 180_000L // 3 min left over from earlier
+
+        val group = AppLimitGroup(
+            id = 1,
+            name = "Multi Missed Same Day",
+            timeHrLimit = 0,
+            timeMinLimit = 5,
+            timeRemaining = existingRemaining,
+            nextResetTime = overdueResetTime,
+            resetMinutes = 120,
+            cumulativeTime = true,
+            apps = listOf(AppInGroup("YouTube", "com.google.android.youtube", "com.google.android.youtube")),
+            perAppUsage = listOf(
+                com.juliacai.apptick.groups.AppUsageStat("com.google.android.youtube", 120_000L)
+            )
+        ).toEntity()
+        dao.insertAppLimitGroup(group)
+
+        val intent = Intent(context, BackgroundChecker::class.java)
+        val binder = serviceRule.bindService(intent)
+        val service = (binder as BackgroundChecker.LocalBinder).getService()
+        service.setFixedElapsedForTesting(1000L)
+
+        service.checkAppLimits("com.other.app")
+
+        val updated = dao.getGroup(1)!!
+
+        // All missed resets are within today — carry over existing time + missed * limit.
+        val missedCount = ((now - overdueResetTime) / intervalMs) + 1
+        val expectedRemaining = existingRemaining + missedCount * fullLimitMillis
+        assertEquals(expectedRemaining, updated.timeRemaining)
+
+        // nextResetTime should be in the future, snapped to the interval grid
+        assertTrue(updated.nextResetTime > now)
+        // Per-app usage should be cleared
+        val ytUsage = updated.perAppUsage.firstOrNull { it.appPackage == "com.google.android.youtube" }
+        assertEquals(0L, ytUsage?.usedMillis ?: -1L)
     }
 
     @Test

@@ -762,14 +762,19 @@ Gated by `prefs.getBoolean("premium", false)`:
 When `cumulativeTime = true` and `resetMinutes > 0`, unused time carries over across periodic
 resets **within the same calendar day**:
 
-1. **Intra-day periodic reset:** `newTimeRemaining = currentRemaining + fullLimit`
-   (e.g., 10 min left + 30 min limit = 40 min after reset).
-2. **Midnight boundary:** If the previous reset occurred before today's start-of-day (00:00),
-   carryover is suppressed and `timeRemaining` resets to the base `fullLimit`. This prevents
-   yesterday's accumulated time from leaking into the next day.
-3. **Normalization:** `normalizeGroupForPersistence()` does **not** cap `timeRemaining` at
+1. **Intra-day periodic reset:** `newTimeRemaining = currentRemaining + missedCount × fullLimit`
+   (e.g., 10 min left + 3 missed resets × 5 min limit = 25 min after catch-up).
+2. **Missed-reset catch-up:** When the service is dormant (Doze, battery optimization, app kill)
+   and multiple reset intervals elapse, `nextResetTime` is advanced along the interval grid
+   (not jumped to `now + interval`). All missed intervals are credited in a single tick:
+   `missedCount = ((now − nextResetTime) / intervalMs) + 1`.
+3. **Midnight boundary:** If the previous reset occurred before today's start-of-day (00:00),
+   carryover is suppressed. Only today's elapsed intervals count:
+   `newTimeRemaining = todayResetCount × fullLimit`. Yesterday's accumulated time does not
+   leak into the next day.
+4. **Normalization:** `normalizeGroupForPersistence()` does **not** cap `timeRemaining` at
    `limitInMillis` when cumulative mode is active, so carried-over time survives group edits.
-4. **`nextAddTime`:** Set to `nextResetTime` for cumulative periodic groups; used by UI to show
+5. **`nextAddTime`:** Set to `nextResetTime` for cumulative periodic groups; used by UI to show
    "Next time addition" countdown. Set to `0L` for non-cumulative groups.
 - Lockdown mode
 - Group duplication
