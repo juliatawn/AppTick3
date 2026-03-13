@@ -208,7 +208,7 @@ The heart of the app. Runs as a foreground service with a single unified corouti
 |--------|---------|
 | `startUnifiedLoop()` | Main loop: poll/wake, detect app, check limits, update notification/bubble |
 | `getForegroundApp()` | Queries both accessibility + UsageStats, picks newest timestamp. **See CLAUDE.md #1** |
-| `checkAppLimits(app, elapsed)` | Iterates groups, handles resets (with midnight carryover guard), decrements time, triggers blocking |
+| `checkAppLimits(app, elapsed)` | Iterates groups, handles resets (with missed-interval catch-up and midnight carryover guard), decrements time, triggers blocking |
 | `launchBlockScreen(pkg)` | Launches BlockWindowActivity + calls tryCloseFloatingWindow. **See CLAUDE.md #2** |
 | `computeElapsedDelta()` | Computes real elapsed time since last check, capped at MAX_ELAPSED |
 | `pickNotificationGroup(groups, app)` | Selects group with lowest remaining time for notification display |
@@ -879,7 +879,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | File | Tests | What it verifies |
 |------|-------|------------------|
 | `AccessibilityBlockingIntegrationTest.kt` | 13 | **End-to-end blocking flow**: time decrement with/without accessibility, per-app tracking, floating window handling, PiP, re-launch on each cycle |
-| `BackgroundCheckerTest.kt` | 22 | **Service time tracking**: decrement, blocking, paused group timer/usage/race-condition, screen-off timer protection (with/without accessibility, per-app usage, resume), reset (daily/periodic/cumulative/midnight-boundary), per-app usage, zero limits, outside time range, cross-expiry in single tick |
+| `BackgroundCheckerTest.kt` | 23 | **Service time tracking**: decrement, blocking, paused group timer/usage/race-condition, screen-off timer protection (with/without accessibility, per-app usage, resume), reset (daily/periodic/cumulative/midnight-boundary/multi-missed-same-day), per-app usage, zero limits, outside time range, cross-expiry in single tick |
 | `NextUnblockTimeIntegrationTest.kt` | 3 | **Next unblock time intent extra**: outside range shows range start, zero limit shows range end, limit reached shows reset time |
 | `MainActivityTest.kt` | 4 | MainScreen rendering, empty state, callbacks, lock icon |
 | `MainActivityDuplicateGroupIntegrationTest.kt` | 2 | Duplication flow: free→premium dialog, premium→new group |
@@ -911,7 +911,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | Screen-off doesn't decrement timer | BackgroundCheckerTest (screen-off tests: no accessibility, with accessibility, per-app usage, resume) |
 | Block screen re-launches each cycle | AccessibilityBlockingIntegrationTest (tests 10-11) |
 | Time tracking accuracy | BackgroundCheckerTest (tests 1-5, 11-13) |
-| Reset logic (daily/periodic/cumulative/midnight-boundary) | BackgroundCheckerTest (tests 11-14) |
+| Reset logic (daily/periodic/cumulative/midnight-boundary/multi-missed) | BackgroundCheckerTest (tests 11-15) |
 
 ### Test infrastructure patterns
 
