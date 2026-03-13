@@ -46,6 +46,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class BackgroundChecker : Service() {
@@ -345,19 +346,57 @@ class BackgroundChecker : Service() {
                 val fullLimitMillis = TimeUnit.MINUTES.toMillis(limitInMinutes.toLong())
                 val isPeriodicCumulative = group.cumulativeTime && group.resetMinutes > 0
 
-                // Advance nextResetTime based on mode
-                val newNextReset = if (group.resetMinutes > 0) {
-                    now + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
-                } else {
-                    TimeManager.nextMidnight(now)
-                }
-
                 // Zero out all per-app usage
                 val clearedUsage = group.perAppUsage.map { it.copy(usedMillis = 0L) }
-                val newTimeRemaining = if (isPeriodicCumulative) {
-                    (group.timeRemaining.coerceAtLeast(0L) + fullLimitMillis).coerceAtLeast(0L)
+
+                val newNextReset: Long
+                val newTimeRemaining: Long
+
+                if (isPeriodicCumulative) {
+                    val intervalMs = TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
+                    val startOfToday = Calendar.getInstance().apply {
+                        timeInMillis = now
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+
+                    // Advance nextResetTime along the interval grid to the next future point.
+                    var nextReset = group.nextResetTime
+                    while (nextReset <= now) nextReset += intervalMs
+                    newNextReset = nextReset
+
+                    // Did midnight cross since the last interval that actually ran?
+                    val prevResetBeforeOverdue = group.nextResetTime - intervalMs
+                    val midnightCrossed = prevResetBeforeOverdue < startOfToday
+
+                    if (midnightCrossed) {
+                        // Discard yesterday's carryover; count only today's resets.
+                        var firstTodayReset = group.nextResetTime
+                        while (firstTodayReset < startOfToday) firstTodayReset += intervalMs
+                        val todayResetCount = if (firstTodayReset <= now) {
+                            ((now - firstTodayReset) / intervalMs) + 1
+                        } else {
+                            // No today reset has passed yet, but the overdue reset
+                            // crosses midnight — grant a fresh base limit.
+                            1L
+                        }
+                        newTimeRemaining = todayResetCount * fullLimitMillis
+                    } else {
+                        // All missed resets are within the same calendar day — carry over.
+                        val missedCount = ((now - group.nextResetTime) / intervalMs) + 1
+                        newTimeRemaining = (group.timeRemaining.coerceAtLeast(0L) +
+                            missedCount * fullLimitMillis).coerceAtLeast(0L)
+                    }
                 } else {
-                    fullLimitMillis
+                    // Non-cumulative: reset to the full limit.
+                    newNextReset = if (group.resetMinutes > 0) {
+                        now + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
+                    } else {
+                        TimeManager.nextMidnight(now)
+                    }
+                    newTimeRemaining = fullLimitMillis
                 }
 
                 appLimitGroupDao.updateResetState(

@@ -167,7 +167,11 @@ internal fun normalizeGroupForPersistence(
         group.limitEach -> if (isNewGroup && persistedRemaining == 0L) limitInMillis else persistedRemaining
         persistedRemaining > 0L -> persistedRemaining
         else -> remainingFromUsage
-    }.coerceAtMost(limitInMillis)
+    }.let { remaining ->
+        // In cumulative mode, carried-over time can legitimately exceed the base limit.
+        if (group.cumulativeTime && group.resetMinutes > 0) remaining
+        else remaining.coerceAtMost(limitInMillis)
+    }
 
     // Set nextResetTime if unset (0) or already in the past.
     val now = System.currentTimeMillis()
