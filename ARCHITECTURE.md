@@ -498,8 +498,32 @@ JSON backup/restore with schema versioning:
 ### `GroupCardOrderStore.kt`
 
 Persists drag-and-drop card order as JSON array of group IDs in SharedPreferences:
-- `sanitizeOrder(saved, available)` → removes deleted IDs, appends new ones
-- `applyOrder(items, savedOrder, idSelector)` → generic reorder function
+- `readOrder(prefs)` → reads saved ID list from `group_card_order` key (returns `emptyList()` if absent)
+- `writeOrder(prefs, orderedIds)` → saves ID list as JSON; removes the key if list is empty
+- `sanitizeOrder(saved, available)` → removes deleted IDs, appends new ones at the end
+- `applyOrder(items, savedOrder, idSelector)` → generic reorder: places items in `savedOrder` sequence first, then appends any remaining items in their original order
+
+#### Group ordering data flow
+
+The display order of groups on the main screen involves two layers:
+
+1. **`MainActivity`** — reads `savedGroupOrder` from SharedPreferences on launch, then computes
+   `orderedGroups = GroupCardOrderStore.applyOrder(groups, savedGroupOrder)` where `groups` comes
+   from Room (`ORDER BY name ASC`). A `LaunchedEffect(groups)` sanitizes `savedGroupOrder` whenever
+   Room emits (adds new group IDs at the end, removes deleted ones) and persists the sanitized order.
+
+2. **`AppLimitGroupsList`** — maintains a local `orderedIds: SnapshotStateList<Long>` initialized
+   from the `groups` parameter (which arrives pre-ordered from step 1). A `LaunchedEffect(groups)`
+   calls `sanitizeOrder(orderedIds, groups.map { it.id })` to keep `orderedIds` in sync when groups
+   are added or deleted. The actual display list is `orderedIds.mapNotNull { id -> groupById[id] }`.
+
+When the user **drags to reorder**, the drag handler updates `orderedIds` immediately, then calls
+`onReorder` which triggers `persistGroupOrder` in `MainActivity` — this updates `savedGroupOrder`
+in memory and writes to SharedPreferences via `writeOrder()`.
+
+**Default order** (no saved order): alphabetical by group name (from the Room query).
+**New groups**: appended at the end of the existing order.
+**Deleted groups**: silently removed during sanitization.
 
 ---
 
@@ -577,9 +601,11 @@ Key formatting functions:
 ### `AppLimitGroups.kt` — Draggable list
 
 LazyColumn with long-press drag-and-drop reordering:
+- Maintains local `orderedIds` state that controls display order (see [GroupCardOrderStore data flow](#group-ordering-data-flow))
 - Auto-scrolls near edges (96dp threshold, 22dp/frame max)
-- Persists order via `GroupCardOrderStore`
+- Persists order via `onReorder` callback → `GroupCardOrderStore.writeOrder()`
 - `zIndex` and `translationY` transforms during drag
+- Auto-scrolls to bottom when a new group is added (`autoScrollTargetSize`)
 
 ---
 
