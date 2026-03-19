@@ -364,4 +364,119 @@ class AppLimitPersistenceNormalizationTest {
         assertEquals(1_200_000L, normalized.timeRemaining) // 20 min in millis
         assertTrue(normalized.perAppUsage.isEmpty())
     }
+
+    // ── Reset interval change tests ───────────────────────────────────────
+
+    @Test
+    fun editResetInterval_recalculatesNextResetTimeFromNow() {
+        // User changes reset interval from daily (0) to 3 hours (180 min)
+        val futureReset = System.currentTimeMillis() + 12 * 3_600_000L // 12 hours from now (midnight)
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            resetMinutes = 0, // daily
+            timeRemaining = 1_800_000L,
+            nextResetTime = futureReset,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 1_800_000L))
+        )
+        val edited = previous.copy(
+            resetMinutes = 180 // 3 hours
+        )
+
+        val before = System.currentTimeMillis()
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+        val after = System.currentTimeMillis()
+
+        // nextResetTime should be ~3 hours from now, not the old midnight value
+        val threeHoursMs = 180 * 60 * 1000L
+        assertTrue(normalized.nextResetTime >= before + threeHoursMs - 100)
+        assertTrue(normalized.nextResetTime <= after + threeHoursMs + 100)
+    }
+
+    @Test
+    fun editResetInterval_resetsTimeRemainingToFullLimit() {
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            resetMinutes = 60, // hourly
+            timeRemaining = 600_000L, // 10 min left
+            perAppUsage = listOf(AppUsageStat("com.test.app", 3_000_000L))
+        )
+        val edited = previous.copy(
+            resetMinutes = 180 // 3 hours
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertEquals(3_600_000L, normalized.timeRemaining) // Full 1hr limit
+    }
+
+    @Test
+    fun editResetInterval_clearsPerAppUsage() {
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 30,
+            resetMinutes = 60,
+            timeRemaining = 600_000L,
+            apps = listOf(AppInGroup("App1", "com.app1", "com.app1")),
+            perAppUsage = listOf(AppUsageStat("com.app1", 1_200_000L))
+        )
+        val edited = previous.copy(
+            resetMinutes = 120
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertTrue(normalized.perAppUsage.isEmpty())
+    }
+
+    @Test
+    fun editResetInterval_sameInterval_preservesState() {
+        // Editing other fields without changing resetMinutes should NOT reset balance
+        val previous = AppLimitGroup(
+            id = 42L,
+            name = "Old Name",
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            resetMinutes = 60,
+            timeRemaining = 1_200_000L,
+            nextResetTime = System.currentTimeMillis() + 1_800_000L,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 2_400_000L))
+        )
+        val edited = previous.copy(
+            name = "New Name"
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        assertEquals(1_200_000L, normalized.timeRemaining)
+        assertEquals(1, normalized.perAppUsage.size)
+    }
+
+    @Test
+    fun editResetInterval_periodicToDaily_recalculatesNextResetToMidnight() {
+        val previous = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            resetMinutes = 60, // hourly
+            timeRemaining = 600_000L,
+            nextResetTime = System.currentTimeMillis() + 1_800_000L
+        )
+        val edited = previous.copy(
+            resetMinutes = 0 // switch to daily
+        )
+
+        val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
+
+        // Should be midnight tomorrow
+        val cal = Calendar.getInstance().apply { timeInMillis = normalized.nextResetTime }
+        assertEquals(0, cal.get(Calendar.HOUR_OF_DAY))
+        assertEquals(0, cal.get(Calendar.MINUTE))
+        assertTrue(normalized.nextResetTime > System.currentTimeMillis())
+        assertEquals(3_600_000L, normalized.timeRemaining) // Full limit reset
+    }
 }

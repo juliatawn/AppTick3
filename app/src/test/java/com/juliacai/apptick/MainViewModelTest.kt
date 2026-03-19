@@ -7,6 +7,7 @@ import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.lifecycle.MutableLiveData
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.AppUsageStat
 import com.juliacai.apptick.data.AppLimitGroupDao
 import com.juliacai.apptick.data.AppLimitGroupEntity
 import com.juliacai.apptick.data.toEntity
@@ -109,5 +110,66 @@ class MainViewModelTest {
         assertThat(viewModel.isPremium.value).isTrue()
         verify(editor).putBoolean("premium", true)
         verify(editor).apply()
+    }
+
+    // ── Unpause expired-reset tests ──────────────────────────────────────
+
+    @Test
+    fun `applyExpiredResetOnUnpause resets timer when nextResetTime has passed`() {
+        val group = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            resetMinutes = 0, // daily
+            timeRemaining = 1_200_000L, // 20 min left
+            nextResetTime = System.currentTimeMillis() - 3_600_000L, // 1 hour ago
+            perAppUsage = listOf(AppUsageStat("com.test.app", 2_400_000L))
+        )
+
+        val result = MainViewModel.applyExpiredResetOnUnpause(group)
+
+        assertThat(result.timeRemaining).isEqualTo(3_600_000L) // Full 1hr
+        assertThat(result.perAppUsage.all { it.usedMillis == 0L }).isTrue()
+        assertThat(result.nextResetTime).isGreaterThan(System.currentTimeMillis())
+    }
+
+    @Test
+    fun `applyExpiredResetOnUnpause preserves state when nextResetTime is in the future`() {
+        val futureReset = System.currentTimeMillis() + 3_600_000L
+        val group = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 1,
+            timeMinLimit = 0,
+            timeRemaining = 1_200_000L,
+            nextResetTime = futureReset,
+            perAppUsage = listOf(AppUsageStat("com.test.app", 2_400_000L))
+        )
+
+        val result = MainViewModel.applyExpiredResetOnUnpause(group)
+
+        assertThat(result.timeRemaining).isEqualTo(1_200_000L) // Unchanged
+        assertThat(result.nextResetTime).isEqualTo(futureReset)
+        assertThat(result.perAppUsage.first().usedMillis).isEqualTo(2_400_000L)
+    }
+
+    @Test
+    fun `applyExpiredResetOnUnpause periodic reset sets nextResetTime from now`() {
+        val group = AppLimitGroup(
+            id = 42L,
+            timeHrLimit = 0,
+            timeMinLimit = 30,
+            resetMinutes = 180, // 3 hours
+            timeRemaining = 0L,
+            nextResetTime = System.currentTimeMillis() - 7_200_000L // 2 hours ago
+        )
+
+        val before = System.currentTimeMillis()
+        val result = MainViewModel.applyExpiredResetOnUnpause(group)
+        val after = System.currentTimeMillis()
+
+        val threeHoursMs = 180 * 60 * 1000L
+        assertThat(result.nextResetTime).isAtLeast(before + threeHoursMs - 100)
+        assertThat(result.nextResetTime).isAtMost(after + threeHoursMs + 100)
+        assertThat(result.timeRemaining).isEqualTo(1_800_000L) // 30 min
     }
 }
