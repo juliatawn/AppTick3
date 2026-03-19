@@ -35,6 +35,7 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = false,
+                showLockNowButton = false,
                 showGroupDetailsHint = false,
                 showBatteryWarning = false,
                 batteryWarningDismissable = false,
@@ -45,6 +46,7 @@ class MainActivityTest {
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
+                onLockNowClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
                 onOpenDontKillMyApp = {},
@@ -66,6 +68,7 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 2,
                 showLockedIcon = false,
+                showLockNowButton = false,
                 showGroupDetailsHint = false,
                 showBatteryWarning = false,
                 batteryWarningDismissable = false,
@@ -76,6 +79,7 @@ class MainActivityTest {
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
+                onLockNowClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
                 onOpenDontKillMyApp = {},
@@ -103,6 +107,7 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = false,
+                showLockNowButton = false,
                 showGroupDetailsHint = false,
                 showBatteryWarning = false,
                 batteryWarningDismissable = false,
@@ -113,6 +118,7 @@ class MainActivityTest {
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = { clicked = true },
+                onLockNowClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
                 onOpenDontKillMyApp = {},
@@ -136,6 +142,7 @@ class MainActivityTest {
             MainScreen(
                 appLimitGroupCount = 0,
                 showLockedIcon = true,
+                showLockNowButton = false,
                 showGroupDetailsHint = false,
                 showBatteryWarning = false,
                 batteryWarningDismissable = false,
@@ -146,6 +153,7 @@ class MainActivityTest {
                 onFabClick = {},
                 onSettingsClick = {},
                 onPremiumClick = {},
+                onLockNowClick = {},
                 onOpenAppBatterySettings = {},
                 onOpenGeneralBatterySettings = {},
                 onOpenDontKillMyApp = {},

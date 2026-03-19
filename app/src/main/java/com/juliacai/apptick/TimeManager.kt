@@ -131,10 +131,16 @@ class TimeManager(private val group: AppLimitGroup) {
             // Zero limit: reset is meaningless (0 resets to 0).
             if (isZeroLimit) {
                 if (hasTimeRange && !group.blockOutsideTimeRange) {
-                    // Blocked during range, free outside → show range end if in range.
+                    // Blocked during range, free outside → show when blocking lifts.
+                    // If currently in range, show when this range ends.
                     val rangeEnd = currentTimeRangeEnd(ranges, nowMillis)
                     if (rangeEnd > 0L) return rangeEnd
-                    // Not in range: app is free right now, raw reset is harmless to show.
+                    // Not in range: find when the NEXT range ends.
+                    val nextStart = nextTimeRangeEntry(ranges, nowMillis, group.weekDays)
+                    if (nextStart > 0L) {
+                        val nextRangeEnd = currentTimeRangeEnd(ranges, nextStart)
+                        if (nextRangeEnd > 0L) return nextRangeEnd
+                    }
                     return nextReset
                 }
                 // Always blocked (blockOutside or no range) → reset doesn't help.

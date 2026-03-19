@@ -285,7 +285,7 @@ class AppLimitPersistenceNormalizationTest {
     }
 
     @Test
-    fun editLimit_dailyReset_preservesFutureNextResetTime() {
+    fun editLimit_dailyReset_recalculatesNextResetTimeWhenLimitChanges() {
         val futureReset = System.currentTimeMillis() + 3_600_000L // 1 hour from now
         val previous = AppLimitGroup(
             id = 42L,
@@ -300,10 +300,15 @@ class AppLimitPersistenceNormalizationTest {
             timeMinLimit = 30
         )
 
+        val now = System.currentTimeMillis()
         val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
 
-        // Daily reset: nextResetTime stays as-is if still in the future
-        assertEquals(futureReset, normalized.nextResetTime)
+        // Limit changed → nextResetTime is recalculated to next midnight (daily mode)
+        val expectedNextMidnight = TimeManager.nextMidnight(now)
+        assertTrue(
+            "nextResetTime should be recalculated to next midnight, was ${normalized.nextResetTime}",
+            normalized.nextResetTime in (expectedNextMidnight - 100)..(expectedNextMidnight + 100)
+        )
     }
 
     @Test
