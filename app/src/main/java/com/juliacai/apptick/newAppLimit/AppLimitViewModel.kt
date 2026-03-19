@@ -159,11 +159,17 @@ internal fun normalizeGroupForPersistence(
         (group.timeHrLimit != previousGroup.timeHrLimit ||
          group.timeMinLimit != previousGroup.timeMinLimit)
 
-    val effectiveUsage = if (limitChanged) emptyList() else normalizedUsage
+    // Detect whether the reset interval was changed during an edit.
+    val resetIntervalChanged = previousGroup != null &&
+        group.resetMinutes != previousGroup.resetMinutes
+
+    val effectiveUsage = if (limitChanged || resetIntervalChanged) emptyList() else normalizedUsage
 
     val normalizedTimeRemaining = when {
         !hasConfiguredLimit -> 0L
         limitChanged -> limitInMillis
+        // When reset interval changes, reset the timer so the new schedule takes effect immediately.
+        resetIntervalChanged -> limitInMillis
         group.limitEach -> if (isNewGroup && persistedRemaining == 0L) limitInMillis else persistedRemaining
         persistedRemaining > 0L -> persistedRemaining
         else -> remainingFromUsage
@@ -175,8 +181,8 @@ internal fun normalizeGroupForPersistence(
 
     // Set nextResetTime if unset (0) or already in the past.
     val now = System.currentTimeMillis()
-    // For periodic reset groups, recalculate nextResetTime from now when limit changes.
-    val resetTimeNeedsRefresh = limitChanged && group.resetMinutes > 0
+    // Recalculate nextResetTime when the limit or reset interval changes.
+    val resetTimeNeedsRefresh = limitChanged || resetIntervalChanged
     val normalizedNextReset = if (!resetTimeNeedsRefresh && group.nextResetTime > now) {
         // Already has a valid future reset time — keep it.
         group.nextResetTime

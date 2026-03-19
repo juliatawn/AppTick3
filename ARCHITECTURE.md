@@ -658,6 +658,15 @@ AppLimitViewModel.saveGroup()
 BackgroundChecker.applyDesiredServiceState()
 ```
 
+**Immediate-effect guarantees for group setting changes:**
+
+| User Action | What takes effect immediately |
+|-------------|------------------------------|
+| Change time limit | `timeRemaining` reset to new limit, `perAppUsage` cleared, periodic `nextResetTime` recalculated from now |
+| Change reset interval | `timeRemaining` reset to full limit, `perAppUsage` cleared, `nextResetTime` recalculated from now |
+| Unpause group | If `nextResetTime` has passed while paused: `timeRemaining` reset to full limit, `perAppUsage` cleared, `nextResetTime` recalculated from now. BackgroundChecker woken via `requestImmediateCheck()` |
+| Change active days / time ranges | Takes effect on next BackgroundChecker iteration (evaluated per-check) |
+
 **SetTimeLimitsScreen sections:**
 1. Selected apps (FlowRow of chips, removable)
 2. Group name
@@ -676,6 +685,11 @@ BackgroundChecker.applyDesiredServiceState()
     - `perAppUsage` is cleared (all app usage tracking reset)
     - For periodic reset groups (`resetMinutes > 0`), `nextResetTime` is recalculated from now
     - For daily reset groups, `nextResetTime` is preserved if still in the future
+  - **When the reset interval changes** (resetMinutes differs from previous):
+    - `timeRemaining` is reset to the full limit (fresh start on new schedule)
+    - `perAppUsage` is cleared
+    - `nextResetTime` is recalculated from now (periodic: now + interval, daily: next midnight)
+    - This ensures changing reset interval from e.g. daily → 3 hours takes effect immediately
 - `saveGroup()` → fetches the previous group from DB (for edits) to pass to normalization
 - `duplicateGroupForCreation()` → clears ID/state for new group
 - `SetTimeLimitDraft` → intermediate form state for cancel-safe editing
