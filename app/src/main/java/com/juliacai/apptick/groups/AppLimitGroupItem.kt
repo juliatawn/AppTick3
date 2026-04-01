@@ -60,18 +60,52 @@ fun AppLimitGroupItem(
     onEdit: (AppLimitGroup) -> Unit,
     onDelete: (AppLimitGroup) -> Unit,
     onCardClick: ((AppLimitGroup) -> Unit)? = null,
+    isDragging: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val lineSpacing = 2.dp
+    val cardColors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer
+    )
+    // Use a single non-clickable Card so the composable tree never changes
+    // when isDragging flips (swapping Cards would restart the pointerInput
+    // coroutine and kill the active drag gesture).  Click is handled via a
+    // Modifier.clickable that disables itself during drag.
     Card(
         modifier = modifier
             .fillMaxWidth()
-            .padding(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        ),
-        onClick = { onCardClick?.invoke(group) ?: onEdit(group) }
+            .padding(8.dp)
+            .clickable {
+                if (!isDragging) {
+                    onCardClick?.invoke(group) ?: onEdit(group)
+                }
+            },
+        colors = cardColors
     ) {
+        AppLimitGroupItemContent(
+            group = group,
+            isExpanded = isExpanded,
+            isEditingLocked = isEditingLocked,
+            onExpandToggle = onExpandToggle,
+            onLockClick = onLockClick,
+            onPauseToggle = onPauseToggle,
+            onEdit = onEdit,
+            lineSpacing = lineSpacing
+        )
+    }
+}
+
+@Composable
+private fun AppLimitGroupItemContent(
+    group: AppLimitGroup,
+    isExpanded: Boolean,
+    isEditingLocked: Boolean,
+    onExpandToggle: (AppLimitGroup) -> Unit,
+    onLockClick: (AppLimitGroup) -> Unit,
+    onPauseToggle: (AppLimitGroup) -> Unit,
+    onEdit: (AppLimitGroup) -> Unit,
+    lineSpacing: androidx.compose.ui.unit.Dp
+) {
         Column(
             modifier = Modifier.padding(
                 start = 21.dp,
@@ -250,7 +284,6 @@ fun AppLimitGroupItem(
                 )
             }
         }
-    }
 }
 
 private fun formatConfiguredTimeLimit(group: AppLimitGroup): String {

@@ -17,9 +17,25 @@ import androidx.core.content.edit
 
 private const val PREF_LAST_SEEN_CHANGELOG_VERSION = "last_seen_changelog_version"
 
-private const val CHANGELOG_TITLE = "CHANGELOG\n2026.4.10v45"
+private const val CHANGELOG_TITLE = "CHANGELOG\n2026.4.31v49"
 
 private const val CHANGELOG_BODY = """
+- Updated notification in notification shade to be less intrusive (notifications are required to keep AppTick up and running while you use your apps)
+- Updated drag and drop of groups to be smoother and not easy to accidentally move - has wiggle!
+
+---
+    
+2026.4.18v48
+- Fixed edit not updating time reset immediately (bug fix)
+
+---
+
+2026.4.11v46
+- "LOCK NOW" button for Lockdown mode users to lock limits faster
+- Minor UI improvements
+
+---
+
 2026.4.10v45
 
 - More reliable app limits with Accessibility Service optional toggle (Enhanced App Detection), improves notification shade, split screen, and floating window app limiting.

@@ -2,6 +2,7 @@ package com.juliacai.apptick.deviceApps
 
 import android.content.Context
 import android.content.Intent
+import com.juliacai.apptick.PremiumStore
 import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
@@ -17,6 +18,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.LazyColumn
@@ -66,8 +72,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -97,6 +105,7 @@ import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppUsageStat
 import com.juliacai.apptick.groups.GroupAppItem
+import com.juliacai.apptick.LongHoldDragArea
 import com.juliacai.apptick.rememberScrollbarColor
 import androidx.core.content.edit
 import androidx.lifecycle.lifecycleScope
@@ -128,7 +137,7 @@ class GroupPage : BaseActivity() {
 
         setContent {
             val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
-            val isPremium = prefs.getBoolean("premium", false)
+            val isPremium = PremiumStore.isPremium(this@GroupPage)
             val isSystemDark = androidx.compose.foundation.isSystemInDarkTheme()
             var showDuplicatePremiumDialog by androidx.compose.runtime.remember {
                 androidx.compose.runtime.mutableStateOf(false)
@@ -421,10 +430,12 @@ fun GroupDetails(
     var draggingOffsetY by remember { mutableFloatStateOf(0f) }
     var orderChangedDuringDrag by remember { mutableStateOf(false) }
     var autoScrollSpeedPxPerFrame by remember { mutableFloatStateOf(0f) }
+    var dragAnchorY by remember { mutableFloatStateOf(0f) }
     val density = LocalDensity.current
     val edgeThresholdPx = with(density) { 96.dp.toPx() }
     val maxAutoScrollPxPerFrame = with(density) { 22.dp.toPx() }
     val scrollbarColor = rememberScrollbarColor()
+    val haptic = LocalHapticFeedback.current
     val showCompactHeader by remember {
         derivedStateOf {
             listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 180
@@ -450,6 +461,7 @@ fun GroupDetails(
         }
     }
 
+    LongHoldDragArea(timeoutMs = 500L) {
     Box(modifier = Modifier.fillMaxSize() ) {
         LazyColumn(
             state = listState,
@@ -615,7 +627,7 @@ fun GroupDetails(
                     ) {
                         Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
                             Text(
-                                text = "Long-press and drag app cards to reorder.",
+                                text = "Hold down on a card until it wiggles, then drag to reorder.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -644,18 +656,37 @@ fun GroupDetails(
                     appTimeUse = usageByPackage[app.appPackage] ?: 0L
                 )
                 val isDragging = draggingAppPackage == app.appPackage
+                val wiggleRotation = remember { Animatable(0f) }
+
+                LaunchedEffect(isDragging) {
+                    if (isDragging) {
+                        wiggleRotation.snapTo(-2f)
+                        wiggleRotation.animateTo(
+                            targetValue = 2f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(100, easing = LinearEasing),
+                                repeatMode = RepeatMode.Reverse
+                            )
+                        )
+                    } else {
+                        wiggleRotation.snapTo(0f)
+                    }
+                }
+
                 val dragModifier = Modifier.pointerInput(app.appPackage, orderedApps.size) {
                     detectDragGesturesAfterLongPress(
-                        onDragStart = {
+                        onDragStart = { offset ->
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             draggingAppPackage = app.appPackage
                             draggingOffsetY = 0f
+                            dragAnchorY = offset.y
                             orderChangedDuringDrag = false
                             autoScrollSpeedPxPerFrame = 0f
                         },
-                        onDrag = { change, dragAmount ->
+                        onDrag = { change, _ ->
                             if (draggingAppPackage != app.appPackage) return@detectDragGesturesAfterLongPress
                             change.consume()
-                            draggingOffsetY += dragAmount.y
+                            draggingOffsetY = change.position.y - dragAnchorY
 
                             val visibleItems = listState.layoutInfo.visibleItemsInfo
                             val draggedInfo = visibleItems.firstOrNull { it.key == app.appPackage }
@@ -721,7 +752,12 @@ fun GroupDetails(
                     limitEach = group.limitEach,
                     modifier = dragModifier
                         .zIndex(if (isDragging) 1f else 0f)
-                        .graphicsLayer { translationY = if (isDragging) draggingOffsetY else 0f },
+                        .graphicsLayer {
+                            translationY = if (isDragging) draggingOffsetY else 0f
+                            rotationZ = wiggleRotation.value
+                            scaleX = if (isDragging) 1.04f else 1f
+                            scaleY = if (isDragging) 1.04f else 1f
+                        },
                     sharedTimeRemainingMinutes = if (group.limitEach) {
                         null
                     } else {
@@ -773,6 +809,7 @@ fun GroupDetails(
                 }
             }
         }
+    }
     }
 }
 

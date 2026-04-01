@@ -1037,17 +1037,21 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     }
 
     private fun isPremiumEnabledNow(): Boolean {
-        return prefs.getBoolean("premium", false)
+        return PremiumStore.isPremium(this)
     }
 
     private fun createNotificationChannel() {
+        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        // Delete legacy channel so importance downgrade takes effect on update
+        notificationManager.deleteNotificationChannel("app_tick_channel")
+
         val name = getString(R.string.channel_name)
         val descriptionText = getString(R.string.channel_description)
-        val importance = NotificationManager.IMPORTANCE_DEFAULT
-        val channel = NotificationChannel("app_tick_channel", name, importance).apply {
+        val importance = NotificationManager.IMPORTANCE_LOW
+        val channel = NotificationChannel("app_tick_channel_v2", name, importance).apply {
             description = descriptionText
+            setShowBadge(false)
         }
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.createNotificationChannel(channel)
     }
 
@@ -1074,7 +1078,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             maybeAutoUnlockExpiredLockdown()
             refreshLockUiState()
             lockEvaluationNow = System.currentTimeMillis()
-            viewModel.updatePremiumStatus(prefs.getBoolean("premium", false))
+            viewModel.updatePremiumStatus(PremiumStore.isPremium(this))
             syncBackgroundServiceState()
         }
     }
@@ -1176,12 +1180,23 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
         billingClient.queryPurchasesAsync(params) { billingResult, purchases ->
             if (billingResult.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
-                for (purchase in purchases) {
-                    if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
-                        handlePurchase(purchase, showSuccessToast = false)
+                val hasPremiumPurchase = purchases.any { purchase ->
+                    purchase.purchaseState == Purchase.PurchaseState.PURCHASED
+                }
+                if (hasPremiumPurchase) {
+                    for (purchase in purchases) {
+                        if (purchase.purchaseState == Purchase.PurchaseState.PURCHASED) {
+                            handlePurchase(purchase, showSuccessToast = false)
+                        }
                     }
+                } else {
+                    // No valid purchase found — revoke premium (handles refunds).
+                    // Only revoke if we got a successful response from Play;
+                    // a failed query (e.g. offline with no cache) keeps the local state.
+                    viewModel.updatePremiumStatus(false)
                 }
             }
+            // If responseCode != OK (offline, Play not available), keep current local state
         }
     }
 

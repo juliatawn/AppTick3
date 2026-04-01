@@ -13,8 +13,8 @@ android {
         applicationId = "com.juliacai.apptick"
         minSdk = 27
         targetSdk = 36
-        versionCode = 48
-        versionName = "2026.4.18v48"
+        versionCode = 49
+        versionName = "2026.4.31v49"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -105,6 +105,9 @@ dependencies {
 
     // Biometric
     implementation(libs.androidx.biometric)
+
+    // Security (EncryptedSharedPreferences)
+    implementation(libs.androidx.security.crypto)
 
     // Lifecycle
     implementation(libs.androidx.lifecycle.runtime.ktx)

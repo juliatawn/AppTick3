@@ -1,8 +1,6 @@
 package com.juliacai.apptick
 
 import android.app.Application
-import android.content.Context
-import android.content.SharedPreferences
 import androidx.arch.core.executor.testing.InstantTaskExecutorRule
 import androidx.lifecycle.MutableLiveData
 import com.juliacai.apptick.appLimit.AppInGroup
@@ -23,7 +21,6 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import com.google.common.truth.Truth.assertThat
 import org.mockito.Mockito
-import org.mockito.kotlin.verify
 
 @ExperimentalCoroutinesApi
 class MainViewModelTest {
@@ -35,27 +32,25 @@ class MainViewModelTest {
 
     private lateinit var viewModel: MainViewModel
     private lateinit var dao: AppLimitGroupDao
-    private lateinit var sharedPreferences: SharedPreferences
-    private lateinit var editor: SharedPreferences.Editor
+    private var savedPremium = false
 
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
         dao = mock()
         val application = Mockito.mock(Application::class.java)
-        sharedPreferences = Mockito.mock(SharedPreferences::class.java)
-        editor = Mockito.mock(SharedPreferences.Editor::class.java)
         val liveData = MutableLiveData<List<AppLimitGroupEntity>>()
         whenever(dao.getAllAppLimitGroups()).thenReturn(liveData)
-        Mockito.`when`(application.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE))
-            .thenReturn(sharedPreferences)
-        Mockito.`when`(sharedPreferences.getBoolean("premium", false)).thenReturn(false)
-        Mockito.`when`(sharedPreferences.edit()).thenReturn(editor)
-        Mockito.`when`(editor.putBoolean(Mockito.anyString(), Mockito.anyBoolean())).thenReturn(editor)
         runBlocking {
             whenever(dao.getActiveGroupCount()).thenReturn(0)
         }
-        viewModel = MainViewModel(application, dao) { _, _ -> }
+        savedPremium = false
+        viewModel = MainViewModel(
+            application, dao,
+            applyServiceState = { _, _ -> },
+            getPremium = { false },
+            savePremium = { _, value -> savedPremium = value }
+        )
     }
 
     @After
@@ -108,8 +103,7 @@ class MainViewModelTest {
     fun `updatePremiumStatus true updates liveData and prefs`() {
         viewModel.updatePremiumStatus(true)
         assertThat(viewModel.isPremium.value).isTrue()
-        verify(editor).putBoolean("premium", true)
-        verify(editor).apply()
+        assertThat(savedPremium).isTrue()
     }
 
     // ── Unpause expired-reset tests ──────────────────────────────────────

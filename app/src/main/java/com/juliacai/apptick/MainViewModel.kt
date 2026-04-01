@@ -6,7 +6,6 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.map
 import androidx.lifecycle.viewModelScope
-import androidx.core.content.edit
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.data.AppLimitGroupDao
@@ -20,7 +19,9 @@ import java.util.concurrent.TimeUnit
 class MainViewModel(
     application: Application,
     private val appLimitGroupDao: AppLimitGroupDao,
-    private val applyServiceState: (android.content.Context, Boolean) -> Unit = BackgroundChecker::applyDesiredServiceState
+    private val applyServiceState: (android.content.Context, Boolean) -> Unit = BackgroundChecker::applyDesiredServiceState,
+    private val getPremium: (android.content.Context) -> Boolean = PremiumStore::isPremium,
+    private val savePremium: (android.content.Context, Boolean) -> Unit = PremiumStore::setPremium
 ) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(application, AppTickDatabase.getDatabase(application).appLimitGroupDao())
@@ -28,9 +29,7 @@ class MainViewModel(
     val groups: LiveData<List<AppLimitGroupEntity>> = appLimitGroupDao.getAllAppLimitGroups()
 
     private val _isPremium = MutableLiveData(
-        getApplication<Application>()
-            .getSharedPreferences("groupPrefs", Application.MODE_PRIVATE)
-            .getBoolean("premium", false)
+        getPremium(getApplication())
     )
     val isPremium: LiveData<Boolean> = _isPremium
 
@@ -41,14 +40,8 @@ class MainViewModel(
     }
 
     fun updatePremiumStatus(isPremium: Boolean) {
-        val prefs = getApplication<Application>()
-            .getSharedPreferences("groupPrefs", Application.MODE_PRIVATE)
-        val forceFreeForDebug = prefs.getBoolean("debug_force_free", false)
-        val effectivePremium = isPremium && !forceFreeForDebug
-        _isPremium.postValue(effectivePremium)
-        prefs.edit {
-            putBoolean("premium", effectivePremium)
-        }
+        _isPremium.postValue(isPremium)
+        savePremium(getApplication(), isPremium)
     }
 
     fun togglePause(group: AppLimitGroup) {

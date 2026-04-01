@@ -424,7 +424,7 @@ private fun SetTimeLimitsScreenContent(
                 Switch(
                     checked = useTimeRange.value,
                     onCheckedChange = {
-                        val isPremium = groupPrefs.getBoolean("premium", false)
+                        val isPremium = com.juliacai.apptick.PremiumStore.isPremium(context)
                         if (it && !isPremium) {
                             premiumFeatureDialogFor = "Set Time Range"
                             return@Switch
@@ -613,7 +613,7 @@ private fun SetTimeLimitsScreenContent(
                 Switch(
                     checked = useReset.value,
                     onCheckedChange = {
-                        val isPremium = groupPrefs.getBoolean("premium", false)
+                        val isPremium = com.juliacai.apptick.PremiumStore.isPremium(context)
                         if (it && !isPremium) {
                             premiumFeatureDialogFor = "Reset Time Limits Periodically"
                             return@Switch

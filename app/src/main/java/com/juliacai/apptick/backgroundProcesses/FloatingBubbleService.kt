@@ -184,12 +184,18 @@ class FloatingBubbleService : Service() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(NotificationManager::class.java)
+            // Delete legacy channel so badge/importance changes take effect on update
+            nm.deleteNotificationChannel("FLOATING_BUBBLE_CHANNEL")
+
             val channel = NotificationChannel(
-                "FLOATING_BUBBLE_CHANNEL",
+                "FLOATING_BUBBLE_CHANNEL_v2",
                 "Floating Bubble",
-                NotificationManager.IMPORTANCE_LOW
-            )
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+                NotificationManager.IMPORTANCE_MIN
+            ).apply {
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
         }
     }
 
@@ -199,7 +205,7 @@ class FloatingBubbleService : Service() {
             this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notification = NotificationCompat.Builder(this, "FLOATING_BUBBLE_CHANNEL")
+        val notification = NotificationCompat.Builder(this, "FLOATING_BUBBLE_CHANNEL_v2")
             .setContentTitle("AppTick")
             .setContentText("Floating bubble is active")
             .setSmallIcon(R.drawable.ic_launcher_foreground)
@@ -217,6 +223,12 @@ class FloatingBubbleService : Service() {
         TypedValue.applyDimension(
             TypedValue.COMPLEX_UNIT_DIP, value, resources.displayMetrics
         ).toInt()
+
+    /** Returns the status bar height in pixels so the bubble stays below it. */
+    private fun statusBarHeight(): Int {
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        return if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else dp(24f)
+    }
 
     // ── Dismiss target ───────────────────────────────────────────────────
 
@@ -398,7 +410,7 @@ class FloatingBubbleService : Service() {
                     }
                     if (isDragging) {
                         p.x = initialX + dx
-                        p.y = initialY + dy
+                        p.y = (initialY + dy).coerceAtLeast(statusBarHeight())
                         try { windowManager?.updateViewLayout(entry.view, p) } catch (_: Exception) {}
 
                         val hovering = isOverDismissTarget(event.rawX, event.rawY)
@@ -440,10 +452,11 @@ class FloatingBubbleService : Service() {
         val appYKey = appPackage?.let { bubblePositionYKey(it) }
         val hasPerAppPosition = appXKey != null && appYKey != null &&
                 prefs.contains(appXKey) && prefs.contains(appYKey)
+        val minY = statusBarHeight()
         return if (hasPerAppPosition) {
-            prefs.getInt(appXKey, defaultX) to prefs.getInt(appYKey, defaultY)
+            prefs.getInt(appXKey, defaultX) to prefs.getInt(appYKey, defaultY).coerceAtLeast(minY)
         } else {
-            prefs.getInt(PREF_BUBBLE_POS_X, defaultX) to prefs.getInt(PREF_BUBBLE_POS_Y, defaultY)
+            prefs.getInt(PREF_BUBBLE_POS_X, defaultX) to prefs.getInt(PREF_BUBBLE_POS_Y, defaultY).coerceAtLeast(minY)
         }
     }
 

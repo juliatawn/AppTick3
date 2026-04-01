@@ -26,6 +26,7 @@ import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationCompat
 import androidx.core.content.edit
 import com.juliacai.apptick.MainActivity
+import com.juliacai.apptick.PremiumStore
 import com.juliacai.apptick.Receiver
 import com.juliacai.apptick.R
 import com.juliacai.apptick.appLimit.AppLimitEvaluator
@@ -523,7 +524,7 @@ class BackgroundChecker : Service() {
     // ── Notification ──────────────────────────────────────────────────────────
 
     private fun createNotification() {
-        val channelId = "APPTICK_CHANNEL"
+        val channelId = "APPTICK_CHANNEL_v2"
         val defaultContentText = "AppTick is running..."
         mBuilder = NotificationCompat.Builder(applicationContext, channelId)
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
@@ -557,11 +558,16 @@ class BackgroundChecker : Service() {
 
         mNotificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
+        // Delete legacy channel so badge/importance changes take effect on update
+        mNotificationManager.deleteNotificationChannel("APPTICK_CHANNEL")
+
         val channel = NotificationChannel(
             channelId,
             "AppTick app blocker notification (required for AppTick to run properly)",
             NotificationManager.IMPORTANCE_MIN
-        )
+        ).apply {
+            setShowBadge(false)
+        }
         mNotificationManager.createNotificationChannel(channel)
         mBuilder.setChannelId(channelId)
     }
@@ -619,7 +625,7 @@ class BackgroundChecker : Service() {
             prevBubbleForegroundApp = currentApp
         }
 
-        val isPremium = prefs.getBoolean("premium", false)
+        val isPremium = PremiumStore.isPremium(this)
         if (!isPremium) {
             activeBubbleApps.clear()
             try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}

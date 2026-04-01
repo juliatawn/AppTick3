@@ -56,7 +56,6 @@ fun LockdownModeScreen(
     onRecurringDaysChanged: (List<Int>) -> Unit,
     onDateClick: () -> Unit,
     onTimeClick: () -> Unit,
-    onOpenFamilyLinkClick: () -> Unit,
     onStartLockdownClick: () -> Unit,
     onCancelClick: () -> Unit,
     isLockdownActive: Boolean,
@@ -238,34 +237,6 @@ fun LockdownModeScreen(
                             }
                         }
 
-                        ElevatedCard(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(14.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    "Uninstall protection recommendation",
-                                    style = MaterialTheme.typography.titleMedium
-                                )
-                                Text(
-                                    "Use Google Family Link for extra uninstall protection. Best for parent-managed devices/accounts."
-                                )
-                                Text(
-                                    "On self-managed devices, it may slow uninstall attempts but may not fully prevent them.",
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                                OutlinedButton(
-                                    onClick = onOpenFamilyLinkClick,
-                                    enabled = isConfigurationEnabled,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Open Family Link Setup")
-                                }
-                            }
-                        }
                     }
                 }
 
@@ -310,7 +281,6 @@ private fun LockdownModeScreenPreview() {
             onRecurringDaysChanged = {},
             onDateClick = {},
             onTimeClick = {},
-            onOpenFamilyLinkClick = {},
             onStartLockdownClick = {},
             onCancelClick = {},
             isLockdownActive = false,

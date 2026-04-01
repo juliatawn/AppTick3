@@ -82,7 +82,6 @@ class SetPassword : AppCompatActivity() {
                         )
                     },
                     onCancelClick = { handleExitRequest() },
-                    onOpenFamilyLinkClick = { openFamilyLinkSetup() },
                     onBiometricToggleRequest = { requestedEnabled ->
                         if (!canUseBiometric()) return@SetPasswordScreen
                         if (!requestedEnabled) {
@@ -226,31 +225,6 @@ class SetPassword : AppCompatActivity() {
         // Warn only when user intentionally enabled this page's configuration flow
         // but Password mode is not currently configured/saved.
         return isConfigurationEnabled && !isPasswordModeConfiguredNow()
-    }
-
-    private fun openFamilyLinkSetup() {
-        val familySettingsIntent = Intent("android.settings.FAMILY_SETTINGS")
-        if (familySettingsIntent.resolveActivity(packageManager) != null) {
-            startActivity(familySettingsIntent)
-            return
-        }
-        val familyLinkPackage = "com.google.android.apps.kids.familylink"
-        val appIntent = packageManager.getLaunchIntentForPackage(familyLinkPackage)
-        if (appIntent != null) {
-            startActivity(appIntent)
-            return
-        }
-        val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$familyLinkPackage"))
-        if (marketIntent.resolveActivity(packageManager) != null) {
-            startActivity(marketIntent)
-            return
-        }
-        startActivity(
-            Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("https://play.google.com/store/apps/details?id=$familyLinkPackage")
-            )
-        )
     }
 
     private fun showEnablePasswordToggleDialog() {

@@ -52,7 +52,6 @@ import com.juliacai.apptick.verticalScrollWithIndicator
 fun SetPasswordScreen(
     onSaveClick: (String, String, Boolean, Boolean) -> Unit,
     onCancelClick: () -> Unit,
-    onOpenFamilyLinkClick: () -> Unit,
     onBiometricToggleRequest: (Boolean) -> Unit,
     onUsbSecurityKeyToggleRequest: (Boolean) -> Unit,
     onDisabledInteraction: () -> Unit,
@@ -225,32 +224,6 @@ fun SetPasswordScreen(
                         )
                         Text("Allow USB security key as an alternative unlock for Password mode")
                     }
-                    OutlinedCard(modifier = Modifier.fillMaxWidth().then(disabledTapModifier)) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text("Uninstall protection recommendation", style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                "Use Google Family Link for extra uninstall protection. Best for parent-managed devices/accounts."
-                            )
-                            Text(
-                                "On self-managed devices, it may slow uninstall attempts but may not fully prevent them.",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            Box(modifier = Modifier.fillMaxWidth().then(disabledTapModifier)) {
-                                OutlinedButton(
-                                    onClick = onOpenFamilyLinkClick,
-                                    enabled = isConfigurationEnabled,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text("Open Family Link Setup")
-                                }
-                            }
-                        }
-                    }
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
@@ -299,7 +272,6 @@ private fun SetPasswordScreenPreview() {
         SetPasswordScreen(
             onSaveClick = { _, _, _, _ -> },
             onCancelClick = {},
-            onOpenFamilyLinkClick = {},
             onBiometricToggleRequest = {},
             onUsbSecurityKeyToggleRequest = {},
             onDisabledInteraction = {},

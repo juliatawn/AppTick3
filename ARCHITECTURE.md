@@ -31,7 +31,7 @@ AppTick is an Android app-blocking application. Users create **app limit groups*
 
 **Build config:** Android SDK 36, min SDK 27, Kotlin + Jetpack Compose + Room + Coroutines.
 
-**Key dependencies:** Room (database), Gson (serialization), Coil (image loading), Google Play Billing (premium), Material3 (UI).
+**Key dependencies:** Room (database), Gson (serialization), Coil (image loading), Google Play Billing (premium), AndroidX Security-Crypto (encrypted prefs), Material3 (UI).
 
 ---
 
@@ -115,7 +115,8 @@ com.juliacai.apptick/
 │   └── PermissionOnboardingScreen.kt ← First-run permission request UI
 ├── MainActivity.kt                 ← Main entry: navigation, billing, lock management
 ├── MainScreen.kt                   ← Compose: main screen scaffold with FAB
-├── MainViewModel.kt                ← ViewModel: group CRUD, premium status
+├── MainViewModel.kt                ← ViewModel: group CRUD, premium status, unpause-reset logic
+├── PremiumStore.kt                 ← Encrypted premium entitlement storage (singleton)
 ├── BaseActivity.kt                 ← Base activity: theme + color change receiver
 ├── SettingsActivity.kt             ← Settings container activity
 ├── SettingsScreen.kt               ← Compose: settings + backup/restore
@@ -260,6 +261,7 @@ Draws draggable semi-transparent bubbles showing time remaining.
 - Per-app position persistence in SharedPreferences
 - 1-second countdown timer (independent of BackgroundChecker)
 - Dismiss flag (`PREF_BUBBLE_DISMISSED`) prevents re-showing until app change
+- Y-position clamped to stay below status bar (prevents notification shade conflict)
 
 **Intent factory methods:**
 - `updateIntent(ctx, text, timeMillis, appPackage)`
@@ -283,6 +285,16 @@ The unified loop dynamically adjusts its polling interval based on context:
 | Screen off or device locked | 2000ms (idle) | Loop runs but `shouldTrackUsageNow()` returns false — no app detection, no DB writes, just baseline reset |
 
 When accessibility is enabled, `requestImmediateCheck()` wakeup overrides the interval entirely for instant blocking. When accessibility is off (UsageStats-only mode), the uniform 2s interval ensures worst-case detection is 2 seconds, not 4.
+
+### Notification Channels — Minimal Badge/Sound
+
+All three notification channels disable the app icon badge (`setShowBadge(false)`) and use low/min importance to avoid sounds, vibrations, and the notification dot on the launcher icon. Channels use `_v2` suffixes; legacy channels (without suffix) are deleted on startup so that importance downgrades take effect for existing users on update.
+
+| Channel ID | Importance | Badge | Used by |
+|---|---|---|---|
+| `app_tick_channel_v2` | `IMPORTANCE_LOW` | Off | MainActivity (general alerts) |
+| `APPTICK_CHANNEL_v2` | `IMPORTANCE_MIN` | Off | BackgroundChecker foreground service |
+| `FLOATING_BUBBLE_CHANNEL_v2` | `IMPORTANCE_MIN` | Off | FloatingBubbleService |
 
 ### Notification Deduplication
 
@@ -577,9 +589,66 @@ Key formatting functions:
 ### `AppLimitGroups.kt` — Draggable list
 
 LazyColumn with long-press drag-and-drop reordering:
-- Auto-scrolls near edges (96dp threshold, 22dp/frame max)
+- Uses `LongHoldDragArea` (500 ms hold via custom `ViewConfiguration`) around the list
+  to prevent accidental drags — longer than the default ~400 ms system long-press
+- On drag start: haptic feedback (`LongPress`) confirms activation
+- Wiggle animation (±2° rotation, 100 ms cycle via `Animatable`) + 1.04× scale while dragging
+- **Direct-formula offset**: `draggingOffsetY = change.position.y - dragAnchorY` overwrites
+  every frame instead of accumulating deltas. This is drift-proof — the auto-scroll
+  `LaunchedEffect` still adds `consumed` for smooth inter-frame rendering, but the next
+  `onDrag` overwrites it, so errors never compound.
+- **Immediate swap** (in both `onDrag` AND the auto-scroll `LaunchedEffect`): items swap
+  in `orderedIds` during drag so the dragged item's layout index stays near the finger.
+  The auto-scroll loop must also perform swaps because the finger is stationary during
+  auto-scroll (no `onDrag` fires). Without swaps in both places, the item stays at its
+  old index, scrolls off the viewport, and gets disposed by LazyColumn (killing the gesture).
+- **Finger-based triggers**: auto-scroll and swap detection use `fingerY`
+  (finger viewport position) instead of card center — required because group cards
+  have variable heights (expanded vs collapsed) and a tall card's center may never
+  reach the edge zone.
+- `pointerInput` keyed on `group.id` only (not `orderedIds.size`) to prevent
+  coroutine restart during swap.
+- **`userScrollEnabled = false` during drag**: the LazyColumn's internal `scrollable`
+  can re-enter gesture detection after a swap recomposition and consume a pointer event
+  before the item's `pointerInput` sees it. `awaitDragOrCancellation` returns null on
+  consumed events, killing the drag. Disabling user scroll prevents this; programmatic
+  `scrollBy()` (auto-scroll loop) is unaffected.
+- **`LaunchedEffect(groups)` must never `clear()`+`addAll()` during drag**: the momentary
+  empty list disposes all LazyColumn items, killing the `pointerInput` coroutine and
+  cancelling the gesture. During an active drag, only surgical add/remove (for newly
+  created or deleted groups) is allowed. Full stored-order resync happens after drag ends
+  (the effect re-runs because `draggingItemId` is in its key list).
 - Persists order via `GroupCardOrderStore`
-- `zIndex` and `translationY` transforms during drag
+- `zIndex`, `translationY`, `rotationZ`, and `scaleX/Y` transforms during drag
+
+### `DragAfterLongHold.kt` — Long-hold ViewConfiguration wrapper
+
+`LongHoldDragArea` composable overrides `LocalViewConfiguration.longPressTimeoutMillis`
+so that `detectDragGesturesAfterLongPress` requires a longer hold (default 500 ms).
+Used by both `AppLimitGroups.kt` and `GroupPage.kt` drag-and-drop lists.
+
+### `AppLimitGroupItem.kt` — Drag-safe Card
+
+Uses a **single** non-clickable `Card` composable at all times. Click handling is via
+`Modifier.clickable` with an `isDragging` guard inside the handler — the `enabled` parameter
+is always `true` to keep the modifier chain stable during drag.
+
+**Critical:** Do NOT change `clickable`'s `enabled` parameter based on drag state
+(`clickable(enabled = !isDragging)`) — toggling `enabled` restarts the `clickable`
+modifier's internal pointer input, which can cancel the active drag gesture.
+
+**Critical:** Do NOT use conditional `if (isDragging) Card(...) else Card(onClick = ...)`
+— swapping between two Card composables causes Compose to dispose/recreate the layout node,
+which kills the parent `pointerInput` coroutine mid-gesture and breaks drag-and-drop.
+
+The card content is extracted to `AppLimitGroupItemContent` to keep the function concise.
+
+### `GroupPage.kt` — App card reordering
+
+Same drag UX as group cards: `LongHoldDragArea` wrapper, wiggle + scale + haptic feedback,
+direct-formula offset (drift-proof). Uses `draggedCenterY` for auto-scroll and swap triggers
+(app cards are uniform height so center-based works fine).
+Hint card reads: "Hold down on a card until it wiggles, then drag to reorder."
 
 ---
 
@@ -762,7 +831,7 @@ data class LockDecision(
 
 ### Premium Features
 
-Gated by `prefs.getBoolean("premium", false)`:
+Gated by `PremiumStore.isPremium(context)` (EncryptedSharedPreferences):
 - Dark mode
 - Custom color mode
 - Floating time bubble
@@ -770,6 +839,19 @@ Gated by `prefs.getBoolean("premium", false)`:
 - Periodic reset
 - Cumulative time
 - Backup/restore
+
+### `PremiumStore.kt` — Encrypted premium storage
+
+Singleton that stores premium entitlement in `EncryptedSharedPreferences` (AES-256).
+All premium reads/writes across the app go through `PremiumStore.isPremium(context)` and
+`PremiumStore.setPremium(context, value)`.
+
+**On first access:** migrates the legacy plaintext `"premium"` key from `groupPrefs` into
+the encrypted file, then removes the plaintext key.
+
+**Billing re-query:** `MainActivity.checkPendingPurchases()` calls `queryPurchasesAsync` on
+each billing connection. If Google Play returns OK with no valid purchases (e.g. refund),
+premium is revoked. If the query fails (offline), the local encrypted state is preserved.
 
 #### Cumulative Time — Reset & Midnight Carryover Rules
 
@@ -861,7 +943,7 @@ Swipeable onboarding carousel (7 photos). Shown once per version.
 
 ## 13. Test Suite
 
-### Unit Tests (17 files, ~85 test methods)
+### Unit Tests (18 files, ~155 test methods)
 
 Located in `app/src/test/java/com/juliacai/apptick/`
 
@@ -871,22 +953,22 @@ Located in `app/src/test/java/com/juliacai/apptick/`
 | `ChangelogTest.kt` | 4 | Changelog visibility based on version tracking |
 | `FeaturePhotoCarouselTest.kt` | 11 | Photo carousel visibility, startup routing, resource IDs |
 | `LockPolicyTest.kt` | 11 | All lock modes, auto-relock, one-time/recurring lockdown, day consumption |
-| `MainViewModelTest.kt` | 5 | Group loading, pause/delete, premium status |
+| `MainViewModelTest.kt` | 8 | Group loading, pause/delete, premium status, unpause expired-reset logic |
 | `TimeManagerTest.kt` | 7 | Time remaining calc, midnight boundaries, periodic vs daily reset |
-| `NextUnblockTimeTest.kt` | 19 | Next unblock time: outside range, zero limit, limit reached, overnight ranges, active days, helper methods |
+| `NextUnblockTimeTest.kt` | 22 | Next unblock time: outside range, zero limit, limit reached, overnight ranges, active days, helper methods |
 | `AppLimitEvaluatorTest.kt` | 9 | Day filtering, time ranges (incl. overnight), pause, outside-range blocking |
-| `AppTickAccessibilityServiceTest.kt` | 21 | Staleness boundary (9s ok, 10.001s stale), service lifecycle, floating detection, split-screen |
+| `AppTickAccessibilityServiceTest.kt` | 23 | Staleness boundary (9s ok, 10.001s stale), service lifecycle, floating detection, split-screen |
 | `BackgroundCheckerBubbleCountdownTest.kt` | 4 | Bubble format (MM:SS under 1min, HH:MM over), hide logic |
 | `NotificationGroupSelectionTest.kt` | 12 | Group ranking (lowest remaining wins), limitEach effective time, multi-profile, formatting |
 | `AppLimitBackupManagerTest.kt` | 6 | JSON round-trip, obfuscated keys, schema v1→v3, null handling, runtime state clearing |
 | `ConvertersCompatibilityTest.kt` | 3 | Obfuscated JSON key parsing for Room TypeConverters |
 | `LegacyAppLimitLineParserTest.kt` | 4 | Legacy format parsing, day conversion, empty lists, malformed input |
-| `AppLimitPersistenceNormalizationTest.kt` | 9 | Duplicate reset, config preservation, time remaining init/cap, daily vs periodic reset |
+| `AppLimitPersistenceNormalizationTest.kt` | 22 | Duplicate reset, config preservation, time remaining init/cap, daily vs periodic reset |
 | `AppSelectionUtilsTest.kt` | 3 | Package-based matching, deduplication, toggle behavior |
 | `LockdownSummaryFormatterTest.kt` | 4 | One-time date format, missing/past dates, recurring day sorting, invalid days |
 | `ExampleUnitTest.kt` | 1 | Template (2+2=4) |
 
-### Integration Tests (19 files, ~66 test methods)
+### Integration Tests (21 files, ~88 test methods)
 
 Located in `app/src/androidTest/java/com/juliacai/apptick/`
 
@@ -909,6 +991,8 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | `PremiumModeScreenTest.kt` | 4 | Lock mode interactions, free vs premium messaging |
 | `PremiumModeInfoScreenTest.kt` | 1 | Feature list display |
 | `ColorPickerScreenTest.kt` | 2 | Removed UI elements, swatch-only picker |
+| `AppLimitGroupsListDragTest.kt` | 4 | Drag-and-drop reordering: card follows finger, auto-scroll, order persistence |
+| `LimitEditTimeBalanceSyncIntegrationTest.kt` | 3 | Time balance sync on limit edit via normalizeGroupForPersistence |
 | `ChangelogDialogTest.kt` | 1 | @Ignore (flaky on device farms) |
 | `ExampleInstrumentedTest.kt` | 1 | Package name verification |
 
@@ -931,7 +1015,8 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 
 **Unit tests:**
 - Pure logic tests (no context): LockPolicyTest, AppLimitEvaluatorTest, TimeManagerTest
-- Mocked SharedPreferences: ChangelogTest, MainViewModelTest
+- Mocked SharedPreferences: ChangelogTest
+- Injectable lambdas: MainViewModelTest (premium read/write + service state via constructor params)
 - Companion object testing: AppTickAccessibilityServiceTest (uses `simulateForTesting()`, `resetForTesting()`)
 
 **Integration tests:**
@@ -961,13 +1046,12 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 
 ## 14. SharedPreferences Key Reference
 
-All stored in `"groupPrefs"` (Context.MODE_PRIVATE).
+Most keys stored in `"groupPrefs"` (Context.MODE_PRIVATE).
+Premium entitlement is in `"apptick_secure_prefs"` (EncryptedSharedPreferences) — see `PremiumStore.kt`.
 
 ### App Settings
 | Key | Type | Default | Purpose |
 |-----|------|---------|---------|
-| `premium` | Boolean | false | Premium mode active |
-| `debug_force_free` | Boolean | false | Debug: force free mode |
 | `dark_mode` | Boolean | false | Dark mode enabled |
 | `custom_color_mode` | Boolean | false | Custom color mode |
 | `custom_primary_color` | Int | — | Seed color for custom palette |

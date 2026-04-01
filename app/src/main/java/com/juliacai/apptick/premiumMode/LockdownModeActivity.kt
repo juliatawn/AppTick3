@@ -97,7 +97,6 @@ class LockdownModeActivity : AppCompatActivity() {
                     },
                     onDateClick = { showDatePicker() },
                     onTimeClick = { showTimePicker() },
-                    onOpenFamilyLinkClick = { openFamilyLinkSetup() },
                     onStartLockdownClick = {
                         val prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
                         val activeMode = prefs.getString("active_lock_mode", "NONE") ?: "NONE"
@@ -277,31 +276,6 @@ class LockdownModeActivity : AppCompatActivity() {
             lockdownEndTimeMillis = selectedDateTime.timeInMillis,
             recurringDays = recurringDays,
             nowMillis = nowMillis
-        )
-    }
-
-    private fun openFamilyLinkSetup() {
-        val familySettingsIntent = Intent("android.settings.FAMILY_SETTINGS")
-        if (familySettingsIntent.resolveActivity(packageManager) != null) {
-            startActivity(familySettingsIntent)
-            return
-        }
-        val familyLinkPackage = "com.google.android.apps.kids.familylink"
-        val appIntent = packageManager.getLaunchIntentForPackage(familyLinkPackage)
-        if (appIntent != null) {
-            startActivity(appIntent)
-            return
-        }
-        val marketIntent = Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$familyLinkPackage"))
-        if (marketIntent.resolveActivity(packageManager) != null) {
-            startActivity(marketIntent)
-            return
-        }
-        startActivity(
-            Intent(
-                Intent.ACTION_VIEW,
-                Uri.parse("https://play.google.com/store/apps/details?id=$familyLinkPackage")
-            )
         )
     }
 

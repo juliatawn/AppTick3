@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.core.graphics.drawable.toBitmap
+import com.juliacai.apptick.PremiumStore
 import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.backgroundProcesses.AppTickAccessibilityService
 import com.juliacai.apptick.backgroundProcesses.FloatingBubbleService
@@ -118,7 +119,7 @@ class BlockWindowActivity : AppCompatActivity() {
             timeLimitMinutes <= 0 -> "Used up time limit"
             else -> "Out of Time"
         }
-        val isPremium = prefs.getBoolean("premium", false)
+        val isPremium = PremiumStore.isPremium(this)
         val palette = AppTheme.currentPalette(this)
 
         val composePrimary = Color(palette.primary)

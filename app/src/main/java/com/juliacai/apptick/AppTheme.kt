@@ -89,7 +89,7 @@ object AppTheme {
 
     private fun resolveSeedColor(context: Context): Int {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val premiumEnabled = prefs.getBoolean("premium", false)
+        val premiumEnabled = PremiumStore.isPremium(context)
         val customModeEnabled =
             shouldUseCustomColorMode(premiumEnabled, ThemeModeManager.isCustomColorModeEnabled(context))
 
