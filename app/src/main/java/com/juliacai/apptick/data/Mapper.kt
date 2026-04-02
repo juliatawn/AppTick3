@@ -26,7 +26,9 @@ fun AppLimitGroupEntity.toDomainModel(): AppLimitGroup {
         nextResetTime = this.nextResetTime,
         nextAddTime = this.nextAddTime,
         perAppUsage = this.perAppUsage,
-        isExpanded = this.isExpanded
+        isExpanded = this.isExpanded,
+        autoAddMode = this.autoAddMode,
+        includeExistingApps = this.includeExistingApps
     )
 }
 
@@ -54,7 +56,9 @@ fun AppLimitGroup.toEntity(): AppLimitGroupEntity {
         nextResetTime = this.nextResetTime,
         nextAddTime = this.nextAddTime,
         perAppUsage = this.perAppUsage,
-        isExpanded = this.isExpanded
+        isExpanded = this.isExpanded,
+        autoAddMode = this.autoAddMode,
+        includeExistingApps = this.includeExistingApps
     )
 }
 

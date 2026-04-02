@@ -31,10 +31,14 @@ import com.juliacai.apptick.Receiver
 import com.juliacai.apptick.R
 import com.juliacai.apptick.appLimit.AppLimitEvaluator
 import com.juliacai.apptick.block.BlockWindowActivity
+import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.AppLimitGroupEntity
 import com.juliacai.apptick.data.toDomainModel
+import com.juliacai.apptick.data.toEntity
+import com.juliacai.apptick.deviceApps.AppManager
 import com.juliacai.apptick.TimeManager
+import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppUsageStat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,6 +78,7 @@ class BackgroundChecker : Service() {
     private lateinit var mNotificationManager: NotificationManager
 
     private var lastForegroundApp: String? = null
+    private var packageAddedReceiver: BroadcastReceiver? = null
     private var prevBubbleForegroundApp: String? = null
     private val activeBubbleApps = mutableSetOf<String>()
     private var lastCheckElapsed: Long = 0L
@@ -142,6 +147,7 @@ class BackgroundChecker : Service() {
         isRunning = true
         if (!disableBackgroundLoopForTesting) {
             observeGroups()
+            registerPackageAddedReceiver()
             startUnifiedLoop()
         }
     }
@@ -152,6 +158,72 @@ class BackgroundChecker : Service() {
         serviceScope.launch {
             appLimitGroupDao.getAllAppLimitGroupsFlow().collect { groups ->
                 cachedGroups = groups
+            }
+        }
+    }
+
+    // ── Runtime PACKAGE_ADDED receiver ─────────────────────────────────────────
+
+    /**
+     * Registers a runtime BroadcastReceiver for PACKAGE_ADDED inside the
+     * foreground service. Unlike the manifest-declared receiver in Receiver.kt,
+     * a runtime receiver is guaranteed to fire as long as the service is alive —
+     * and BackgroundChecker is a foreground service that Android keeps alive.
+     *
+     * Zero battery cost: purely event-driven, no polling.
+     */
+    private fun registerPackageAddedReceiver() {
+        packageAddedReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                if (context == null || intent == null) return
+                if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+                val packageName = intent.data?.schemeSpecificPart ?: return
+                serviceScope.launch {
+                    handleNewAppInstalled(context, packageName)
+                }
+            }
+        }
+        registerReceiver(
+            packageAddedReceiver,
+            IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply {
+                addDataScheme("package")
+            }
+        )
+    }
+
+    private suspend fun handleNewAppInstalled(context: Context, packageName: String) {
+        val pm = context.packageManager
+        val appInfo = try {
+            pm.getApplicationInfo(packageName, 0)
+        } catch (e: android.content.pm.PackageManager.NameNotFoundException) {
+            return
+        }
+        // Only process launcher apps
+        pm.getLaunchIntentForPackage(packageName) ?: return
+        val appName = appInfo.loadLabel(pm).toString()
+        val appCategory = appInfo.category
+
+        val groups = cachedGroups
+        for (entity in groups) {
+            if (entity.autoAddMode == AppLimitGroup.AUTO_ADD_NONE) continue
+
+            val alreadyInGroup = entity.apps.any { it.appPackage == packageName }
+            if (alreadyInGroup) continue
+
+            val shouldAdd = when (entity.autoAddMode) {
+                AppLimitGroup.AUTO_ADD_ALL_NEW -> true
+                else -> {
+                    val targetCategory = AppManager.autoAddModeToCategory(entity.autoAddMode)
+                    targetCategory != null && appCategory == targetCategory
+                }
+            }
+
+            if (shouldAdd) {
+                val group = entity.toDomainModel()
+                val updatedApps = group.apps + AppInGroup(appName, packageName, packageName)
+                val updatedGroup = group.copy(apps = updatedApps)
+                appLimitGroupDao.updateAppLimitGroup(updatedGroup.toEntity())
+                Log.i("BG_Service", "Auto-added '$appName' ($packageName) to group '${entity.name}'")
             }
         }
     }
@@ -1052,6 +1124,7 @@ class BackgroundChecker : Service() {
         serviceJob.cancel()
         unregisterReceiver(mReceiver)
         try { unregisterReceiver(bubbleShowReceiver) } catch (_: Exception) {}
+        try { unregisterReceiver(packageAddedReceiver) } catch (_: Exception) {}
 
         // Hide the floating bubble when the service stops
         try { startService(FloatingBubbleService.hideIntent(this)) } catch (_: Exception) {}

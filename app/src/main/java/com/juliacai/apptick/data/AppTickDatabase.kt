@@ -8,7 +8,7 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [AppLimitGroupEntity::class], version = 8, exportSchema = false)
+@Database(entities = [AppLimitGroupEntity::class], version = 9, exportSchema = false)
 @TypeConverters(Converters::class)
 abstract class AppTickDatabase : RoomDatabase() {
 
@@ -33,7 +33,8 @@ abstract class AppTickDatabase : RoomDatabase() {
                         MIGRATION_4_5,
                         MIGRATION_5_6,
                         MIGRATION_6_7,
-                        MIGRATION_7_8
+                        MIGRATION_7_8,
+                        MIGRATION_8_9
                     )
                     .build()
                 INSTANCE = instance
@@ -85,6 +86,17 @@ abstract class AppTickDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
                     "ALTER TABLE app_limit_groups ADD COLUMN timeRanges TEXT NOT NULL DEFAULT '[]'"
+                )
+            }
+        }
+
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE app_limit_groups ADD COLUMN autoAddMode TEXT NOT NULL DEFAULT 'NONE'"
+                )
+                db.execSQL(
+                    "ALTER TABLE app_limit_groups ADD COLUMN includeExistingApps INTEGER NOT NULL DEFAULT 1"
                 )
             }
         }

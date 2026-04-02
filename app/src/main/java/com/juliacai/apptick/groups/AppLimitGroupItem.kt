@@ -282,6 +282,20 @@ private fun AppLimitGroupItemContent(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
+                if (group.autoAddMode != AppLimitGroup.AUTO_ADD_NONE) {
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = buildAnnotatedString {
+                            withStyle(style = SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                                append("Auto-add: ")
+                            }
+                            append(formatAutoAddMode(group.autoAddMode))
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
             }
         }
 }
@@ -390,6 +404,19 @@ private fun formatResetInfo(group: AppLimitGroup): AnnotatedString {
             }
         )
     }
+}
+
+private fun formatAutoAddMode(mode: String): String = when (mode) {
+    AppLimitGroup.AUTO_ADD_ALL_NEW -> "All newly installed apps"
+    AppLimitGroup.AUTO_ADD_CATEGORY_GAME -> "Games"
+    AppLimitGroup.AUTO_ADD_CATEGORY_SOCIAL -> "Social"
+    AppLimitGroup.AUTO_ADD_CATEGORY_AUDIO -> "Audio"
+    AppLimitGroup.AUTO_ADD_CATEGORY_VIDEO -> "Video"
+    AppLimitGroup.AUTO_ADD_CATEGORY_IMAGE -> "Image"
+    AppLimitGroup.AUTO_ADD_CATEGORY_NEWS -> "News"
+    AppLimitGroup.AUTO_ADD_CATEGORY_MAPS -> "Maps"
+    AppLimitGroup.AUTO_ADD_CATEGORY_PRODUCTIVITY -> "Productivity"
+    else -> mode
 }
 
 private fun formatDays(days: List<Int>): String {

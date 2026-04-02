@@ -40,6 +40,7 @@ import com.android.billingclient.api.QueryProductDetailsParams
 import com.android.billingclient.api.QueryPurchasesParams
 import com.juliacai.apptick.appLimit.AppLimitDetailsScreen
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
+import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.GroupCardOrderStore
 import com.juliacai.apptick.data.LegacyDataMigrator
@@ -520,32 +521,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             onDismissGroupDetailsHint = dismissGroupDetailsHint,
                             listContent = {
                                 AppLimitGroupsList(
-                                    groups = orderedGroups.map { appLimitGroup ->
-                                        AppLimitGroup(
-                                            id = appLimitGroup.id,
-                                            name = appLimitGroup.name,
-                                            timeHrLimit = appLimitGroup.timeHrLimit,
-                                            timeMinLimit = appLimitGroup.timeMinLimit,
-                                            limitEach = appLimitGroup.limitEach,
-                                            resetMinutes = appLimitGroup.resetMinutes,
-                                            weekDays = appLimitGroup.weekDays,
-                                            apps = appLimitGroup.apps,
-                                            paused = appLimitGroup.paused,
-                                            useTimeRange = appLimitGroup.useTimeRange,
-                                            blockOutsideTimeRange = appLimitGroup.blockOutsideTimeRange,
-                                            timeRanges = appLimitGroup.timeRanges,
-                                            startHour = appLimitGroup.startHour,
-                                            startMinute = appLimitGroup.startMinute,
-                                            endHour = appLimitGroup.endHour,
-                                            endMinute = appLimitGroup.endMinute,
-                                            cumulativeTime = appLimitGroup.cumulativeTime,
-                                            timeRemaining = appLimitGroup.timeRemaining,
-                                            nextResetTime = appLimitGroup.nextResetTime,
-                                            nextAddTime = appLimitGroup.nextAddTime,
-                                            perAppUsage = appLimitGroup.perAppUsage,
-                                            isExpanded = appLimitGroup.isExpanded
-                                        )
-                                    },
+                                    groups = orderedGroups.map { it.toDomainModel() },
                                     onCardClick = { group ->
                                         dismissGroupDetailsHint()
                                         startActivity(GroupPage.newIntent(this@MainActivity, group))

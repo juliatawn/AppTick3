@@ -36,6 +36,7 @@ import com.juliacai.apptick.AppInfo
 import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
+import com.juliacai.apptick.groups.AppLimitGroup.Companion.AUTO_ADD_NONE
 import com.juliacai.apptick.groups.TimeRange
 import com.juliacai.apptick.rememberScrollbarColor
 import com.juliacai.apptick.verticalScrollWithIndicator
@@ -120,6 +121,8 @@ private fun SetTimeLimitsScreenContent(
     val groupResetMinutes = existingGroup?.resetMinutes ?: 0
     val initialResetHours = draft?.resetHours ?: (groupResetMinutes / 60).toString()
     val initialResetMinutes = draft?.resetMinutes ?: (groupResetMinutes % 60).toString()
+    val initialAutoAddMode = draft?.autoAddMode ?: existingGroup?.autoAddMode ?: AUTO_ADD_NONE
+    val initialIncludeExistingApps = draft?.includeExistingApps ?: existingGroup?.includeExistingApps ?: true
 
     val groupName = remember(initialGroupName) { mutableStateOf(initialGroupName) }
     val useTimeLimit = remember(initialUseTimeLimit) { mutableStateOf(initialUseTimeLimit) }
@@ -140,6 +143,8 @@ private fun SetTimeLimitsScreenContent(
     val useReset = remember(initialUseReset) { mutableStateOf(initialUseReset) }
     val resetHours = remember(initialResetHours) { mutableStateOf(initialResetHours) }
     val resetMinutes = remember(initialResetMinutes) { mutableStateOf(initialResetMinutes) }
+    val autoAddMode = remember(initialAutoAddMode) { mutableStateOf(initialAutoAddMode) }
+    val includeExistingApps = remember(initialIncludeExistingApps) { mutableStateOf(initialIncludeExistingApps) }
 
     val showNoTimeLimitWarning = remember { mutableStateOf(false) }
     val showZeroTimeSaveWarning = remember { mutableStateOf(false) }
@@ -173,7 +178,9 @@ private fun SetTimeLimitsScreenContent(
                 cumulativeTime = cumulativeTime.value,
                 useReset = useReset.value,
                 resetHours = resetHours.value,
-                resetMinutes = resetMinutes.value
+                resetMinutes = resetMinutes.value,
+                autoAddMode = autoAddMode.value,
+                includeExistingApps = includeExistingApps.value
             )
         )
     }
@@ -233,7 +240,9 @@ private fun SetTimeLimitsScreenContent(
                             it.appPackage ?: "",
                             it.appPackage ?: ""
                         )
-                    }
+                    },
+                    autoAddMode = autoAddMode.value,
+                    includeExistingApps = includeExistingApps.value
                 )
                 onFinish(newGroup)
             }
@@ -315,7 +324,97 @@ private fun SetTimeLimitsScreenContent(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-            Divider()
+            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Auto-add apps section
+            val useAutoAdd = autoAddMode.value != AUTO_ADD_NONE
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Auto-Add Apps")
+                Spacer(Modifier.weight(1f))
+                Switch(
+                    checked = useAutoAdd,
+                    onCheckedChange = {
+                        autoAddMode.value = if (it) AppLimitGroup.AUTO_ADD_ALL_NEW else AUTO_ADD_NONE
+                    }
+                )
+            }
+            Text(
+                "Automatically add apps to this group when they are installed or match a category.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+
+            if (useAutoAdd) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                val autoAddOptions = listOf(
+                    AppLimitGroup.AUTO_ADD_ALL_NEW to "All newly installed apps",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_GAME to "Games",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_SOCIAL to "Social",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_AUDIO to "Audio",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_VIDEO to "Video",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_IMAGE to "Image",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_NEWS to "News",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_MAPS to "Maps",
+                    AppLimitGroup.AUTO_ADD_CATEGORY_PRODUCTIVITY to "Productivity"
+                )
+                var dropdownExpanded by remember { mutableStateOf(false) }
+                val selectedLabel = autoAddOptions.firstOrNull { it.first == autoAddMode.value }?.second ?: "All newly installed apps"
+
+                ExposedDropdownMenuBox(
+                    expanded = dropdownExpanded,
+                    onExpandedChange = { dropdownExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = selectedLabel,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Auto-add criteria") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = dropdownExpanded) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                    ExposedDropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        autoAddOptions.forEach { (mode, label) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    autoAddMode.value = mode
+                                    dropdownExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                // "Include existing installed apps" checkbox — only for category modes
+                if (autoAddMode.value != AppLimitGroup.AUTO_ADD_ALL_NEW) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(
+                            checked = includeExistingApps.value,
+                            onCheckedChange = { includeExistingApps.value = it }
+                        )
+                        Text("Include existing installed apps")
+                    }
+                    Text(
+                        "When enabled, apps already installed that match this category will be added to the group on save.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+            HorizontalDivider(Modifier, DividerDefaults.Thickness, DividerDefaults.color)
             Spacer(modifier = Modifier.height(16.dp))
 
             OutlinedTextField(

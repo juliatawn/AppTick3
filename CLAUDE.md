@@ -154,3 +154,25 @@ sufficient — UsageStats catches any missed events within the 2-second check lo
 - **Pixel Fold** — Standard Android behavior
 
 All 27 instrumentation tests + unit tests must pass on all 3 devices.
+
+---
+
+## Architecture Documentation
+
+Detailed architecture docs live in `docs/architecture/` (indexed by `ARCHITECTURE.md`).
+
+**Before making changes:** Read the relevant architecture file(s) from `docs/architecture/` to understand the area you're modifying. Use the index in `ARCHITECTURE.md` to find the right file.
+
+**After making changes:** If your changes affect documented behavior, update the corresponding architecture file(s) in `docs/architecture/`. This includes:
+- New or renamed files/classes → update `01-overview-and-structure.md`
+- Changes to the blocking pipeline or timing → update `02-blocking-pipeline.md`
+- Background service changes → update `03-background-services.md`
+- Accessibility/floating window changes → update `04-accessibility-floating-windows.md`
+- Database schema, DAO, or migration changes → update `05-data-layer.md`
+- Domain model or group UI changes → update `06-domain-models-groups.md`
+- Limit evaluation or time logic changes → update `07-app-limit-evaluation.md`
+- UI navigation, create/edit flow, or block screen changes → update `08-ui-layer.md`
+- Lock mode or premium feature changes → update `09-lock-modes-premium.md`
+- Settings, theme, or utility changes → update `10-settings-theme-utilities.md`
+- New or modified tests → update `11-test-suite.md`
+- SharedPreferences keys or intent/broadcast changes → update `12-references.md`

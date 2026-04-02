@@ -6,7 +6,9 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.viewModelScope
 import com.juliacai.apptick.AppInfo
+import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
+import com.juliacai.apptick.deviceApps.AppManager
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
@@ -98,28 +100,58 @@ class AppLimitViewModel(application: Application) : AndroidViewModel(application
 
     fun saveGroup(group: AppLimitGroup) {
         viewModelScope.launch {
-            val allowedPackages = group.apps.map { it.appPackage }.toSet()
-            val normalizedUsage = group.perAppUsage
+            // If a category auto-add mode is enabled with includeExistingApps,
+            // scan installed apps matching that category and merge them in.
+            val groupWithAutoAdded = if (
+                group.autoAddMode != AppLimitGroup.AUTO_ADD_NONE &&
+                group.autoAddMode != AppLimitGroup.AUTO_ADD_ALL_NEW &&
+                group.includeExistingApps
+            ) {
+                val appContext = getApplication<Application>()
+                val appManager = AppManager(appContext)
+                val matchingApps = appManager.getInstalledAppsByCategory(group.autoAddMode)
+                val existingPackages = group.apps.map { it.appPackage }.toSet()
+                val newApps = matchingApps
+                    .filter { it.appPackage != null && it.appPackage !in existingPackages }
+                    .map { AppInGroup(it.appName, it.appPackage ?: "", it.appPackage ?: "") }
+                group.copy(apps = group.apps + newApps)
+            } else {
+                group
+            }
+
+            val allowedPackages = groupWithAutoAdded.apps.map { it.appPackage }.toSet()
+            val normalizedUsage = groupWithAutoAdded.perAppUsage
                 .filter { it.appPackage in allowedPackages }
                 .map { it.copy(usedMillis = max(0L, it.usedMillis)) }
 
             // Fetch the previous version of this group to detect limit changes.
-            val previousGroup = if (group.id != 0L) {
-                appLimitGroupDao.getGroup(group.id)?.toDomainModel()
+            val previousGroup = if (groupWithAutoAdded.id != 0L) {
+                appLimitGroupDao.getGroup(groupWithAutoAdded.id)?.toDomainModel()
             } else null
 
             val normalizedGroup = normalizeGroupForPersistence(
-                group = group,
+                group = groupWithAutoAdded,
                 normalizedUsage = normalizedUsage,
                 previousGroup = previousGroup
             )
 
-            if (group.id == 0L) {
+            if (groupWithAutoAdded.id == 0L) {
                 appLimitGroupDao.insertAppLimitGroup(normalizedGroup.toEntity())
             } else {
                 appLimitGroupDao.updateAppLimitGroup(normalizedGroup.toEntity())
             }
             _draft.postValue(null)
+
+            // Clear the known-packages cache when auto-add is turned off or changed,
+            // so re-enabling ALL_NEW later starts fresh.
+            if (groupWithAutoAdded.id != 0L) {
+                val appContext = getApplication<Application>()
+                val prefs = appContext.getSharedPreferences("autoAddPrefs", android.content.Context.MODE_PRIVATE)
+                val knownKey = "known_packages_${groupWithAutoAdded.id}"
+                if (groupWithAutoAdded.autoAddMode != AppLimitGroup.AUTO_ADD_ALL_NEW) {
+                    prefs.edit().remove(knownKey).apply()
+                }
+            }
 
             val appContext = getApplication<Application>()
             BackgroundChecker.applyDesiredServiceState(
@@ -224,5 +256,7 @@ data class SetTimeLimitDraft(
     val cumulativeTime: Boolean,
     val useReset: Boolean,
     val resetHours: String,
-    val resetMinutes: String
+    val resetMinutes: String,
+    val autoAddMode: String = AppLimitGroup.AUTO_ADD_NONE,
+    val includeExistingApps: Boolean = true
 )

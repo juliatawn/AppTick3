@@ -58,5 +58,11 @@ data class AppLimitGroupEntity(
     var perAppUsage: List<AppUsageStat> = emptyList(),
     @ColumnInfo(defaultValue = "1")
     @SerializedName(value = "isExpanded", alternate = ["v"])
-    var isExpanded: Boolean = true
+    var isExpanded: Boolean = true,
+    @ColumnInfo(defaultValue = "'NONE'")
+    @SerializedName(value = "autoAddMode", alternate = ["w"])
+    var autoAddMode: String = "NONE",
+    @ColumnInfo(defaultValue = "1")
+    @SerializedName(value = "includeExistingApps", alternate = ["x"])
+    var includeExistingApps: Boolean = true
 )

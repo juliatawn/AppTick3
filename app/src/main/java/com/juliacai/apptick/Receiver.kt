@@ -3,9 +3,15 @@ package com.juliacai.apptick
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.backgroundProcesses.BackgroundChecker
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.LegacyDataMigrator
+import com.juliacai.apptick.data.toDomainModel
+import com.juliacai.apptick.data.toEntity
+import com.juliacai.apptick.deviceApps.AppManager
+import com.juliacai.apptick.groups.AppLimitGroup
 import kotlinx.coroutines.runBlocking
 
 class Receiver : BroadcastReceiver() {
@@ -51,6 +57,65 @@ class Receiver : BroadcastReceiver() {
                 val prefs = context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
                 prefs.edit().putBoolean("screenOn", false).apply()
             }
+            Intent.ACTION_PACKAGE_ADDED -> {
+                if (intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
+                val packageName = intent.data?.schemeSpecificPart ?: return
+                val pendingResult = goAsync()
+                Thread {
+                    try {
+                        handleNewAppInstalled(context, packageName)
+                    } finally {
+                        pendingResult.finish()
+                    }
+                }.start()
+            }
+        }
+    }
+
+    private fun handleNewAppInstalled(context: Context, packageName: String) {
+        val pm = context.packageManager
+        val appInfo = try {
+            pm.getApplicationInfo(packageName, 0)
+        } catch (e: PackageManager.NameNotFoundException) {
+            return
+        }
+        // Only process launcher apps
+        val launchIntent = pm.getLaunchIntentForPackage(packageName) ?: return
+        val appName = appInfo.loadLabel(pm).toString()
+        val appCategory = appInfo.category
+
+        val database = AppTickDatabase.getDatabase(context)
+        val dao = database.appLimitGroupDao()
+
+        runBlocking {
+            val allGroups = dao.getAllAppLimitGroupsImmediate()
+            for (entity in allGroups) {
+                val group = entity.toDomainModel()
+                if (group.autoAddMode == AppLimitGroup.AUTO_ADD_NONE) continue
+
+                val alreadyInGroup = group.apps.any { it.appPackage == packageName }
+                if (alreadyInGroup) continue
+
+                val shouldAdd = when (group.autoAddMode) {
+                    AppLimitGroup.AUTO_ADD_ALL_NEW -> true
+                    else -> {
+                        val targetCategory = AppManager.autoAddModeToCategory(group.autoAddMode)
+                        targetCategory != null && appCategory == targetCategory
+                    }
+                }
+
+                if (shouldAdd) {
+                    val updatedApps = group.apps + AppInGroup(appName, packageName, packageName)
+                    val updatedEntity = group.copy(apps = updatedApps).toEntity()
+                    dao.updateAppLimitGroup(updatedEntity)
+                }
+            }
+
+            // Ensure the service is running if we may have added apps to active groups.
+            BackgroundChecker.applyDesiredServiceState(
+                context,
+                dao.getActiveGroupCount() > 0
+            )
         }
     }
 

@@ -25,5 +25,20 @@ data class AppLimitGroup(
     var nextResetTime: Long = 0,
     var nextAddTime: Long = 0,
     var perAppUsage: List<AppUsageStat> = emptyList(),
-    var isExpanded: Boolean = true
-) : Serializable
+    var isExpanded: Boolean = true,
+    var autoAddMode: String = AUTO_ADD_NONE,
+    var includeExistingApps: Boolean = true
+) : Serializable {
+    companion object {
+        const val AUTO_ADD_NONE = "NONE"
+        const val AUTO_ADD_ALL_NEW = "ALL_NEW"
+        const val AUTO_ADD_CATEGORY_GAME = "GAME"
+        const val AUTO_ADD_CATEGORY_SOCIAL = "SOCIAL"
+        const val AUTO_ADD_CATEGORY_AUDIO = "AUDIO"
+        const val AUTO_ADD_CATEGORY_VIDEO = "VIDEO"
+        const val AUTO_ADD_CATEGORY_IMAGE = "IMAGE"
+        const val AUTO_ADD_CATEGORY_NEWS = "NEWS"
+        const val AUTO_ADD_CATEGORY_MAPS = "MAPS"
+        const val AUTO_ADD_CATEGORY_PRODUCTIVITY = "PRODUCTIVITY"
+    }
+}
