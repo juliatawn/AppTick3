@@ -1,6 +1,6 @@
 # 13. Test Suite
 
-## Unit Tests (19 files, ~172 test methods)
+## Unit Tests (25 files, ~244 test methods)
 
 Located in `app/src/test/java/com/juliacai/apptick/`
 
@@ -20,13 +20,20 @@ Located in `app/src/test/java/com/juliacai/apptick/`
 | `AppLimitBackupManagerTest.kt` | 6 | JSON round-trip, obfuscated keys, schema v1→v3, null handling, runtime state clearing |
 | `ConvertersCompatibilityTest.kt` | 3 | Obfuscated JSON key parsing for Room TypeConverters |
 | `LegacyAppLimitLineParserTest.kt` | 4 | Legacy format parsing, day conversion, empty lists, malformed input |
-| `AppLimitPersistenceNormalizationTest.kt` | 22 | Duplicate reset, config preservation, time remaining init/cap, daily vs periodic reset |
+| `AppLimitPersistenceNormalizationTest.kt` | 22 | Duplicate reset, config preservation, time remaining init/cap, daily vs periodic reset, aligned reset time |
+| `DailyUsagePreviewTest.kt` | 20 | Daily usage preview: time range minutes, user example (8am-5pm hourly 1min = 9min), full day, partial periods, overnight ranges, format output |
+| `TimeManagerAlignedResetTest.kt` | 12 | Aligned reset grid: midnight anchor, time range anchor, before-range, multiple ranges, exact grid point, future guarantee |
 | `AppSelectionUtilsTest.kt` | 3 | Package-based matching, deduplication, toggle behavior |
 | `LockdownSummaryFormatterTest.kt` | 4 | One-time date format, missing/past dates, recurring day sorting, invalid days |
 | `AutoAddAppsTest.kt` | 17 | Category mapping, default values, merge logic, receiver decision logic |
+| `UsagePeriodTest.kt` | 6 | UsagePeriod enum values, labels, calendar fields, ordering |
+| `FormatUsageDurationTest.kt` | 10 | Duration formatting: zero, negative, sub-minute, minutes, hours, edge cases |
+| `FormatUsageDurationShortTest.kt` | 8 | Compact duration formatting for calendar cells: empty, minutes, hours compact |
+| `PeriodLabelTest.kt` | 16 | Period labels (Today/This Week/Last Month/N Ago), date range formatting, period range ordering |
+| `DailyUsageStatsEntityTest.kt` | 6 | Entity fields, toDateString ISO format, month padding, December edge, composite key uniqueness |
 | `ExampleUnitTest.kt` | 1 | Template (2+2=4) |
 
-## Integration Tests (22 files, ~96 test methods)
+## Integration Tests (27 files, ~139 test methods)
 
 Located in `app/src/androidTest/java/com/juliacai/apptick/`
 
@@ -46,6 +53,7 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | `ReceiverLegacyMigrationInstrumentationTest.kt` | 1 | Full startup migration pipeline |
 | `AppLimitGroupItemTest.kt` | 7 | Card UI: lock mode, pause state, time display, collapse |
 | `SetTimeLimitsScreenTest.kt` | 1 | Screen composition verification |
+| `SetTimeLimitsPreviewIntegrationTest.kt` | 5 | Daily usage preview display, default Block Apps mode, periodic reset preview text, no-preview conditions |
 | `AppSelectScreenKeyboardIntegrationTest.kt` | 1 | IME action clears focus |
 | `PremiumModeScreenTest.kt` | 4 | Lock mode interactions, free vs premium messaging |
 | `PremiumModeInfoScreenTest.kt` | 1 | Feature list display |
@@ -53,6 +61,11 @@ Located in `app/src/androidTest/java/com/juliacai/apptick/`
 | `AppLimitGroupsListDragTest.kt` | 4 | Drag-and-drop reordering: card follows finger, auto-scroll, order persistence |
 | `LimitEditTimeBalanceSyncIntegrationTest.kt` | 3 | Time balance sync on limit edit via normalizeGroupForPersistence |
 | `ChangelogDialogTest.kt` | 1 | @Ignore (flaky on device farms) |
+| `AppUsagePageTest.kt` | 10 | App usage page composables: header card, detail card (all periods, averages), overview card (labels, values, empty state) |
+| `AppUsageBreakdownTest.kt` | 14 | Weekly breakdown (title, day labels, usage values, empty), month calendar (month name, day headers, empty), yearly breakdown (title, month labels, empty), overview daily averages |
+| `PeriodNavigatorTest.kt` | 8 | Period navigator: labels at offset 0/1/N, next button enabled/disabled, callback invocation, date range display |
+| `DailyUsageStatsDaoTest.kt` | 11 | DAO: upsert, replace, batch insert, range queries, sum, count, delete old, lexicographic sort |
+| `GroupAppItemClickTest.kt` | 5 | GroupAppItem onClick callback, null onClick safety, usage info display, shared time remaining |
 | `ExampleInstrumentedTest.kt` | 1 | Package name verification |
 
 ## Critical invariants verified by tests

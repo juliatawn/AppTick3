@@ -38,6 +38,7 @@ import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppLimitGroup.Companion.AUTO_ADD_NONE
 import com.juliacai.apptick.groups.TimeRange
+import com.juliacai.apptick.appLimit.DailyUsagePreview
 import com.juliacai.apptick.rememberScrollbarColor
 import com.juliacai.apptick.verticalScrollWithIndicator
 import java.util.Calendar
@@ -70,7 +71,7 @@ fun SetTimeLimitsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
-private fun SetTimeLimitsScreenContent(
+internal fun SetTimeLimitsScreenContent(
     group: AppLimitGroup?,
     draft: SetTimeLimitDraft?,
     selectedApps: List<AppInfo>,
@@ -100,7 +101,7 @@ private fun SetTimeLimitsScreenContent(
     val initialLimitEach = draft?.limitEach ?: existingGroup?.limitEach ?: false
     val initialUseTimeRange = draft?.useTimeRange ?: existingGroup?.useTimeRange ?: false
     val initialBlockOutsideTimeRange =
-        draft?.blockOutsideTimeRange ?: existingGroup?.blockOutsideTimeRange ?: false
+        draft?.blockOutsideTimeRange ?: existingGroup?.blockOutsideTimeRange ?: true
     val initialTimeRanges = draft?.timeRanges?.takeIf { it.isNotEmpty() }
         ?: existingGroup?.timeRanges?.takeIf { it.isNotEmpty() }
         ?: if (initialUseTimeRange) {
@@ -791,6 +792,66 @@ private fun SetTimeLimitsScreenContent(
                         style = MaterialTheme.typography.bodySmall,
                         color = Color.Gray
                     )
+                }
+            }
+
+            // Daily usage preview — shown when periodic reset is enabled and a time limit is set
+            if (useReset.value && useTimeLimit.value) {
+                val resetHr = resetHours.value.toIntOrNull() ?: 0
+                val resetMin = resetMinutes.value.toIntOrNull() ?: 0
+                val resetTotal = resetHr * 60 + resetMin
+                if (resetTotal > 0) {
+                    val preview = DailyUsagePreview.calculate(
+                        timeLimitHours = timeHrLimit.value.toIntOrNull() ?: 0,
+                        timeLimitMinutes = timeMinLimit.value.toIntOrNull() ?: 0,
+                        useTimeLimit = true,
+                        resetIntervalMinutes = resetTotal,
+                        useTimeRange = useTimeRange.value,
+                        blockOutsideTimeRange = blockOutsideTimeRange.value,
+                        timeRanges = if (useTimeRange.value) timeRanges.toList() else emptyList(),
+                        cumulativeTime = cumulativeTime.value
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                "Daily Usage Preview",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                buildString {
+                                    append("~${DailyUsagePreview.formatPreview(preview)}")
+                                    append(" (${preview.periodCount} period${if (preview.periodCount != 1) "s" else ""}")
+                                    append(" of ${preview.minutesPerPeriod}min")
+                                    if (useTimeRange.value) {
+                                        val windowHr = preview.activeWindowMinutes / 60
+                                        val windowMin = preview.activeWindowMinutes % 60
+                                        append(" in ")
+                                        if (windowHr > 0) append("${windowHr}hr ")
+                                        if (windowMin > 0 || windowHr == 0) append("${windowMin}min")
+                                        append(" window")
+                                    }
+                                    append(")")
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer
+                            )
+                            if (useTimeRange.value && !blockOutsideTimeRange.value) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    "No limits outside time range",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
                 }
             }
 

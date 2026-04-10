@@ -34,6 +34,7 @@ import com.juliacai.apptick.block.BlockWindowActivity
 import com.juliacai.apptick.appLimit.AppInGroup
 import com.juliacai.apptick.data.AppTickDatabase
 import com.juliacai.apptick.data.AppLimitGroupEntity
+import com.juliacai.apptick.data.DailyUsageStatsEntity
 import com.juliacai.apptick.data.toDomainModel
 import com.juliacai.apptick.data.toEntity
 import com.juliacai.apptick.deviceApps.AppManager
@@ -67,6 +68,11 @@ class BackgroundChecker : Service() {
 
     private val db by lazy { AppTickDatabase.getDatabase(this) }
     private val appLimitGroupDao by lazy { db.appLimitGroupDao() }
+    private val dailyUsageStatsDao by lazy { db.dailyUsageStatsDao() }
+
+    // ── Long-term usage recording ──────────────────────────────────────────
+    private var lastUsageRecordElapsed = 0L
+    private var lastRecordedDateString = ""
 
     // Cached groups from Flow — updated automatically when DB changes
     @Volatile
@@ -307,9 +313,152 @@ class BackgroundChecker : Service() {
                         }
                     }
                 }
+                // Record long-term usage stats periodically (every ~15 min)
+                try {
+                    recordDailyUsageIfNeeded()
+                } catch (e: Exception) {
+                    Log.e("BG_Service", "Usage recording failed", e)
+                }
+
                 // Wait for the normal interval OR wake up early when AccessibilityService
                 // detects a new foreground app, so blocking happens instantly.
                 withTimeoutOrNull(loopDelayMs) { wakeUpChannel.receive() }
+            }
+        }
+    }
+
+    // ── Long-term usage stats recording ───────────────────────────────────────
+
+    /**
+     * Records today's per-app usage from Android's UsageStatsManager into our local
+     * Room database. Runs at most every [USAGE_RECORD_INTERVAL_MS] (15 min).
+     * On first run, backfills the past ~7 days from Android's INTERVAL_DAILY data.
+     */
+    private suspend fun recordDailyUsageIfNeeded() {
+        val prefs = getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
+        if (!prefs.getBoolean("storeLongTermUsageStats", true)) return
+
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastUsageRecordElapsed < USAGE_RECORD_INTERVAL_MS) return
+        lastUsageRecordElapsed = now
+
+        // One-time backfill of whatever Android still has (~7-10 days)
+        if (!prefs.getBoolean("usageStatsBackfillDone", false)) {
+            try {
+                backfillFromAndroid()
+                prefs.edit { putBoolean("usageStatsBackfillDone", true) }
+            } catch (e: Exception) {
+                Log.e("BG_Service", "Backfill failed", e)
+            }
+        }
+
+        // Record today's usage
+        recordTodayUsage()
+    }
+
+    /**
+     * Snapshots today's per-app usage from Android into local DB.
+     */
+    private suspend fun recordTodayUsage() {
+        val todayCal = Calendar.getInstance()
+        val dateString = "%04d-%02d-%02d".format(
+            todayCal.get(Calendar.YEAR),
+            todayCal.get(Calendar.MONTH) + 1, // ISO 1-based month
+            todayCal.get(Calendar.DAY_OF_MONTH)
+        )
+
+        // Query today's usage from Android
+        val startCal = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val endTime = System.currentTimeMillis()
+
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startCal.timeInMillis,
+            endTime
+        ) ?: return
+
+        val pm = packageManager
+        val entities = stats
+            .filter { it.totalTimeInForeground > 0 }
+            .groupBy { it.packageName }
+            .map { (pkg, entries) ->
+                val totalMs = entries.sumOf { it.totalTimeInForeground }
+                val appName = try {
+                    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                } catch (_: Exception) {
+                    pkg
+                }
+                DailyUsageStatsEntity(
+                    dateString = dateString,
+                    packageName = pkg,
+                    appName = appName,
+                    totalForegroundMs = totalMs
+                )
+            }
+
+        if (entities.isNotEmpty()) {
+            dailyUsageStatsDao.upsertAll(entities)
+        }
+    }
+
+    /**
+     * One-time backfill: grabs the past 7 days of per-app daily data from Android
+     * (the max reliable retention for INTERVAL_DAILY) and writes it to local DB.
+     */
+    private suspend fun backfillFromAndroid() {
+        val pm = packageManager
+        for (daysAgo in 1..7) {
+            val cal = Calendar.getInstance().apply {
+                add(Calendar.DAY_OF_YEAR, -daysAgo)
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val dateString = "%04d-%02d-%02d".format(
+                cal.get(Calendar.YEAR),
+                cal.get(Calendar.MONTH) + 1,
+                cal.get(Calendar.DAY_OF_MONTH)
+            )
+            val endCal = Calendar.getInstance().apply {
+                timeInMillis = cal.timeInMillis
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+                set(Calendar.SECOND, 59)
+                set(Calendar.MILLISECOND, 999)
+            }
+
+            val stats = usageStatsManager.queryUsageStats(
+                UsageStatsManager.INTERVAL_DAILY,
+                cal.timeInMillis,
+                endCal.timeInMillis
+            ) ?: continue
+
+            val entities = stats
+                .filter { it.totalTimeInForeground > 0 }
+                .groupBy { it.packageName }
+                .map { (pkg, entries) ->
+                    val totalMs = entries.sumOf { it.totalTimeInForeground }
+                    val appName = try {
+                        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+                    } catch (_: Exception) {
+                        pkg
+                    }
+                    DailyUsageStatsEntity(
+                        dateString = dateString,
+                        packageName = pkg,
+                        appName = appName,
+                        totalForegroundMs = totalMs
+                    )
+                }
+
+            if (entities.isNotEmpty()) {
+                dailyUsageStatsDao.upsertAll(entities)
             }
         }
     }
@@ -465,7 +614,12 @@ class BackgroundChecker : Service() {
                 } else {
                     // Non-cumulative: reset to the full limit.
                     newNextReset = if (group.resetMinutes > 0) {
-                        now + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
+                        TimeManager.nextAlignedResetTime(
+                            resetIntervalMinutes = group.resetMinutes,
+                            useTimeRange = group.useTimeRange,
+                            timeRanges = group.timeRanges,
+                            nowMillis = now
+                        )
                     } else {
                         TimeManager.nextMidnight(now)
                     }
@@ -811,6 +965,7 @@ class BackgroundChecker : Service() {
         private const val FOREGROUND_EVENT_LOOKBACK_MS = 15_000L
         private const val FOREGROUND_USAGE_LOOKBACK_MS = 2 * 60_000L
         private const val FOREGROUND_USAGE_MAX_AGE_MS = 15_000L
+        private const val USAGE_RECORD_INTERVAL_MS = 15 * 60 * 1000L // 15 minutes
 
         @Volatile
         var isRunning = false

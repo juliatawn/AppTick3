@@ -47,6 +47,7 @@
         <activity android:name=".premiumMode.LockdownModeActivity" />
         <activity android:name=".premiumMode.LockdownTimeActivity" />
         <activity android:name=".deviceApps.GroupPage" />
+        <activity android:name=".deviceApps.AppUsagePage" />
 
         <service android:name=".backgroundProcesses.BackgroundChecker" android:foregroundServiceType="specialUse">
             <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"

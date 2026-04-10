@@ -136,9 +136,9 @@ class AppLimitPersistenceNormalizationTest {
     }
 
     @Test
-    fun newGroup_periodicMode_nextResetTimeSetToNowPlusInterval() {
-        // Periodic reset of 2 hours — nextResetTime should be ~2 hours from now
-        val before = System.currentTimeMillis()
+    fun newGroup_periodicMode_nextResetTimeAlignedToMidnightGrid() {
+        // Periodic reset of 2 hours — nextResetTime should be aligned to midnight grid
+        val now = System.currentTimeMillis()
         val group = AppLimitGroup(
             id = 0L,
             timeHrLimit = 1,
@@ -148,11 +148,13 @@ class AppLimitPersistenceNormalizationTest {
         )
 
         val normalized = normalizeGroupForPersistence(group)
-        val after = System.currentTimeMillis()
 
-        val twoHoursMs = 2 * 60 * 60 * 1000L
-        assertTrue(normalized.nextResetTime >= before + twoHoursMs - 100)
-        assertTrue(normalized.nextResetTime <= after + twoHoursMs + 100)
+        // Should be aligned to midnight grid and in the future
+        assertTrue(normalized.nextResetTime > now)
+        // Verify the reset falls on a 2-hour boundary from midnight
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = normalized.nextResetTime }
+        val minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        assertEquals("Reset should fall on a 120-minute boundary from midnight", 0, minuteOfDay % 120)
     }
 
     @Test
@@ -259,7 +261,7 @@ class AppLimitPersistenceNormalizationTest {
     }
 
     @Test
-    fun editLimit_periodicReset_recalculatesNextResetTimeFromNow() {
+    fun editLimit_periodicReset_recalculatesNextResetTimeAligned() {
         val futureReset = System.currentTimeMillis() + 7_200_000L // 2 hours from now
         val previous = AppLimitGroup(
             id = 42L,
@@ -274,14 +276,12 @@ class AppLimitPersistenceNormalizationTest {
             timeMinLimit = 30
         )
 
-        val before = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
         val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
-        val after = System.currentTimeMillis()
 
-        // nextResetTime should be recalculated from now, NOT the old future value
-        val twoHoursMs = 120 * 60 * 1000L
-        assertTrue(normalized.nextResetTime >= before + twoHoursMs - 100)
-        assertTrue(normalized.nextResetTime <= after + twoHoursMs + 100)
+        // nextResetTime should be recalculated and aligned, NOT the old future value
+        assertTrue(normalized.nextResetTime > now)
+        assertTrue(normalized.nextResetTime != futureReset)
     }
 
     @Test
@@ -373,7 +373,7 @@ class AppLimitPersistenceNormalizationTest {
     // ── Reset interval change tests ───────────────────────────────────────
 
     @Test
-    fun editResetInterval_recalculatesNextResetTimeFromNow() {
+    fun editResetInterval_recalculatesNextResetTimeAligned() {
         // User changes reset interval from daily (0) to 3 hours (180 min)
         val futureReset = System.currentTimeMillis() + 12 * 3_600_000L // 12 hours from now (midnight)
         val previous = AppLimitGroup(
@@ -389,14 +389,16 @@ class AppLimitPersistenceNormalizationTest {
             resetMinutes = 180 // 3 hours
         )
 
-        val before = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
         val normalized = normalizeGroupForPersistence(edited, previousGroup = previous)
-        val after = System.currentTimeMillis()
 
-        // nextResetTime should be ~3 hours from now, not the old midnight value
-        val threeHoursMs = 180 * 60 * 1000L
-        assertTrue(normalized.nextResetTime >= before + threeHoursMs - 100)
-        assertTrue(normalized.nextResetTime <= after + threeHoursMs + 100)
+        // nextResetTime should be aligned to midnight grid and in the future, not the old value
+        assertTrue(normalized.nextResetTime > now)
+        assertTrue(normalized.nextResetTime != futureReset)
+        // Should be on a 3-hour boundary from midnight
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = normalized.nextResetTime }
+        val minuteOfDay = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE)
+        assertEquals("Reset should fall on a 180-minute boundary from midnight", 0, minuteOfDay % 180)
     }
 
     @Test

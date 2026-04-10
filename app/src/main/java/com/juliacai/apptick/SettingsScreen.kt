@@ -79,6 +79,7 @@ fun SettingsScreen(
     onOpenAccessibilityOnboarding: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val groupPrefs = remember { context.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE) }
     var isPremium by remember { mutableStateOf(PremiumStore.isPremium(context)) }
 
@@ -86,6 +87,8 @@ fun SettingsScreen(
     var isCustomColorMode by remember { mutableStateOf(ThemeModeManager.isCustomColorModeEnabled(context)) }
     var showTimeLeft by remember { mutableStateOf(groupPrefs.getBoolean("showTimeLeft", true)) }
     var floatingBubbleEnabled by remember { mutableStateOf(groupPrefs.getBoolean("floatingBubbleEnabled", false)) }
+    var storeLongTermStats by remember { mutableStateOf(groupPrefs.getBoolean("storeLongTermUsageStats", true)) }
+    var showClearUsageDialog by remember { mutableStateOf(false) }
     // Re-check accessibility state when returning from system settings
     val resumeCounter = rememberResumeTrigger()
     var accessibilityEnabled by remember { mutableStateOf(AppTickAccessibilityService.isAccessibilityServiceEnabled(context)) }
@@ -249,6 +252,38 @@ fun SettingsScreen(
                         }
                     )
                 }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Store Long-Term Usage Stats")
+                        Text(
+                            "Retains daily app usage data beyond Android's ~7-10 day limit",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = storeLongTermStats,
+                        onCheckedChange = {
+                            storeLongTermStats = it
+                            groupPrefs.edit { putBoolean("storeLongTermUsageStats", it) }
+                        }
+                    )
+                }
+                OutlinedButton(
+                    onClick = { showClearUsageDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Clear Stored Usage Data")
+                }
+                Text(
+                    "Deletes locally saved usage statistics only. Does not affect app limits or blocking.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Spacer(modifier = Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -337,6 +372,37 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showClearUsageDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearUsageDialog = false },
+            title = { Text("Clear Usage Data?") },
+            text = {
+                Text("This will delete all locally stored usage statistics. Your app limits and blocking settings will not be affected. This cannot be undone.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearUsageDialog = false
+                        scope.launch {
+                            AppTickDatabase.getDatabase(context).dailyUsageStatsDao()
+                                .deleteAll()
+                            // Reset backfill flag so it re-captures available Android data
+                            groupPrefs.edit { putBoolean("usageStatsBackfillDone", false) }
+                            Toast.makeText(context, "Usage data cleared", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                ) {
+                    Text("Clear")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { showClearUsageDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     premiumFeatureDialogFor?.let { featureName ->

@@ -3,6 +3,7 @@ package com.juliacai.apptick.groups
 import android.content.pm.PackageManager
 import android.graphics.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,7 +34,8 @@ fun GroupAppItem(
     timeLimit: Int,
     limitEach: Boolean,
     modifier: Modifier = Modifier,
-    sharedTimeRemainingMinutes: Int? = null
+    sharedTimeRemainingMinutes: Int? = null,
+    onClick: (() -> Unit)? = null
 ) {
     val derivedTimeUsed = (appInfo.appTimeUse / 60_000L).toInt()
     val timeUsed = if (appInfo.timeUsed > 0) appInfo.timeUsed else derivedTimeUsed
@@ -68,11 +70,18 @@ fun GroupAppItem(
         }
     }
 
-    Card(
-        modifier = modifier
+    val cardModifier = if (onClick != null) {
+        modifier
             .fillMaxWidth()
             .padding(vertical = 4.dp)
-    ) {
+            .clickable(onClick = onClick)
+    } else {
+        modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    }
+
+    Card(modifier = cardModifier) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (iconBitmap != null) {

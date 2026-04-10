@@ -16,6 +16,8 @@ Premium entitlement is in `"apptick_secure_prefs"` (EncryptedSharedPreferences) 
 | `app_icon_color_mode` | String | — | Icon color mode |
 | `showTimeLeft` | Boolean | true | Show time in notification |
 | `floatingBubbleEnabled` | Boolean | false | Floating bubble (premium) |
+| `storeLongTermUsageStats` | Boolean | true | Store per-app daily usage in local DB |
+| `usageStatsBackfillDone` | Boolean | false | One-time backfill from Android completed |
 | `group_card_order` | String(JSON) | — | Card order as JSON array of IDs |
 | `screenOn` | Boolean | true | Screen state tracking |
 

@@ -245,6 +245,66 @@ class TimeManager(private val group: AppLimitGroup) {
         }
 
         /**
+         * Computes the next periodic reset time aligned to a grid anchored at the
+         * start of the time range (or midnight if no time range is configured).
+         *
+         * For example, if the time range starts at 8:00 AM and the interval is 60 min,
+         * the resets occur at 8:00, 9:00, 10:00, etc. If it's currently 8:25 AM,
+         * the next reset is 9:00 AM.
+         *
+         * @param resetIntervalMinutes The periodic reset interval in minutes.
+         * @param useTimeRange Whether time ranges are active.
+         * @param timeRanges The configured time ranges (uses first range's start as anchor).
+         * @param nowMillis Current time in epoch millis.
+         * @return Epoch millis of the next aligned reset time.
+         */
+        fun nextAlignedResetTime(
+            resetIntervalMinutes: Int,
+            useTimeRange: Boolean,
+            timeRanges: List<TimeRange>,
+            nowMillis: Long = System.currentTimeMillis()
+        ): Long {
+            if (resetIntervalMinutes <= 0) return nextMidnight(nowMillis)
+
+            val intervalMs = TimeUnit.MINUTES.toMillis(resetIntervalMinutes.toLong())
+
+            // Determine the anchor: start of the earliest time range today, or midnight today.
+            val cal = Calendar.getInstance().apply { timeInMillis = nowMillis }
+            val anchorHour: Int
+            val anchorMinute: Int
+            if (useTimeRange && timeRanges.isNotEmpty()) {
+                // Use the earliest time range start as the anchor point.
+                val earliest = timeRanges.minByOrNull { it.startHour * 60 + it.startMinute }!!
+                anchorHour = earliest.startHour
+                anchorMinute = earliest.startMinute
+            } else {
+                anchorHour = 0
+                anchorMinute = 0
+            }
+
+            // Compute anchor time today.
+            val anchorCal = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
+                set(Calendar.HOUR_OF_DAY, anchorHour)
+                set(Calendar.MINUTE, anchorMinute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+
+            // If anchor is in the future today, the first reset is anchor + interval.
+            var anchorMs = anchorCal.timeInMillis
+            if (anchorMs > nowMillis) {
+                return anchorMs + intervalMs
+            }
+
+            // Walk forward from anchor by interval steps to find the next one after now.
+            val elapsed = nowMillis - anchorMs
+            val periodsPassed = elapsed / intervalMs
+            val nextReset = anchorMs + (periodsPassed + 1) * intervalMs
+            return nextReset
+        }
+
+        /**
          * Finds the next occurrence of [hour]:[minute] from [nowMillis],
          * only considering active days. Searches up to 7 days.
          *

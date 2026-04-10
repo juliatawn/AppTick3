@@ -22,6 +22,7 @@
 
 - `getTimeRemaining()` → converts hours+minutes to milliseconds
 - `getNextResetTime()` → periodic (now + resetMinutes) or daily (next midnight)
+- `nextAlignedResetTime(resetIntervalMinutes, useTimeRange, timeRanges, nowMillis)` → computes next periodic reset aligned to a grid anchored at the time range start (or midnight if no time range). E.g., range start 8:00 + 60min interval → resets at 9:00, 10:00, 11:00…
 - `nextMidnight(nowMillis)` → 00:00:00 tomorrow in device timezone
 - `computeNextUnblockTime(group, nowMillis, blockedForOutsideRange)` → computes when the app will next be unblocked:
   - **Blocked outside time range:** returns next time range start (on an active day)

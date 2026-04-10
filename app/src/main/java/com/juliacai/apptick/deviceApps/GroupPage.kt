@@ -146,6 +146,9 @@ class GroupPage : BaseActivity() {
             var hasReorderedApps by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf(prefs.getBoolean(PREF_APPS_REORDERED, false))
             }
+            var usageTapHintDismissed by androidx.compose.runtime.saveable.rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(prefs.getBoolean(PREF_USAGE_TAP_HINT, false))
+            }
 
             val palette = AppTheme.currentPalette(this, isSystemDark)
             val colorScheme = AppTheme.colorSchemeFromPalette(palette)
@@ -196,6 +199,27 @@ class GroupPage : BaseActivity() {
                                         hasReorderedApps = true
                                         prefs.edit { putBoolean(PREF_APPS_REORDERED, true) }
                                     }
+                                },
+                                showUsageTapHint = !usageTapHintDismissed,
+                                onDismissUsageTapHint = {
+                                    if (!usageTapHintDismissed) {
+                                        usageTapHintDismissed = true
+                                        prefs.edit { putBoolean(PREF_USAGE_TAP_HINT, true) }
+                                    }
+                                },
+                                onAppClick = { app ->
+                                    // Dismiss usage tap hint on first app tap
+                                    if (!usageTapHintDismissed) {
+                                        usageTapHintDismissed = true
+                                        prefs.edit { putBoolean(PREF_USAGE_TAP_HINT, true) }
+                                    }
+                                    startActivity(
+                                        AppUsagePage.newIntent(
+                                            this@GroupPage,
+                                            app.appName,
+                                            app.appPackage
+                                        )
+                                    )
                                 },
                                 onAppsReordered = { reorderedApps ->
                                     val current = group ?: return@GroupDetails
@@ -345,6 +369,7 @@ class GroupPage : BaseActivity() {
     companion object {
         private const val EXTRA_GROUP_ID = "extra_group_id"
         private const val PREF_APPS_REORDERED = "appsReorderedHintDismissed"
+        private const val PREF_USAGE_TAP_HINT = "usageTapHintDismissed"
 
         fun newIntent(context: Context, group: AppLimitGroup): Intent {
             return Intent(context, GroupPage::class.java).apply {
@@ -412,7 +437,10 @@ fun GroupDetails(
     group: AppLimitGroup,
     showReorderHint: Boolean,
     onDismissReorderHint: () -> Unit = {},
-    onAppsReordered: (List<com.juliacai.apptick.appLimit.AppInGroup>) -> Unit = {}
+    showUsageTapHint: Boolean = false,
+    onDismissUsageTapHint: () -> Unit = {},
+    onAppsReordered: (List<com.juliacai.apptick.appLimit.AppInGroup>) -> Unit = {},
+    onAppClick: ((com.juliacai.apptick.appLimit.AppInGroup) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val groupPackages = remember(group.apps) { group.apps.map { it.appPackage }.toSet() }
@@ -649,6 +677,37 @@ fun GroupDetails(
                 }
             }
 
+            if (showUsageTapHint) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                            Text(
+                                text = "Tap an app to view its usage details.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                            ) {
+                                TextButton(
+                                    onClick = onDismissUsageTapHint,
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                ) {
+                                    Text("DISMISS")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             items(orderedApps, key = { it.appPackage }) { app ->
                 val appInfo = AppInfo(
                     appName = app.appName,
@@ -762,7 +821,10 @@ fun GroupDetails(
                         null
                     } else {
                         (group.timeRemaining / 60_000L).toInt().coerceAtLeast(0)
-                    }
+                    },
+                    onClick = if (draggingAppPackage == null) {
+                        { onAppClick?.invoke(app) }
+                    } else null
                 )
             }
         }

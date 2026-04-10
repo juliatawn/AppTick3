@@ -1,6 +1,6 @@
 # 6. Data Layer
 
-## Database Schema (Room v9)
+## Database Schema (Room v10)
 
 **File:** `data/AppTickDatabase.kt`
 
@@ -35,7 +35,26 @@ Table: `app_limit_groups`
 
 *\*`resetHours` column name is legacy; the field is named `resetMinutes` in the entity and stores minutes.*
 
-**Migrations:** v1-4 → v5 (unified), v5→v6, v6→v7, v7→v8, v8→v9 (incremental ALTERs).
+**Migrations:** v1-4 → v5 (unified), v5→v6, v6→v7, v7→v8, v8→v9, v9→v10 (incremental).
+
+### Table: `daily_usage_stats` (added in v10)
+
+Stores per-app daily usage data locally, bypassing Android's ~7-10 day `INTERVAL_DAILY` retention limit. Controlled by the "Store Long-Term Usage Stats" setting (`storeLongTermUsageStats` in SharedPreferences, default `true`).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| dateString | TEXT PK | ISO format "yyyy-MM-dd" (1-based month) |
+| packageName | TEXT PK | Composite PK with dateString |
+| appName | TEXT | Display name (survives uninstalls) |
+| totalForegroundMs | INTEGER | Total foreground time for that day |
+
+**Files:** `data/DailyUsageStatsEntity.kt`, `data/DailyUsageStatsDao.kt`
+
+**Recording:** `BackgroundChecker` snapshots today's per-app usage from Android's `INTERVAL_DAILY` into local DB every ~15 minutes. On first enable, backfills the past 7 days from whatever Android still has.
+
+**Querying:** `AppUsageStats` has `*Local()` suspend methods (e.g., `getUsageForPeriodLocal`, `getWeeklyDailyBreakdownLocal`) that check local DB first, falling back to Android when no local data exists. The original non-suspend methods remain for backward compatibility.
+
+**Toggle off behavior:** Recording stops immediately. Existing data is preserved (not deleted). Queries fall back to Android's UsageStatsManager. User can re-enable later and data resumes accumulating.
 
 ## `AppLimitGroupEntity.kt`
 

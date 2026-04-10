@@ -21,6 +21,7 @@ com.juliacai.apptick/
 │   └── BlockWindowScreen.kt        ← Compose UI for the block screen
 ├── appLimit/
 │   ├── AppLimitEvaluator.kt        ← Pure logic: day/time/pause checks
+│   ├── DailyUsagePreview.kt        ← Calculates total daily available time for UI preview
 │   ├── AppInGroup.kt               ← Data class: app within a group (name, package, icon)
 │   ├── AppLimitDetailsActivity.kt  ← Detail view for a group
 │   ├── AppLimitDetailsScreen.kt    ← Compose UI: group details with usage bars
@@ -78,7 +79,8 @@ com.juliacai.apptick/
 │   ├── AppManager.kt               ← Queries installed apps via PackageManager
 │   ├── AppListViewModel.kt         ← ViewModel: searchable installed app list
 │   ├── AppSearchActivity.kt        ← Activity wrapper for app search
-│   ├── AppUsageStats.kt            ← Queries UsageStatsManager for app usage
+│   ├── AppUsageStats.kt            ← Queries UsageStatsManager for app usage (day/week/month/year)
+│   ├── AppUsagePage.kt             ← Activity: per-app usage detail page (day/week/month/year)
 │   └── GroupPage.kt                ← Activity: group detail page
 ├── settings/
 │   ├── ColorPickerActivity.kt      ← Activity: custom color picker (premium)

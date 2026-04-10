@@ -13,6 +13,34 @@ Routes managed via Jetpack Navigation Compose:
 - `"colorPicker"` → ColorPickerScreen
 - `"lockModesBlocked"` → LockModesBlockedScreen
 
+## App Usage Detail Page (AppUsagePage)
+
+Launched when the user taps an app card in `GroupPage` or `AppLimitDetailsScreen`. Shows system-level usage stats for that app across multiple time periods (Today, Week, Month, Year) using `UsageStatsManager`. Each period tab supports navigating backwards in time (e.g., "5 Weeks Ago") via left/right arrow buttons. Layout uses the same `BaseActivity` + theme setup and card styling as `GroupPage`.
+
+**Key components:**
+- `AppHeaderCard` — App icon + name
+- `ScrollableTabRow` — Period selector (Today / Week / Month / Year)
+- `PeriodNavigator` — Left/right arrow card showing period label ("This Week", "Last Week", "5 Weeks Ago") and date range, with navigation callbacks
+- `UsageDetailCard` — Detailed usage for the selected period with progress bar and daily/monthly averages
+- `WeeklyBreakdownCard` — Week tab: daily bar chart with full day-of-week names and dates, chronological (Monday first)
+- `MonthCalendarCard` — Month tab: Monday-first calendar grid with heat-mapped cells showing daily usage per day
+- `YearlyBreakdownCard` — Year tab: monthly bar chart with month labels (12 months, most recent first)
+- `UsageOverviewCard` — Comparative bar chart of all periods with daily averages per period
+
+**Data sources:**
+- `AppUsageStats.getUsageForPeriod(pkg, period, offset)` — Total usage for a period at a given offset (0=current, 1=previous, etc.). Uses `INTERVAL_BEST` for accurate totals even for older periods.
+- `AppUsageStats.getWeeklyDailyBreakdown(pkg, offset)` — Returns `List<DailyUsage>` for a week at offset. Uses `INTERVAL_DAILY` (~7-10 day retention).
+- `AppUsageStats.getMonthlyDailyBreakdown(pkg, offset)` — Returns `List<DailyUsage>` for a month at offset. Uses `INTERVAL_DAILY` (~7-10 day retention).
+- `AppUsageStats.getYearlyMonthlyBreakdown(pkg, offset)` — Returns `List<MonthlyUsage>` for a year at offset. Uses `INTERVAL_MONTHLY` (~6 month retention).
+- `AppUsageStats.periodLabel(period, offset)` — Human-readable label ("This Week", "Last Week", "5 Weeks Ago")
+- `AppUsageStats.periodDateRange(period, offset)` — Date range string ("Mon Mar 30 - Sun Apr 5")
+
+**Android data retention limits:**
+- `INTERVAL_DAILY`: ~7-10 days — used for daily breakdowns (week/month views)
+- `INTERVAL_MONTHLY`: ~6 months — used for yearly monthly breakdown
+- `INTERVAL_BEST`: returns best available granularity — used for period totals only (do NOT use for daily breakdowns as it returns weekly/monthly buckets for older data, causing inaccurate per-day attribution)
+- When daily data is unavailable but the period total > 0, `DailyDataUnavailableCard` is shown instead of the breakdown chart
+
 ## Create/Edit Group Flow
 
 ```
@@ -32,9 +60,9 @@ BackgroundChecker.applyDesiredServiceState()
 
 | User Action | What takes effect immediately |
 |-------------|------------------------------|
-| Change time limit | `timeRemaining` reset to new limit, `perAppUsage` cleared, periodic `nextResetTime` recalculated from now |
-| Change reset interval | `timeRemaining` reset to full limit, `perAppUsage` cleared, `nextResetTime` recalculated from now |
-| Unpause group | If `nextResetTime` has passed while paused: `timeRemaining` reset to full limit, `perAppUsage` cleared, `nextResetTime` recalculated from now. BackgroundChecker woken via `requestImmediateCheck()` |
+| Change time limit | `timeRemaining` reset to new limit, `perAppUsage` cleared, periodic `nextResetTime` recalculated aligned to time range start (or midnight) |
+| Change reset interval | `timeRemaining` reset to full limit, `perAppUsage` cleared, `nextResetTime` recalculated aligned to time range start (or midnight) |
+| Unpause group | If `nextResetTime` has passed while paused: `timeRemaining` reset to full limit, `perAppUsage` cleared, `nextResetTime` recalculated aligned to time range start (or midnight). BackgroundChecker woken via `requestImmediateCheck()` |
 | Change active days / time ranges | Takes effect on next BackgroundChecker iteration (evaluated per-check) |
 
 **SetTimeLimitsScreen sections:**
@@ -45,6 +73,7 @@ BackgroundChecker.applyDesiredServiceState()
 5. Time range (premium) with multiple ranges, outside-range behavior
 6. Active days (weekday circles)
 7. Periodic reset (premium) + cumulative time
+8. Daily usage preview (shown when periodic reset is enabled; displays total available min/day based on reset interval, time limit, and active time range window)
 
 ## `AppLimitViewModel.kt`
 

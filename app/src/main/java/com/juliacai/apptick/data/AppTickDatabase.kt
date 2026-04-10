@@ -8,11 +8,16 @@ import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.sqlite.db.SupportSQLiteDatabase
 
-@Database(entities = [AppLimitGroupEntity::class], version = 9, exportSchema = false)
+@Database(
+    entities = [AppLimitGroupEntity::class, DailyUsageStatsEntity::class],
+    version = 10,
+    exportSchema = false
+)
 @TypeConverters(Converters::class)
 abstract class AppTickDatabase : RoomDatabase() {
 
     abstract fun appLimitGroupDao(): AppLimitGroupDao
+    abstract fun dailyUsageStatsDao(): DailyUsageStatsDao
 
     companion object {
         @Volatile
@@ -34,7 +39,8 @@ abstract class AppTickDatabase : RoomDatabase() {
                         MIGRATION_5_6,
                         MIGRATION_6_7,
                         MIGRATION_7_8,
-                        MIGRATION_8_9
+                        MIGRATION_8_9,
+                        MIGRATION_9_10
                     )
                     .build()
                 INSTANCE = instance
@@ -97,6 +103,22 @@ abstract class AppTickDatabase : RoomDatabase() {
                 )
                 db.execSQL(
                     "ALTER TABLE app_limit_groups ADD COLUMN includeExistingApps INTEGER NOT NULL DEFAULT 1"
+                )
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS daily_usage_stats (
+                        dateString TEXT NOT NULL,
+                        packageName TEXT NOT NULL,
+                        appName TEXT NOT NULL,
+                        totalForegroundMs INTEGER NOT NULL,
+                        PRIMARY KEY (dateString, packageName)
+                    )
+                    """.trimIndent()
                 )
             }
         }

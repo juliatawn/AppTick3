@@ -219,8 +219,13 @@ internal fun normalizeGroupForPersistence(
         // Already has a valid future reset time — keep it.
         group.nextResetTime
     } else if (group.resetMinutes > 0) {
-        // Periodic: next reset = now + interval
-        now + TimeUnit.MINUTES.toMillis(group.resetMinutes.toLong())
+        // Periodic: align reset grid to time range start (or midnight).
+        TimeManager.nextAlignedResetTime(
+            resetIntervalMinutes = group.resetMinutes,
+            useTimeRange = group.useTimeRange,
+            timeRanges = group.timeRanges,
+            nowMillis = now
+        )
     } else {
         // Daily mode: next reset = 12:00 AM tomorrow.
         TimeManager.nextMidnight(now)

@@ -55,6 +55,7 @@ import com.juliacai.apptick.groups.GroupAppItem
 import com.juliacai.apptick.lazyColumnScrollIndicator
 import com.juliacai.apptick.rememberScrollbarColor
 import android.content.Context
+import com.juliacai.apptick.deviceApps.AppUsagePage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -228,6 +229,7 @@ private fun SettingRow(label: String, value: String) {
 
 @Composable
 private fun AppUsageCard(group: AppLimitGroup) {
+    val context = LocalContext.current
     val usageByPackage = group.perAppUsage.associate { it.appPackage to it.usedMillis }
     val usageListState = rememberLazyListState()
     val scrollbarColor = rememberScrollbarColor()
@@ -254,7 +256,12 @@ private fun AppUsageCard(group: AppLimitGroup) {
                     GroupAppItem(
                         appInfo = appInfo,
                         timeLimit = group.timeMinLimit + group.timeHrLimit * 60,
-                        limitEach = group.limitEach
+                        limitEach = group.limitEach,
+                        onClick = {
+                            context.startActivity(
+                                AppUsagePage.newIntent(context, app.appName, app.appPackage)
+                            )
+                        }
                     )
                 }
             }
