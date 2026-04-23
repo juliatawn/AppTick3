@@ -1,16 +1,13 @@
 package com.juliacai.apptick.permissions
 
 import android.app.AppOpsManager
+import android.content.ActivityNotFoundException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Bundle
 import android.os.Process
 import android.provider.Settings
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -24,113 +21,83 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
 import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.R
 import com.juliacai.apptick.backgroundProcesses.AppTickAccessibilityService
 import com.juliacai.apptick.verticalScrollWithIndicator
-import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
- * Unified permission onboarding screen that presents required and optional permissions
- * (Overlay, Accessibility [optional], Usage Stats, Notifications) as steps in a siaaaaaangle
- * flow with animated transitions and a progress indicator.
- *
- * Auto-advances past already-granted permissions on each resume.
- * Optional steps show a "Skip" button so the user can proceed without granting.
+ * Single-page permissions screen. Shows every permission AppTick uses in one
+ * list so the user can scan what's required vs optional, with a one-line
+ * "why" for each. Each row's button deep-links straight to AppTick's entry in
+ * the relevant system settings page so the user doesn't have to scroll.
  */
 
-// ── Data model for each permission step ───────────────────────────────────────
+// ── Data model ────────────────────────────────────────────────────────────────
 
-private data class PermissionStepData(
+private data class PermissionItem(
     val title: String,
-    val description: String,
-    val whyNeeded: String,
-    val howToSteps: List<String>,
-    val buttonText: String = "Open Settings",
-    val isOptional: Boolean = false
+    val why: String,
+    val isOptional: Boolean,
+    // Extra hint shown under the description. Used on Accessibility because Samsung's
+    // Settings app ignores the deep-link extras and lands the user on the general
+    // Accessibility page without scrolling to AppTick.
+    val hint: String? = null,
 )
 
-private val steps = listOf(
-    PermissionStepData(
-        title = "Overlay Permission",
-        description = "AppTick needs to display blocking screens over other apps when time limits are reached.",
-        whyNeeded = "• Show blocking screens when time limits are reached\n• Display usage statistics\n• Prevent access to blocked apps\n• Help you stay focused",
-        howToSteps = listOf(
-            "Tap the button below to open Settings",
-            "Find 'AppTick' in the list",
-            "Enable 'Display over other apps'",
-            "Return to AppTick"
-        )
+private val items = listOf(
+    PermissionItem(
+        title = "Display over other apps",
+        why = "Lets AppTick show the block screen on top of apps that have hit their time limit.",
+        isOptional = false,
     ),
-    PermissionStepData(
-        title = "Usage Access Permission",
-        description = "AppTick needs to track app usage so it can enforce the time limits you set. Data stays on your device and is not shared.",
-        whyNeeded = "• Track time spent in apps\n• Set and enforce time limits\n• Show usage for time limit\n• Block apps when limits are reached",
-        howToSteps = listOf(
-            "Tap the button below to open Settings",
-            "Find 'AppTick' in the list",
-            "Enable 'Usage Access'",
-            "Return to AppTick"
-        )
+    PermissionItem(
+        title = "Usage access",
+        why = "Tracks how long you spend in each app so limits can be enforced.",
+        isOptional = false,
     ),
-    PermissionStepData(
-        title = "Notification Permission",
-        description = "AppTick needs notifications to show time limit warnings and keep its background service running.",
-        whyNeeded = "• Show time limit warnings before apps are blocked\n• Display remaining time in the notification bar\n• Keep the usage tracking service running reliably",
-        howToSteps = listOf(
-            "Tap the button below to open Settings",
-            "Go to Notifications",
-            "Enable notifications for AppTick"
-        )
+    PermissionItem(
+        title = "Notifications",
+        why = "Shows time-limit warnings and keeps the tracking service running reliably.",
+        isOptional = false,
     ),
-    PermissionStepData(
-        title = "Accessibility Permission",
-        description = "AppTick can use an accessibility service to more reliably detect which app you are using. This helps ensure time limits work correctly on all devices. Data stays on your device and is not shared.",
-        whyNeeded = "• Instantly detect which app is in the foreground\n• More reliable than standard detection on some devices - including for split screen, floating windows, notification shade\n• Ensures time limits are enforced without gaps\n• Does not read any content from your apps",
-        howToSteps = listOf(
-            "Tap the button below to open Accessibility Settings",
-            "Find 'AppTick' under Downloaded/Installed services",
-            "Enable the AppTick service",
-            "Confirm in the dialog that appears",
-            "Return to AppTick"
-        ),
-        isOptional = true
-    )
+    PermissionItem(
+        title = "Accessibility",
+        why = "Detects the foreground app instantly — more reliable on split-screen, floating windows, and some OEMs.",
+        isOptional = true,
+        hint = "On Samsung: tap \"Installed apps\" (or \"Downloaded apps\") to find AppTick.",
+    ),
 )
 
-// ── Permission check helpers ──────────────────────────────────────────────────
+// ── Permission checks ─────────────────────────────────────────────────────────
 
 private fun isOverlayGranted(context: Context): Boolean =
     Settings.canDrawOverlays(context)
@@ -159,17 +126,55 @@ private fun isStepGranted(stepIndex: Int, context: Context): Boolean = when (ste
     else -> true
 }
 
+// ── Settings deep-links ───────────────────────────────────────────────────────
+
 private fun launchSettingsForStep(stepIndex: Int, context: Context) {
-    val intent = when (stepIndex) {
-        0 -> Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri())
-        1 -> Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-        2 -> Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+    when (stepIndex) {
+        0 -> launchOverlaySettings(context)
+        1 -> launchUsageAccessSettings(context)
+        2 -> launchNotificationSettings(context)
+        3 -> launchAccessibilitySettings(context)
+    }
+}
+
+private fun launchOverlaySettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:${context.packageName}".toUri())
+    )
+}
+
+private fun launchUsageAccessSettings(context: Context) {
+    // Package-scoped URI opens directly on AppTick's row on most OEMs; stock Android
+    // falls through with ActivityNotFoundException so we retry with the generic list.
+    val deep = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS, "package:${context.packageName}".toUri())
+    try {
+        context.startActivity(deep)
+    } catch (_: ActivityNotFoundException) {
+        context.startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+    }
+}
+
+private fun launchNotificationSettings(context: Context) {
+    context.startActivity(
+        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
             putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
         }
-        3 -> Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-        else -> return
+    )
+}
+
+private fun launchAccessibilitySettings(context: Context) {
+    // Pass AppTick's service component via the Settings fragment-args bundle so the
+    // Accessibility screen scrolls to and highlights our row on supported builds.
+    val component = ComponentName(context, AppTickAccessibilityService::class.java).flattenToString()
+    val bundle = Bundle().apply {
+        putString(":settings:fragment_args_key", component)
     }
-    context.startActivity(intent)
+    context.startActivity(
+        Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
+            putExtra(":settings:fragment_args_key", component)
+            putExtra(":settings:show_fragment_args", bundle)
+        }
+    )
 }
 
 // ── Main composable ───────────────────────────────────────────────────────────
@@ -177,109 +182,73 @@ private fun launchSettingsForStep(stepIndex: Int, context: Context) {
 @Composable
 fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
     val context = LocalContext.current
-    var currentStep by rememberSaveable { mutableIntStateOf(0) }
-    // Track which optional steps the user has explicitly skipped
-    var skippedSteps by rememberSaveable { mutableStateOf(emptySet<Int>()) }
+    val resume = rememberResumeTrigger()
+    val granted = remember(resume) { BooleanArray(items.size) { isStepGranted(it, context) } }
+    val allRequiredGranted = items.indices.all { granted[it] || items[it].isOptional }
+    val allGranted = items.indices.all { granted[it] }
 
-    // Re-check permissions on every resume to auto-advance
-    val resumeCounter = rememberResumeTrigger()
-
-    LaunchedEffect(resumeCounter, skippedSteps) {
-        // Advance past any already-granted or skipped steps
-        var step = currentStep
-        while (step < steps.size) {
-            val granted = isStepGranted(step, context)
-            val skipped = step in skippedSteps
-            if (granted || skipped) {
-                step++
-            } else {
-                break
-            }
-        }
-        if (step >= steps.size) {
-            onAllGranted()
-        } else {
-            currentStep = step
-        }
+    // Auto-advance to the main screen the moment every permission (including the
+    // optional Accessibility one) is granted — no need for the user to tap Continue.
+    LaunchedEffect(allGranted) {
+        if (allGranted) onAllGranted()
     }
 
-    if (currentStep >= steps.size) return
-
-    val stepData = steps[currentStep]
+    // Required perms can't be skipped — only the optional Accessibility row. So:
+    //   all granted       → no button (auto-advanced above)
+    //   only optional ungranted → show "Skip for now"
+    //   any required ungranted → no button (user must grant via per-row Allow)
+    val bottomButtonLabel: String? = when {
+        allGranted -> null
+        allRequiredGranted -> "Skip for now"
+        else -> null
+    }
 
     Scaffold { padding ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .verticalScrollWithIndicator()
-                    .padding(10.dp)
-                    .padding(bottom = if (stepData.isOptional) 150.dp else 100.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = if (bottomButtonLabel != null) 96.dp else 24.dp)
             ) {
-                // Step indicator dots
-                StepIndicator(total = steps.size, current = currentStep)
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(24.dp))
                 Text(
-                    "Step ${currentStep + 1} of ${steps.size}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = "Permissions",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Animated step content
-                AnimatedContent(
-                    targetState = currentStep,
-                    transitionSpec = {
-                        (slideInHorizontally { it } + fadeIn())
-                            .togetherWith(slideOutHorizontally { -it } + fadeOut())
-                    },
-                    label = "permissionStep"
-                ) { step ->
-                    PermissionStepContent(
-                        data = steps[step],
-                        stepIndex = step
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "All data stays on your device. AppTick doesn't send your app usage or activity anywhere.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(20.dp))
+                items.forEachIndexed { index, item ->
+                    PermissionRow(
+                        item = item,
+                        stepIndex = index,
+                        granted = granted[index],
+                        onGrant = { launchSettingsForStep(index, context) },
                     )
+                    if (index < items.lastIndex) Spacer(Modifier.height(10.dp))
                 }
             }
 
-            // Bottom button area
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 10.dp)
-            ) {
-                Button(
-                    onClick = { launchSettingsForStep(currentStep, context) },
-                    modifier = Modifier.fillMaxWidth()
+            if (bottomButtonLabel != null) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
-                    Text(stepData.buttonText)
-                }
-                if (stepData.isOptional) {
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = {
-                            skippedSteps = skippedSteps + currentStep
-                            // Advance to next step
-                            val nextStep = currentStep + 1
-                            if (nextStep >= steps.size) {
-                                onAllGranted()
-                            } else {
-                                currentStep = nextStep
-                            }
-                        },
+                    Button(
+                        onClick = onAllGranted,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = MaterialTheme.colorScheme.surface
-                        )
                     ) {
-                        Text("Skip")
+                        Text(bottomButtonLabel)
                     }
                 }
             }
@@ -287,114 +256,106 @@ fun PermissionOnboardingScreen(onAllGranted: () -> Unit) {
     }
 }
 
-// ── Step content ──────────────────────────────────────────────────────────────
+// ── Row ───────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun PermissionStepContent(
-    data: PermissionStepData,
-    stepIndex: Int
+private fun PermissionRow(
+    item: PermissionItem,
+    stepIndex: Int,
+    granted: Boolean,
+    onGrant: () -> Unit,
 ) {
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        // Icon
-        when (stepIndex) {
-            0 -> Image(
-                painter = painterResource(id = R.drawable.ic_overlay),
-                contentDescription = null,
-                modifier = Modifier.height(30.dp)
-            )
-            1 -> Image(
-                painter = painterResource(id = R.drawable.ic_usage_stats),
-                contentDescription = null,
-                modifier = Modifier.height(30.dp)
-            )
-            2 -> Image(
-                imageVector = Icons.Rounded.Notifications,
-                contentDescription = null,
-                modifier = Modifier.height(30.dp)
-            )
-            3 -> Image(
-                painter = painterResource(id = R.drawable.ic_accessibility),
-                contentDescription = null,
-                modifier = Modifier.height(30.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Optional badge
-        if (data.isOptional) {
-            Text(
-                text = "Optional \u2014 Recommended",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.tertiary,
-                fontWeight = FontWeight.SemiBold
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-        }
-
-        Text(
-            text = data.title,
-            style = MaterialTheme.typography.headlineSmall,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = data.description,
-            style = MaterialTheme.typography.bodyLarge,
-            textAlign = TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // How-to card
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text("How to enable:", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(12.dp))
-                data.howToSteps.forEachIndexed { index, step ->
-                    Text("${index + 1}. $step")
-                    if (index < data.howToSteps.lastIndex) Spacer(modifier = Modifier.height(8.dp))
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            PermissionIcon(stepIndex = stepIndex)
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                // Tag sits above the title so long titles ("Display over other apps")
+                // can't push it off-screen on narrow phones.
+                Text(
+                    text = if (item.isOptional) "OPTIONAL" else "REQUIRED",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (item.isOptional)
+                        MaterialTheme.colorScheme.tertiary
+                    else
+                        MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = item.title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = item.why,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (item.hint != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = item.hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            if (granted) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Check,
+                        contentDescription = "Granted",
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    )
+                }
+            } else {
+                Button(onClick = onGrant) {
+                    Text("Allow")
                 }
             }
         }
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Why-needed card
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    if (data.isOptional) "Why this is recommended:" else "Why we need this:",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(data.whyNeeded)
-            }
-        }
-
     }
 }
 
-// ── Step indicator (dots) ─────────────────────────────────────────────────────
-
 @Composable
-private fun StepIndicator(total: Int, current: Int) {
-    Row(horizontalArrangement = Arrangement.spacedBy( 8.dp)) {
-        repeat(total) { index ->
-            Box(
-                modifier = Modifier
-                    .size(if (index == current) 12.dp else 8.dp)
-                    .clip(CircleShape)
-                    .background(
-                        if (index <= current) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.outlineVariant
-                    )
-            )
-        }
+private fun PermissionIcon(stepIndex: Int) {
+    val modifier = Modifier.size(28.dp)
+    when (stepIndex) {
+        0 -> Image(
+            painter = painterResource(id = R.drawable.ic_overlay),
+            contentDescription = null,
+            modifier = modifier,
+        )
+        1 -> Image(
+            painter = painterResource(id = R.drawable.ic_usage_stats),
+            contentDescription = null,
+            modifier = modifier,
+        )
+        2 -> Icon(
+            imageVector = Icons.Rounded.Notifications,
+            contentDescription = null,
+            modifier = modifier,
+        )
+        3 -> Image(
+            painter = painterResource(id = R.drawable.ic_accessibility),
+            contentDescription = null,
+            modifier = modifier,
+        )
     }
 }
 
@@ -402,22 +363,21 @@ private fun StepIndicator(total: Int, current: Int) {
 
 /**
  * Returns an incrementing counter that changes every time the lifecycle resumes,
- * so LaunchedEffect can re-run permission checks.
+ * so re-reading permission state works after the user returns from system settings.
  */
 @Composable
 internal fun rememberResumeTrigger(): Int {
     val counter = rememberSaveable { mutableIntStateOf(0) }
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
 
-    LaunchedEffect(lifecycle) {
-        val flow = MutableStateFlow(0)
+    DisposableEffect(lifecycle) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                flow.value++
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                counter.intValue++
             }
         }
         lifecycle.addObserver(observer)
-        flow.collect { counter.intValue = it }
+        onDispose { lifecycle.removeObserver(observer) }
     }
 
     return counter.intValue
@@ -425,33 +385,17 @@ internal fun rememberResumeTrigger(): Int {
 
 @Preview(showBackground = true)
 @Composable
-private fun PermissionStepOverlayPreview() {
+private fun PermissionOnboardingScreenPreview() {
     AppTheme {
-        PermissionStepContent(
-            data = steps[0],
-            stepIndex = 0
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun PermissionStepNotificationPreview() {
-    AppTheme {
-        PermissionStepContent(
-            data = steps[2],
-            stepIndex = 2
-        )
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-private fun PermissionStepAccessibilityPreview() {
-    AppTheme {
-        PermissionStepContent(
-            data = steps[3],
-            stepIndex = 3
-        )
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.padding(16.dp)) {
+            items.forEachIndexed { idx, item ->
+                PermissionRow(
+                    item = item,
+                    stepIndex = idx,
+                    granted = idx == 0,
+                    onGrant = {},
+                )
+            }
+        }
     }
 }

@@ -168,7 +168,7 @@ Running on Darwin 25.3.0 (arm64)
     - `AppSelectScreen.kt`: A composable that allows the user to select apps to limit.
     - `SetTimeLimitsScreen.kt`: A composable that allows the user to configure the time limits for an app limit group, with daily-only periodic reset (hour/minute interval) and cumulative-time controls shown only when periodic reset is enabled, plus an outside-time-range behavior selector (block apps vs allow no limits) and device-preference time rendering in range controls.
 - **permissions**
-    - `PermissionOnboardingScreen.kt`: A single composable that presents 4 permission steps (Overlay, Accessibility [optional], Usage Stats, Notifications) in a unified onboarding flow with animated transitions, progress dots, auto-advance on grant, and a Skip button for optional steps.
+    - `PermissionOnboardingScreen.kt`: A single-page composable listing all 4 permissions (Overlay, Usage Access, Notifications — required; Accessibility — optional) as rows with a one-line "why", Required/Optional tag, and per-row Allow button that deep-links straight to AppTick's entry in the relevant system settings page. Status refreshes on lifecycle resume; a bottom Continue/Skip-for-now button advances the flow. Page header includes an on-device-only privacy disclaimer.
     - `BatteryOptimizationHelper.kt`: Helper for checking battery/background restriction status and opening app/general battery optimization settings with fallbacks across Android devices/OEM skins.
 - **premiumMode**
     - `LockdownModeActivity.kt`: An activity that hosts the LockdownModeScreen composable.

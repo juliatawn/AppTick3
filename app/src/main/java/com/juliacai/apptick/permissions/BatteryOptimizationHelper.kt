@@ -76,11 +76,24 @@ object BatteryOptimizationHelper {
         val packageName = context.packageName
         val packageUri = Uri.parse("package:$packageName")
         val intents = listOfNotNull(
+            // OEM-specific per-app battery pages come first; when they resolve they
+            // land the user directly on AppTick's battery entry instead of the
+            // generic app-info screen.
+            // Samsung (One UI) — opens app info battery page on many builds.
+            Intent().setClassName(
+                "com.samsung.android.lool",
+                "com.samsung.android.sm.battery.ui.detail.AppBatteryDetailActivity",
+            ).apply {
+                putExtra("packageName", packageName)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+            // Stock Android / Pixel undocumented action — resolves on some builds.
             Intent("android.settings.APP_BATTERY_SETTINGS").apply {
                 putExtra(Settings.EXTRA_APP_PACKAGE, packageName)
                 data = packageUri
             },
             Intent("android.settings.APP_BATTERY_USAGE_DETAILS", packageUri),
+            // Fallback: app info page (user taps Battery row from there).
             Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri),
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, packageUri).apply {
@@ -139,7 +152,31 @@ object BatteryOptimizationHelper {
     }
 
     fun openDontKillMyApp(context: Context): Boolean {
-        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(DONT_KILL_MY_APP_URL))
+        // Deep-link to the vendor-specific guide page when we can detect the OEM,
+        // so the user lands on steps that apply to their phone instead of the
+        // generic vendor-picker homepage.
+        val manufacturer = Build.MANUFACTURER.orEmpty().lowercase()
+        val brand = Build.BRAND.orEmpty().lowercase()
+        fun matches(tokens: Set<String>) = tokens.any { manufacturer.contains(it) || brand.contains(it) }
+        val vendorSlug = when {
+            matches(setOf("samsung")) -> "samsung"
+            matches(setOf("xiaomi", "redmi", "poco")) -> "xiaomi"
+            matches(setOf("honor")) -> "honor"
+            matches(setOf("huawei")) -> "huawei"
+            matches(setOf("oneplus")) -> "oneplus"
+            matches(setOf("oppo")) -> "oppo"
+            matches(setOf("realme")) -> "realme"
+            matches(setOf("vivo", "iqoo")) -> "vivo"
+            matches(setOf("nokia", "hmd global")) -> "nokia"
+            matches(setOf("asus")) -> "asus"
+            matches(setOf("lenovo")) -> "lenovo"
+            matches(setOf("meizu")) -> "meizu"
+            matches(setOf("tecno")) -> "tecno"
+            matches(setOf("nothing")) -> "nothing"
+            else -> null
+        }
+        val url = if (vendorSlug != null) "$DONT_KILL_MY_APP_URL$vendorSlug" else DONT_KILL_MY_APP_URL
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
         return launchFirstAvailable(context, listOf(intent))
     }
 

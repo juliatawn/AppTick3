@@ -17,9 +17,12 @@ import androidx.core.content.edit
 
 private const val PREF_LAST_SEEN_CHANGELOG_VERSION = "last_seen_changelog_version"
 
-private const val CHANGELOG_TITLE = "CHANGELOG\n\"2026.4.1v50\""
+private const val CHANGELOG_TITLE = "CHANGELOG\n\"2026.4.23v51\""
 
 private const val CHANGELOG_BODY = """
+- Simplified permissions onboarding page
+    
+2026.4.1v50
 - Added option to autoadd apps to group limits based off category or any newly installed app.
 - Added new usage details page, when you click on an app in a Group it shows day, week, month, year usage for that app.
 - Added toggle in Settings page to store usage details in AppTick (only on your phone locally) or you can clear the data and chose to turn it off.

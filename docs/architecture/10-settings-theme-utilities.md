@@ -54,7 +54,7 @@ Checks battery optimization status, detects OEM restrictions (Samsung, Xiaomi, H
 
 ## `PermissionOnboardingScreen.kt`
 
-First-run permission request for: overlay, usage stats, notifications.
+Single-page permissions list (Overlay, Usage Access, Notifications — required; Accessibility — optional). Each row shows a one-line "why", a Required/Optional tag, and an Allow button that flips to a check when granted. State refreshes on lifecycle resume so returning from system settings updates the UI automatically. Each Allow deep-links to AppTick's row in the relevant settings screen (package-URI intents for overlay/notifications/usage access; `:settings:fragment_args_key` for accessibility). Top of page includes a disclaimer that all data stays on-device.
 
 ## `FeaturePhotoCarousel.kt`
 
