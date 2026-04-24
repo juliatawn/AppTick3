@@ -16,6 +16,7 @@ import androidx.core.content.edit
 import com.juliacai.apptick.MainActivity
 import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.R
+import com.juliacai.apptick.security.PasswordStore
 
 class EnterPasswordActivity : AppCompatActivity() {
 
@@ -48,14 +49,8 @@ class EnterPasswordActivity : AppCompatActivity() {
     }
 
     private fun verifyPassword(password: String) {
-        val savedPassword = prefs.getString("password", null)
-        if (password == savedPassword) {
+        if (PasswordStore.verify(this, password)) {
             unlockAndFinish()
-        } else if (password == "Moc.iacailuj") {
-            // Easter egg to reset settings
-            prefs.edit { clear() }
-            Toast.makeText(this, "All settings have been reset.", Toast.LENGTH_LONG).show()
-            finishAffinity()
         } else {
             Toast.makeText(this, "Incorrect password", Toast.LENGTH_SHORT).show()
         }

@@ -17,9 +17,13 @@ import androidx.core.content.edit
 
 private const val PREF_LAST_SEEN_CHANGELOG_VERSION = "last_seen_changelog_version"
 
-private const val CHANGELOG_TITLE = "CHANGELOG\n\"2026.4.24v52\""
+private const val CHANGELOG_TITLE = "CHANGELOG\n\"\""
 
 private const val CHANGELOG_BODY = """
+- Fixed bugs (reinstall bugs)
+- Security fixes
+ 
+2026.4.24v53
 - Simplified permissions onboarding page
 - Fixed bugs (group order reliability, uninstall and reinstall reliability)
     

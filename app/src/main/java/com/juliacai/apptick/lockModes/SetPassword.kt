@@ -21,6 +21,7 @@ import androidx.core.content.edit
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.juliacai.apptick.AppTheme
 import com.juliacai.apptick.LockMode
+import com.juliacai.apptick.security.PasswordStore
 
 class SetPassword : AppCompatActivity() {
 
@@ -159,8 +160,8 @@ class SetPassword : AppCompatActivity() {
             return
         }
 
+        PasswordStore.setPassword(this, passFirst)
         prefs.edit {
-            putString("password", passFirst)
             putString("active_lock_mode", "PASSWORD")
             putBoolean("security_key_enabled", false)
 
@@ -183,9 +184,9 @@ class SetPassword : AppCompatActivity() {
             showInfoDialog("Password Mode", "Password mode is already off.")
             return
         }
+        PasswordStore.clearPassword(this)
         prefs.edit {
             putString("active_lock_mode", "NONE")
-            remove("password")
             putBoolean("locked", false)
             putBoolean("passUnlocked", true)
             putBoolean("password_biometric_enabled", false)
@@ -216,9 +217,8 @@ class SetPassword : AppCompatActivity() {
     }
 
     private fun isPasswordModeConfiguredNow(): Boolean {
-        val storedPassword = prefs.getString("password", null)?.trim().orEmpty()
         val isPasswordModeActive = activeLockMode() == LockMode.PASSWORD
-        return storedPassword.isNotEmpty() && isPasswordModeActive
+        return PasswordStore.hasPassword(this) && isPasswordModeActive
     }
 
     private fun shouldWarnUnconfiguredExit(): Boolean {

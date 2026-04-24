@@ -1,6 +1,6 @@
 # 13. Test Suite
 
-## Unit Tests (25 files, ~244 test methods)
+## Unit Tests (26 files, ~250 test methods)
 
 Located in `app/src/test/java/com/juliacai/apptick/`
 
@@ -31,6 +31,7 @@ Located in `app/src/test/java/com/juliacai/apptick/`
 | `FormatUsageDurationShortTest.kt` | 8 | Compact duration formatting for calendar cells: empty, minutes, hours compact |
 | `PeriodLabelTest.kt` | 16 | Period labels (Today/This Week/Last Month/N Ago), date range formatting, period range ordering |
 | `DailyUsageStatsEntityTest.kt` | 6 | Entity fields, toDateString ISO format, month padding, December edge, composite key uniqueness |
+| `security/PasswordHasherTest.kt` | 6 | PBKDF2 round-trip, salt uniqueness, malformed encodings, unicode, plaintext not embedded |
 | `ExampleUnitTest.kt` | 1 | Template (2+2=4) |
 
 ## Integration Tests (27 files, ~139 test methods)

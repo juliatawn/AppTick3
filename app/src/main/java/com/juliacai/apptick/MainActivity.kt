@@ -51,6 +51,7 @@ import com.juliacai.apptick.groups.AppLimitGroup
 import com.juliacai.apptick.groups.AppLimitGroupsList
 import com.juliacai.apptick.lockModes.EnterPasswordActivity
 import com.juliacai.apptick.lockModes.EnterSecurityKeyActivity
+import com.juliacai.apptick.security.PasswordStore
 import com.juliacai.apptick.lockModes.SecurityKeySettingsScreen
 import com.juliacai.apptick.newAppLimit.AppLimitViewModel
 import com.juliacai.apptick.newAppLimit.AppSelectScreen
@@ -105,6 +106,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
     private var launchDuplicateGroupId: Long? = null
     private var launchOpenLockModes = false
     private var lockEvaluationNow by androidx.compose.runtime.mutableLongStateOf(System.currentTimeMillis())
+    private var reviewPromptResumeTick by androidx.compose.runtime.mutableLongStateOf(0L)
     private var lockStateUi by androidx.compose.runtime.mutableStateOf(
         LockState(
             activeLockMode = LockMode.NONE,
@@ -168,6 +170,8 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
 
         prefs = getSharedPreferences("groupPrefs", MODE_PRIVATE)
         appVersionCode = readAppVersionCode()
+        resetDeviceBoundStateIfReinstall()
+        incrementLaunchCount(prefs)
 
         // On app update, re-show accessibility onboarding if the service isn't enabled
         val lastAccessibilityPromptVersion = prefs.getLong("accessibility_prompt_version", -1L)
@@ -266,6 +270,20 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                 androidx.compose.runtime.mutableStateOf(
                     shouldShowChangelogOnLaunch(prefs, appVersionCode)
                 )
+            }
+            var pendingLaunchReviewPrompt by rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(
+                    shouldShowReviewPrompt(prefs)
+                )
+            }
+            var showReviewPromptDialog by rememberSaveable {
+                androidx.compose.runtime.mutableStateOf(false)
+            }
+            val currentResumeTick = reviewPromptResumeTick
+            androidx.compose.runtime.LaunchedEffect(currentResumeTick) {
+                if (!pendingLaunchReviewPrompt && !showReviewPromptDialog && shouldShowReviewPrompt(prefs)) {
+                    pendingLaunchReviewPrompt = true
+                }
             }
             var premiumFeatureDialogFor by rememberSaveable {
                 androidx.compose.runtime.mutableStateOf<String?>(null)
@@ -388,6 +406,15 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                             if (pendingLaunchChangelog) {
                                 showChangelogDialog = true
                                 pendingLaunchChangelog = false
+                            } else if (pendingLaunchReviewPrompt) {
+                                showReviewPromptDialog = true
+                                pendingLaunchReviewPrompt = false
+                            }
+                        }
+                        androidx.compose.runtime.LaunchedEffect(pendingLaunchReviewPrompt) {
+                            if (pendingLaunchReviewPrompt && !showChangelogDialog) {
+                                showReviewPromptDialog = true
+                                pendingLaunchReviewPrompt = false
                             }
                         }
 
@@ -862,6 +889,19 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                         onDismiss = {
                             showChangelogDialog = false
                             markChangelogSeen(prefs, appVersionCode)
+                            if (pendingLaunchReviewPrompt) {
+                                showReviewPromptDialog = true
+                                pendingLaunchReviewPrompt = false
+                            }
+                        }
+                    )
+                }
+
+                if (showReviewPromptDialog) {
+                    ReviewPromptDialog(
+                        onDismiss = {
+                            showReviewPromptDialog = false
+                            markReviewPromptShown(prefs)
                         }
                     )
                 }
@@ -898,7 +938,7 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             }
 
             LockMode.NONE -> {
-                if (!prefs.getString("password", null).isNullOrBlank()) {
+                if (PasswordStore.hasPassword(this)) {
                     startActivity(
                         Intent(this, EnterPasswordActivity::class.java).apply {
                             putExtra(EXTRA_OPEN_LOCK_MODES, openLockModesAfterUnlock)
@@ -1053,7 +1093,39 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             lockEvaluationNow = System.currentTimeMillis()
             viewModel.updatePremiumStatus(PremiumStore.isPremium(this))
             syncBackgroundServiceState()
+            incrementResumeCount(prefs)
+            reviewPromptResumeTick++
         }
+    }
+
+    private fun resetDeviceBoundStateIfReinstall() {
+        val securePrefs = try {
+            PremiumStore.getSecurePrefs(this)
+        } catch (_: Throwable) {
+            return
+        }
+        val marker = "device_bound_state_initialized"
+        if (securePrefs.getBoolean(marker, false)) return
+        // Secure prefs are excluded from backup, so a missing marker means
+        // fresh install or reinstall. Clear state that shouldn't survive
+        // reinstall even if groupPrefs was restored from backup.
+        prefs.edit {
+            // Lock/password state — user shouldn't be locked out after reinstall
+            putString("active_lock_mode", "NONE")
+            putBoolean("locked", false)
+            putBoolean("passUnlocked", false)
+            putBoolean("securityKeyUnlocked", false)
+            putBoolean("blockMain", false)
+            putBoolean("password_mode_configured", false)
+            putBoolean("password_biometric_enabled", false)
+            putBoolean("usb_key_enabled", false)
+            putBoolean("security_key_enabled", false)
+            remove("lockdown_end_time")
+            remove("lockdown_type")
+            remove("lockdown_weekly_used_key")
+            putBoolean("lockdown_prompt_after_unlock", false)
+        }
+        securePrefs.edit { putBoolean(marker, true) }
     }
 
     private fun maybeAutoUnlockExpiredLockdown(nowMillis: Long = System.currentTimeMillis()) {

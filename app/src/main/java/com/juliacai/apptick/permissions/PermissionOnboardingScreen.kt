@@ -103,7 +103,8 @@ private fun isOverlayGranted(context: Context): Boolean =
     Settings.canDrawOverlays(context)
 
 private fun isAccessibilityGranted(context: Context): Boolean =
-    AppTickAccessibilityService.isAccessibilityServiceEnabled(context)
+    AppTickAccessibilityService.isAccessibilityServiceEnabled(context) &&
+        AppTickAccessibilityService.isRunning
 
 private fun isUsageStatsGranted(context: Context): Boolean {
     val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager

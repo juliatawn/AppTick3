@@ -1,7 +1,9 @@
 # 14. SharedPreferences Key Reference
 
 Most keys stored in `"groupPrefs"` (Context.MODE_PRIVATE).
-Premium entitlement is in `"apptick_secure_prefs"` (EncryptedSharedPreferences) — see `PremiumStore.kt`.
+Sensitive values live in `"apptick_secure_prefs"` (EncryptedSharedPreferences):
+- Premium entitlement — see `PremiumStore.kt`
+- Hashed lock-mode password (`lock_password_hash_v1`) — see `security/PasswordStore.kt`
 
 ## App Settings
 | Key | Type | Default | Purpose |
@@ -32,7 +34,7 @@ Premium entitlement is in `"apptick_secure_prefs"` (EncryptedSharedPreferences) 
 | `lockdown_recurring_days` | String | "" | Comma-separated day numbers (1-7) |
 | `lockdown_weekly_used_key` | String | null | Date key for consumed recurring window |
 | `lockdown_prompt_after_unlock` | Boolean | — | Show relock prompt after expiry |
-| `password` | String | — | Hashed password |
+| `password` | String | — | **Removed** — replaced by `lock_password_hash_v1` in `apptick_secure_prefs` (PBKDF2 hash). Legacy plaintext values are migrated and deleted on first read by `PasswordStore`. |
 | `recovery_email` | String | — | Recovery email address |
 | `force_recovery_email_setup` | Boolean | — | Force email setup on next unlock |
 

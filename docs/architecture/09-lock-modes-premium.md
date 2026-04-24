@@ -58,6 +58,33 @@ the encrypted file, then removes the plaintext key.
 each billing connection. If Google Play returns OK with no valid purchases (e.g. refund),
 premium is revoked. If the query fails (offline), the local encrypted state is preserved.
 
+**Shared encrypted file:** `PremiumStore.getSecurePrefs(context)` exposes the underlying
+`EncryptedSharedPreferences` instance so other secure stores (currently `PasswordStore`)
+can share the same keystore-backed file rather than each managing their own master-key
+alias and uninstall-recovery logic.
+
+## `security/PasswordStore.kt` — Hashed lock-mode password
+
+The PASSWORD lock-mode password is stored as a PBKDF2-HmacSHA256 hash in the shared
+encrypted prefs file (key `lock_password_hash_v1`), never in plaintext. Encoding format:
+`v1$<iterations>$<base64-salt>$<base64-hash>` — the iteration count and version travel
+with the hash so the cost factor can be raised in future builds without re-enrollment.
+
+Public API: `PasswordStore.hasPassword(context)`, `verify(context, password)`,
+`setPassword(context, password)`, `clearPassword(context)`. All call sites
+(`SetPassword`, `EnterPasswordActivity`, `MainActivity.refreshLockUiState`) go through
+this — no other code reads the password.
+
+**Migration:** On first read/write, any pre-existing plaintext `groupPrefs.password`
+(left over from older builds) is hashed into the encrypted store and the plaintext key
+is removed. Users keep the same password; no re-enrollment prompt.
+
+**Why this matters:** `groupPrefs.xml` is included in Android Auto Backup
+(`android:allowBackup="true"`), so a debuggable install previously leaked the plaintext
+password to anyone who could run `adb backup`. The encrypted prefs file
+(`apptick_secure_prefs.xml`) is excluded from backup in `backup_rules.xml` and
+`data_extraction_rules.xml`.
+
 ### Cumulative Time — Reset & Midnight Carryover Rules
 
 When `cumulativeTime = true` and `resetMinutes > 0`, unused time carries over across periodic

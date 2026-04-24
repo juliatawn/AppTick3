@@ -35,6 +35,13 @@ object PremiumStore {
         }
     }
 
+    /**
+     * Shared accessor for the app's encrypted prefs file. Other secure stores
+     * (e.g. PasswordStore) reuse this file rather than each managing their own
+     * keystore alias / migration logic.
+     */
+    fun getSecurePrefs(context: Context): SharedPreferences = getPrefs(context)
+
     private fun createEncryptedPrefs(appContext: Context): SharedPreferences {
         // Creation + first read is wrapped: if the encrypted file exists but
         // the matching keystore master key is gone (classic symptom:
