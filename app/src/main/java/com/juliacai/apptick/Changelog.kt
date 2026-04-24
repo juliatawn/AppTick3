@@ -17,7 +17,7 @@ import androidx.core.content.edit
 
 private const val PREF_LAST_SEEN_CHANGELOG_VERSION = "last_seen_changelog_version"
 
-private const val CHANGELOG_TITLE = "CHANGELOG\n\"2026.4.24v52\""
+private const val CHANGELOG_TITLE = "CHANGELOG\n\"2026.4.24v53\""
 
 private const val CHANGELOG_BODY = """
 - Simplified permissions onboarding page
