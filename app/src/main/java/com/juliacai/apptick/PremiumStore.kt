@@ -2,9 +2,11 @@ package com.juliacai.apptick
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.util.Log
 import androidx.core.content.edit
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import java.security.KeyStore
 
 /**
  * Centralized, encrypted storage for premium entitlement state.
@@ -34,14 +36,14 @@ object PremiumStore {
     }
 
     private fun createEncryptedPrefs(appContext: Context): SharedPreferences {
-        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
-        val prefs = EncryptedSharedPreferences.create(
-            ENCRYPTED_PREFS_FILE,
-            masterKeyAlias,
-            appContext,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-        )
+        // Creation + first read is wrapped: if the encrypted file exists but
+        // the matching keystore master key is gone (classic symptom:
+        // uninstall+reinstall where Auto Backup restored the ciphertext but
+        // the key was destroyed), `EncryptedSharedPreferences` throws
+        // AEADBadTagException on first decrypt. In that case wipe the file
+        // and the master key and start clean — premium entitlement is
+        // re-hydrated from Play Billing on next launch anyway.
+        val prefs = openOrReset(appContext)
 
         // One-time migration from plaintext groupPrefs → encrypted prefs
         val legacyPrefs = appContext.getSharedPreferences("groupPrefs", Context.MODE_PRIVATE)
@@ -60,13 +62,65 @@ object PremiumStore {
         return prefs
     }
 
+    private fun openOrReset(appContext: Context): SharedPreferences {
+        return try {
+            buildEncryptedPrefs(appContext).also {
+                // Force a decrypt now so we fail fast here (and can recover)
+                // instead of crashing on the first caller's read.
+                it.getBoolean(MIGRATION_DONE_KEY, false)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "Encrypted prefs unreadable, wiping and recreating", t)
+            resetEncryptedStore(appContext)
+            buildEncryptedPrefs(appContext)
+        }
+    }
+
+    private fun buildEncryptedPrefs(appContext: Context): SharedPreferences {
+        val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
+        return EncryptedSharedPreferences.create(
+            ENCRYPTED_PREFS_FILE,
+            masterKeyAlias,
+            appContext,
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    private fun resetEncryptedStore(appContext: Context) {
+        // Delete the encrypted prefs file itself.
+        runCatching { appContext.deleteSharedPreferences(ENCRYPTED_PREFS_FILE) }
+        // Delete the master key from Android Keystore so MasterKeys.getOrCreate
+        // generates a fresh one next time.
+        runCatching {
+            KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+                .deleteEntry(ANDROIDX_SECURITY_MASTER_KEY_ALIAS)
+        }
+    }
+
+    private const val TAG = "PremiumStore"
+    // Default alias used by androidx.security.crypto's MasterKeys.
+    private const val ANDROIDX_SECURITY_MASTER_KEY_ALIAS = "_androidx_security_master_key_"
+
+    // Public API swallows every throwable so a degraded encrypted store can
+    // never crash the app. If reads fail we return `false` (non-premium);
+    // Play Billing re-hydrates the correct state on the next launch anyway.
     fun isPremium(context: Context): Boolean {
-        return getPrefs(context).getBoolean(KEY_ENTITLEMENT, false)
+        return try {
+            getPrefs(context).getBoolean(KEY_ENTITLEMENT, false)
+        } catch (t: Throwable) {
+            Log.w(TAG, "isPremium read failed, defaulting to false", t)
+            false
+        }
     }
 
     fun setPremium(context: Context, entitled: Boolean) {
-        getPrefs(context).edit {
-            putBoolean(KEY_ENTITLEMENT, entitled)
+        try {
+            getPrefs(context).edit {
+                putBoolean(KEY_ENTITLEMENT, entitled)
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "setPremium write failed, entitlement will be re-applied on next launch", t)
         }
     }
 }

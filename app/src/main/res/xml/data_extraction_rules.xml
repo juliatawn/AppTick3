@@ -2,11 +2,14 @@
 <data-extraction-rules>
     <cloud-backup>
         <include domain="sharedpref" path="." />
+        <!-- See backup_rules.xml for why this is excluded. -->
+        <exclude domain="sharedpref" path="apptick_secure_prefs.xml" />
         <include domain="database" path="." />
         <include domain="file" path="." />
     </cloud-backup>
     <device-transfer>
         <include domain="sharedpref" path="." />
+        <exclude domain="sharedpref" path="apptick_secure_prefs.xml" />
         <include domain="database" path="." />
         <include domain="file" path="." />
     </device-transfer>

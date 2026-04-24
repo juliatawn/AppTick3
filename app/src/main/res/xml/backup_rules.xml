@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
     <include domain="sharedpref" path="." />
+    <!--
+      EncryptedSharedPreferences: master key is stored in Android Keystore
+      and destroyed on uninstall, so restoring this file on reinstall leaves
+      undecryptable ciphertext that crashes on first read. Exclude it.
+    -->
+    <exclude domain="sharedpref" path="apptick_secure_prefs.xml" />
     <include domain="database" path="." />
     <include domain="file" path="." />
 </full-backup-content>

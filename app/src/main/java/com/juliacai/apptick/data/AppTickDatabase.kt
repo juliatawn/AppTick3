@@ -42,6 +42,10 @@ abstract class AppTickDatabase : RoomDatabase() {
                         MIGRATION_8_9,
                         MIGRATION_9_10
                     )
+                    // If a user somehow ends up with a DB from a future schema version
+                    // (e.g. Auto Backup restored a v10 DB onto a v7 install after a
+                    // downgrade), wipe and recreate instead of crashing.
+                    .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
                     .build()
                 INSTANCE = instance
                 instance

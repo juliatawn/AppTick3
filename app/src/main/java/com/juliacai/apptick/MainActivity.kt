@@ -259,9 +259,6 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
             var pendingScrollToBottomTargetSize by androidx.compose.runtime.saveable.rememberSaveable {
                 androidx.compose.runtime.mutableStateOf<Int?>(null)
             }
-            var hasSeenNonEmptyGroups by androidx.compose.runtime.saveable.rememberSaveable {
-                androidx.compose.runtime.mutableStateOf(false)
-            }
             val orderedGroups = androidx.compose.runtime.remember(groups, savedGroupOrder) {
                 GroupCardOrderStore.applyOrder(groups, savedGroupOrder) { it.id }
             }
@@ -286,13 +283,13 @@ class MainActivity : BaseActivity(), PurchasesUpdatedListener {
                 }
 
                 androidx.compose.runtime.LaunchedEffect(groups) {
-                    if (groups.isNotEmpty()) {
-                        hasSeenNonEmptyGroups = true
-                    } else if (!hasSeenNonEmptyGroups) {
-                        // Room can briefly emit an empty list before initial data arrives.
-                        // Avoid wiping a valid saved order during that transient state.
-                        return@LaunchedEffect
-                    }
+                    // Skip while Room's LiveData hasn't emitted yet (initial value
+                    // is emptyList) — sanitizing against zero IDs would wipe a
+                    // valid saved order. If the user legitimately deletes every
+                    // group, the stale order in prefs is harmless because both
+                    // sanitizeOrder and applyOrder filter out IDs that no longer
+                    // exist, and a newly created group will replace it on write.
+                    if (groups.isEmpty()) return@LaunchedEffect
 
                     val sanitizedOrder = GroupCardOrderStore.sanitizeOrder(
                         savedGroupOrder,
